@@ -4,6 +4,8 @@ The **realtime-processor** demonstrates production real-time AI patterns: it con
 Kafka events, enriches them with online features, scores them with a model or agent,
 and publishes results — all live, surfaced on the console's Real-Time panel.
 
+Gateway examples assume `export MLAIOPS_URL=http://localhost:8080`.
+
 ## The three demos
 
 | Demo | Input topic | Output topic | What it does |
@@ -35,7 +37,7 @@ Or from the workbench terminal / any Python env with `KAFKA_REST_URL` set.
 === "API"
 
     ```bash
-    curl -s http://localhost:8080/api/v1/realtime | python -m json.tool
+    curl -s "$MLAIOPS_URL/api/v1/realtime" | python -m json.tool
     ```
 
     ```json

@@ -32,18 +32,31 @@ The **online feature store** — low-latency reads for real-time scoring.
 
 ## kafka & kafka-rest
 
-Apache Kafka in KRaft mode (no ZooKeeper), fronted by the Confluent REST Proxy so
-Python services stay dependency-free (HTTP only).
+Apache Kafka in KRaft mode (no ZooKeeper), fronted by Karapace's
+Confluent-v2-compatible REST API so Python services stay dependency-free (HTTP
+only). Karapace is Apache-licensed, multi-architecture, and materially smaller than
+the JVM proxy image it replaces.
 
 | | |
 | --- | --- |
-| **Images** | `apache/kafka:3.9.1`, `confluentinc/cp-kafka-rest:7.8.0` |
+| **Images** | `apache/kafka:3.9.1`, `ghcr.io/aiven-open/karapace:6.1.4` |
 | **Host ports** | `9092` (broker), `8082` (REST) |
 
 Topics (created by `scripts/local-topics.sh`): audit/lifecycle command topics,
 `mlaiops.llm.traces`, `mlaiops.feature.updates`, and the real-time demo topics
 (`mlaiops.transactions` → `mlaiops.fraud.alerts`, `mlaiops.callcenter.transcripts` →
 `mlaiops.callcenter.insights`, `mlaiops.user.activity` → `mlaiops.recs.results`).
+
+The Kubernetes lifecycle worker uses an explicit Kafka REST consumer instance with
+`auto.commit.enable=false`. It dispatches records in poll order and commits the
+highest processed offset plus one for each topic/partition only after the entire
+batch succeeds. A failed record is retried up to five times with exponential backoff
+from 250 ms, capped at two seconds. Commit requests have the same bounded retry but
+do not redispatch the successful batch. If either phase still fails, the worker exits
+before another poll; Kubernetes restarts it at the last committed offsets. This
+at-least-once boundary can redeliver an already reconciled command, so lifecycle
+dispatch is an ID-keyed create-or-update operation rather than a non-idempotent
+create.
 
 ## minio & minio-init
 
@@ -52,11 +65,17 @@ buckets and exits.
 
 | | |
 | --- | --- |
-| **Image** | `quay.io/minio/minio` |
+| **Image** | `minio/minio:RELEASE.2025-07-23T15-54-02Z` |
 | **Host ports** | `9000` (S3 API), `9001` (web console) |
 | **Credentials** | `mlaiops` / `mlaiops-local-secret` |
 | **Volume** | `minio-data` |
 | **Buckets** | `mlaiops-models`, `-artifacts`, `-features`, `-traces`, `-agents`, `-pipeline-logs` |
+
+The shared Compose workbench mounts these buckets through S3FS at
+`/workspace/object-store/<bucket>`. The mount is a notebook convenience, not a POSIX
+replacement: renames and directory listings map to object-store operations. Only
+Jupyter receives FUSE/SYS_ADMIN; application services continue through S3 APIs or
+the bounded storage proxy.
 
 ## mlflow
 

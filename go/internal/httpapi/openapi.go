@@ -5,7 +5,7 @@ import "net/http"
 func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"openapi": "3.0.3",
-		"info":    map[string]any{"title": "ml-ai-ops-platform API", "version": "0.1.0"},
+		"info":    map[string]any{"title": "Kionga API", "version": "0.1.0"},
 		"paths": map[string]any{
 			"/api/v1/health":                        map[string]any{"get": map[string]any{"summary": "Gateway health"}},
 			"/api/v1/me":                            map[string]any{"get": map[string]any{"summary": "Caller identity, roles and effective permissions"}},
@@ -23,6 +23,8 @@ func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 			"/api/v1/admin/blogs/{id}":              map[string]any{"put": map[string]any{"summary": "Update or publish a blog post"}, "delete": map[string]any{"summary": "Delete a blog post"}},
 			"/api/v1/dashboard":                     map[string]any{"get": map[string]any{"summary": "Workspace summary"}},
 			"/api/v1/onboarding/readiness":          map[string]any{"get": map[string]any{"summary": "Onboarding readiness"}},
+			"/api/v1/project-templates":             map[string]any{"get": map[string]any{"summary": "List versioned ML, AI, and agent project templates"}},
+			"/api/v1/project-templates/{id}":        map[string]any{"get": map[string]any{"summary": "Read a project template contract"}},
 			"/api/v1/projects":                      map[string]any{"get": map[string]any{"summary": "List projects"}, "post": map[string]any{"summary": "Create project"}},
 			"/api/v1/projects/{id}":                 map[string]any{"get": map[string]any{"summary": "Get project metadata"}},
 			"/api/v1/projects/{id}/repository":      map[string]any{"put": map[string]any{"summary": "Connect a Git repository to a project"}},

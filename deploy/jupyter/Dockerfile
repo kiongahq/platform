@@ -48,9 +48,9 @@ RUN pip install --no-cache-dir "jupyter-ai==3.0.1"
 
 COPY deploy/jupyter/quickstart.ipynb /opt/seed/quickstart.ipynb
 COPY deploy/jupyter/entrypoint.sh /usr/local/bin/workbench
-COPY deploy/workspace/nexus.py /usr/local/bin/nexus
+COPY deploy/workspace/kionga.py /usr/local/bin/kionga
 RUN chmod +x /usr/local/bin/workbench \
- && chmod +x /usr/local/bin/nexus \
+ && chmod +x /usr/local/bin/kionga \
  && useradd --create-home --uid 1000 dev \
  && mkdir -p /workspace /workspace/object-store \
  && chown -R dev:dev /workspace

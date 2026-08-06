@@ -1,6 +1,6 @@
-# What is Nexus
+# What is Kionga
 
-Nexus (the `ml-ai-ops-platform`) is a **self-hosted control plane and console for
+Kionga (the `ml-ai-ops-platform`) is a **self-hosted control plane and console for
 the entire AI lifecycle**. It unifies three worlds that are usually run on separate
 tooling:
 
@@ -11,38 +11,45 @@ tooling:
 3. **Agentic AI** — LangGraph agents with persistent session state, long-term
    memory, tool use, LLM cost accounting, and full tracing.
 
-Everything is delivered as **one Docker Compose stack**. The same stack runs on a
-developer laptop and on a single public VM — the public deployment simply adds an
-authenticated TLS edge in front of the identical services.
+The bundled application is delivered as **one Docker Compose stack**. The same
+application services run on a developer laptop and a single public VM; the public
+deployment adds an authenticated TLS edge. Kubernetes supplies the distributed,
+isolated workspace and controller scale path.
 
 ## The problem it solves
 
 Teams typically stitch together a dozen tools (an orchestrator, a registry, a
 serving system, a feature store, a tracing backend, an agent framework, a secrets
 manager, an object store…) and then spend months on the "platform archaeology" of
-making them talk to each other. Nexus wires them together for you:
+making them talk to each other. Kionga wires them together for you:
 
 - A **single API and console** covers projects, pipelines, models, agents, tools,
   features, connections, and audit.
-- **Real integrations, not mocks** — a stranger can run `make local-up` and every
-  capability actually works end to end.
+- **Real integrations, not placeholder UI** — `make local-up` runs the bundled
+  engines end to end; external services such as OpenFaaS remain visibly unconfigured
+  until an operator connects them.
 - **Honest infrastructure** — nothing shows as connected unless it passes an active
   health check.
 
 ## Capability map
 
-Nexus delivers a comprehensive set of capabilities using only open-source,
+Kionga delivers a comprehensive set of capabilities using only open-source,
 non-proprietary tools:
 
-| Capability | How Nexus delivers it |
+| Capability | How Kionga delivers it |
 | --- | --- |
 | **AI orchestration** — the full ML + GenAI lifecycle, automated and managed | Go control plane + Prefect pipelines + agent runtime + model registry/serving, one SDK and console |
 | **Real-time processing** — fraud, call-center, recommendations | Kafka stream consumers → online feature lookup → live model/agent → result, with three runnable demos |
 | **Deployment flexibility** — build once, deploy cloud / on-prem / edge | Fully containerized, config-driven; storage/DB targets swappable via connections; the same images run laptop → VM → edge |
 | **Integrated feature store** — real-time + batch | Online store in Redis via the feature gateway; offline Parquet snapshots in object storage |
 | **Open-source serverless** — automate AI app deployment | OpenFaaS / faasd (single-node, Docker-native), carrying to OpenFaaS-on-Kubernetes at scale |
+| **Governed team workspaces** — give each user only what they need | OIDC identities, deny-by-default entitlements, resource profiles, access requests, tokens, and Kubernetes `KiongaWorkspace` reconciliation |
+| **Version-control-native delivery** — trace code to runs and deployments | Git repository metadata, workspace sync/scaffolding, commit lineage, reusable DAGs, and project-owned functions |
+| **Heavy ML project foundations** — move beyond toy notebooks | Versioned production-ML and distributed-training templates, explicit accelerator/profile intent, checkpointed artifacts, MLflow lineage, and Kubernetes multi-node execution |
+| **Production agent foundations** — build agents as applications | Runnable LangGraph project template with tools, memory, tracing, evaluations, HTTP runtime, containers, and Git lineage |
+| **Readable pipeline topology** — inspect the real execution graph | Server-validated dependency edges rendered with the open-source Dagre layout engine; scheduling remains authoritative in the backend |
 
-## What Nexus is *not*
+## What Kionga is *not*
 
 - **It is not a managed cloud service.** It is software you host. The default target
   is a single VM via Docker Compose; Kubernetes is a documented scale path.
@@ -53,10 +60,13 @@ non-proprietary tools:
 - **It does not ship its own LLM by default.** Agents call external provider APIs
   (OpenAI, Anthropic, or any OpenAI-compatible endpoint) through a trace-capturing
   proxy. A `mock` backend lets the whole stack run with zero API keys.
+- **It does not bundle OpenFaaS in Compose.** Kionga implements its function API,
+  persistence, quotas, triggers, UI, and pipeline integration; an operator supplies
+  a faasd or OpenFaaS gateway.
 
 ## Two languages, clear ownership
 
-Nexus follows a deliberate split:
+Kionga follows a deliberate split:
 
 - **Go owns infrastructure** — the gateway/control-plane API, the Kubernetes
   operator, the feature gateway, the storage proxy, the trace proxy, the serving
@@ -76,3 +86,7 @@ binary** — no build toolchain, ideal for the single-binary, single-VM story.
   the control plane, the data plane).
 - **[Technology & modules used](technology.md)** — the exact stack, versioned.
 - **[Installation](../getting-started/installation.md)** — get it running.
+- **[Project templates](../guides/project-templates.md)** — choose and generate a
+  production ML, distributed training, agent, or full-stack project.
+- **[Implementation status](../reference/implementation-status.md)** — what is
+  bundled, optional, external, or Kubernetes-only.

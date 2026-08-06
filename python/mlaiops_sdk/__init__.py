@@ -1,8 +1,10 @@
-"""A small, typed entry point to the ml-ai-ops-platform."""
+"""Typed notebook and automation entry point for the Kionga platform."""
 
 from .client import MLAIOpsClient
 from .models import (
     Agent,
+    AgentAutoscaling,
+    AgentResources,
     AgentSession,
     AgentTrace,
     AuditEvent,
@@ -13,12 +15,15 @@ from .models import (
     PipelineRun,
     PipelineDefinition,
     Project,
+    ProjectTemplate,
     Readiness,
     Tool,
 )
 
 __all__ = [
     "Agent",
+    "AgentAutoscaling",
+    "AgentResources",
     "AgentMemoryClient",
     "AgentSession",
     "AgentTrace",
@@ -32,6 +37,7 @@ __all__ = [
     "PipelineRun",
     "PipelineDefinition",
     "Project",
+    "ProjectTemplate",
     "Readiness",
     "Tool",
     "build_chat_model",

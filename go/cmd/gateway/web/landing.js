@@ -63,7 +63,7 @@ const previewPanels = {
     stats: [["Artifacts", "2.4 TB"], ["Datasets", "86"], ["Mounts", "14"]],
     panels: [
       ["TEAM WORKSPACE", "/workspace · Jupyter + IDE", "Mounted", "success"],
-      ["OBJECT STORAGE", "s3://nexus-artifacts", "Connected", "info"]
+      ["OBJECT STORAGE", "s3://kionga-artifacts", "Connected", "info"]
     ]
   }
 };

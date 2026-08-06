@@ -14,7 +14,8 @@ Internet ──► Caddy (443, auto Let's Encrypt TLS)
 
 ## Prerequisites
 
-- A Linux VM (4 vCPU / 8 GB RAM minimum; 8/16 recommended) with Docker Engine
+- A Linux VM (4 vCPU / 8 GB RAM minimum; 8/16 recommended, and at least 35 GB free
+  Docker storage for a cold build) with Docker Engine
   and the Compose plugin installed.
 - A DNS A record for your domain pointing at the VM's public IP.
 - Ports 80 and 443 open in the VM firewall / cloud security group.
@@ -52,7 +53,7 @@ Internet ──► Caddy (443, auto Let's Encrypt TLS)
    creates Kafka topics, and waits for the gateway. First TLS issuance takes
    Caddy a few seconds after DNS resolves.
 
-4. Open `https://<your-domain>` and choose **Open console**. Nexus redirects to
+4. Open `https://<your-domain>` and choose **Open console**. Kionga redirects to
    Dex, validates the authorization callback, and establishes a secure HttpOnly
    browser session;
    sign in with the admin user from `.env`.
@@ -78,8 +79,10 @@ OPENFAAS_USER=admin
 OPENFAAS_PASSWORD=<the printed password>
 ```
 
-The console's Storage & Endpoint Explorer then lists functions, and
-`POST /api/v1/functions` deploys agent or model images with scale-to-zero.
+The console's Functions view then lists project-owned functions, and
+`POST /api/v1/functions` deploys OCI images with limits and trigger annotations.
+Function DAGs can chain these workloads; connector deployment and scale-to-zero
+behavior remain OpenFaaS operator configuration.
 
 ## Build once, deploy anywhere
 
@@ -90,7 +93,7 @@ Every image is environment-agnostic; targets are configuration:
 | External S3 / GCS / Azure Blob | Point `S3_ENDPOINT` + credentials at the provider's S3-compatible endpoint |
 | Managed PostgreSQL | Set `DATABASE_URL` (and Langfuse's) to the managed instance |
 | Managed Redis | Set `REDIS_URL` on the feature gateway |
-| External LLM providers | `NexusConnection` secrets + `LLM_UPSTREAM_URL` on the trace proxy |
+| External LLM providers | `KiongaConnection` secrets + `LLM_UPSTREAM_URL` on the trace proxy |
 | Kubernetes at scale | `make kind-up` locally; `config/` holds CRDs, RBAC, network policies for the operator path |
 
 ## Operations
@@ -108,6 +111,7 @@ Every API request is authorized against a role, in every mode:
 | Role | May do |
 | --- | --- |
 | `admin`, `operator` | Everything, including platform connections |
+| `user` | Only provisioned services/projects/buckets and assigned resource quotas |
 | `engineer` | Full ML lifecycle (projects, pipelines, models, agents, tools, features, functions) — not connections |
 | `viewer` | Read-only |
 | `service` | Internal reporting only (traces, run steps, materializations, realtime stats); granted by presenting `MLAIOPS_INTERNAL_TOKEN` |
@@ -115,6 +119,8 @@ Every API request is authorized against a role, in every mode:
 - **Public (OIDC) mode:** roles come from the ID token's `roles` claim, or the
   `groups` claim when no `roles` claim exists. In Dex, put users in groups
   named after the roles (e.g. a `viewer` group for read-only stakeholders).
+- Provision normal users by immutable OIDC `sub`, not a mutable display name or
+  email alias. Approval, suspension, token, and quota changes remain audited.
 - **Local mode:** every request acts as `MLAIOPS_LOCAL_ROLE` (default `admin`).
   Set it to `viewer` to preview the read-only console.
 - `GET /api/v1/me` returns the caller's identity, roles, and effective

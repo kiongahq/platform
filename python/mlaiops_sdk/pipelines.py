@@ -52,7 +52,7 @@ class Pipeline:
             raise ValueError("pipeline must contain at least one step")
         return {
             "apiVersion": "mlaiops.io/v1alpha1",
-            "kind": "NexusPipeline",
+            "kind": "KiongaPipeline",
             "metadata": {"name": self.name},
             "spec": {"steps": [asdict(step) for step in self.steps]},
         }

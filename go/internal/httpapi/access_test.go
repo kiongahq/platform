@@ -67,7 +67,16 @@ func TestLegacyReadOnlyAndServiceRolesCannotReadAdminProfiles(t *testing.T) {
 }
 
 func TestNormalUserProjectOwnershipAndQuota(t *testing.T) {
-	server, _ := accessServer(t)
+	server, repository := accessServer(t)
+	_, err := repository.UpsertUserAccess("user-1", api.UpsertUserAccessRequest{
+		Email: "user@example.com", Role: "user",
+		Services: []string{"overview", "projects", "pipelines", "git", "workbench"},
+		Storage:  api.StorageGrant{SizeGB: 25},
+		Compute:  api.ComputeGrant{VCPUs: 2, MemoryGB: 4, MaxVMs: 1, MaxProjects: 1, MaxRuns: 1},
+	}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
 	first := httptest.NewRecorder()
 	server.ServeHTTP(first, userRequest(http.MethodPost, "/api/v1/projects", `{"name":"owned project","template":"blank"}`))
 	if first.Code != http.StatusCreated || !strings.Contains(first.Body.String(), `"owner_subject":"user-1"`) {
@@ -77,6 +86,143 @@ func TestNormalUserProjectOwnershipAndQuota(t *testing.T) {
 	server.ServeHTTP(second, userRequest(http.MethodPost, "/api/v1/projects", `{"name":"over quota","template":"blank"}`))
 	if second.Code != http.StatusForbidden || !strings.Contains(second.Body.String(), "quota") {
 		t.Fatalf("second project must be denied: %d %s", second.Code, second.Body.String())
+	}
+}
+
+func TestNormalUserCannotCreateUnprovisionedAgentOrGPUProject(t *testing.T) {
+	server, repository := accessServer(t)
+	agent := httptest.NewRecorder()
+	server.ServeHTTP(agent, userRequest(http.MethodPost, "/api/v1/projects", `{"name":"support agent","template":"production-agent"}`))
+	if agent.Code != http.StatusForbidden || !strings.Contains(agent.Body.String(), "service is required") {
+		t.Fatalf("agent template must require its provisioned services: %d %s", agent.Code, agent.Body.String())
+	}
+	_, err := repository.UpsertUserAccess("user-1", api.UpsertUserAccessRequest{
+		Email: "user@example.com", Role: "user",
+		Services: []string{"overview", "projects", "pipelines", "models", "storage", "git", "workbench"},
+		Storage:  api.StorageGrant{SizeGB: 10},
+		Compute:  api.ComputeGrant{VCPUs: 4, MemoryGB: 16, MaxVMs: 1, MaxProjects: 2, MaxRuns: 1},
+	}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gpu := httptest.NewRecorder()
+	server.ServeHTTP(gpu, userRequest(http.MethodPost, "/api/v1/projects", `{"name":"distributed trainer","template":"distributed-training","requested_profile":"custom"}`))
+	if gpu.Code != http.StatusForbidden || !strings.Contains(gpu.Body.String(), "provides 0 GPUs") {
+		t.Fatalf("GPU template must be constrained by the compute grant: %d %s", gpu.Code, gpu.Body.String())
+	}
+}
+
+func TestPipelineDAGCannotExceedProvisionedConcurrentResources(t *testing.T) {
+	server, repository := accessServer(t)
+	denied := httptest.NewRecorder()
+	server.ServeHTTP(denied, userRequest(http.MethodPost, "/api/v1/pipelines/definitions", `{
+		"project_id":"prj-demo","name":"wide-training","version":"1","execution_mode":"prefect","jobs":[
+			{"name":"left","kind":"container","image":"trainer:1","resources":{"cpu":"1500m","memory":"1Gi"}},
+			{"name":"right","kind":"container","image":"trainer:1","resources":{"cpu":"1500m","memory":"1Gi"}}
+		]}`))
+	if denied.Code != http.StatusForbidden || !strings.Contains(denied.Body.String(), "provides 2") {
+		t.Fatalf("wide DAG must be denied by compute grant: %d %s", denied.Code, denied.Body.String())
+	}
+	_, err := repository.UpsertUserAccess("user-1", api.UpsertUserAccessRequest{
+		Email: "user@example.com", Role: "user", Services: []string{"projects", "pipelines"}, ProjectIDs: []string{"prj-demo"},
+		Storage: api.StorageGrant{SizeGB: 100},
+		Compute: api.ComputeGrant{VCPUs: 8, MemoryGB: 32, GPUs: 2, GPUType: "nvidia.com/gpu", MaxProjects: 2, MaxRuns: 2},
+	}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := httptest.NewRecorder()
+	server.ServeHTTP(allowed, userRequest(http.MethodPost, "/api/v1/pipelines/definitions", `{
+		"project_id":"prj-demo","name":"gpu-training","version":"1","execution_mode":"prefect","jobs":[
+			{"name":"train-a","kind":"container","image":"trainer:1","resources":{"cpu":"2","memory":"8Gi","gpu":1}},
+			{"name":"train-b","kind":"container","image":"trainer:1","resources":{"cpu":"2","memory":"8Gi","gpu":1}}
+		]}`))
+	if allowed.Code != http.StatusCreated {
+		t.Fatalf("provisioned heavy DAG should be accepted: %d %s", allowed.Code, allowed.Body.String())
+	}
+}
+
+func TestFunctionResourcesCannotExceedProvisionedCompute(t *testing.T) {
+	_, repository := accessServer(t)
+	value := auth.Principal{Subject: "user-1", Roles: []string{auth.RoleUser}}
+	if err := enforceFunctionResources(repository, value, api.DeployFunctionRequest{CPU: "4", Memory: "1Gi"}); err == nil || !strings.Contains(err.Error(), "provides 2") {
+		t.Fatalf("function CPU above grant should be rejected, got %v", err)
+	}
+	if err := enforceFunctionResources(repository, value, api.DeployFunctionRequest{CPU: "500m", Memory: "2Gi"}); err != nil {
+		t.Fatalf("function within grant should be accepted: %v", err)
+	}
+}
+
+func TestAgentAutoscalingAndResourcesCannotExceedProvisionedCompute(t *testing.T) {
+	_, repository := accessServer(t)
+	value := auth.Principal{Subject: "user-1", Roles: []string{auth.RoleUser}}
+	request := api.DeployAgentRequest{ProjectID: "prj-demo", Name: "support", Version: "1", Image: "support:1", GraphModule: "support:graph", Autoscaling: api.AgentAutoscaling{MinReplicas: 1, MaxReplicas: 2}, Resources: api.AgentResources{CPU: "500m", Memory: "1Gi"}}
+	if err := store.NormalizeAgentRequest(&request); err != nil {
+		t.Fatal(err)
+	}
+	if err := enforceAgentResources(repository, value, request); err == nil || !strings.Contains(err.Error(), "workload limit") {
+		t.Fatalf("agent autoscaling above grant should be rejected, got %v", err)
+	}
+	request.Autoscaling.MaxReplicas = 1
+	request.Resources.GPU = 1
+	if err := enforceAgentResources(repository, value, request); err == nil || !strings.Contains(err.Error(), "grant provides 0") {
+		t.Fatalf("agent GPU above grant should be rejected, got %v", err)
+	}
+	request.Resources.GPU = 0
+	if err := enforceAgentResources(repository, value, request); err != nil {
+		t.Fatalf("agent inside grant should be allowed: %v", err)
+	}
+}
+
+func TestAgentCapacityUsesMaximumReplicasAndSidecarOverhead(t *testing.T) {
+	_, repository := accessServer(t)
+	value := auth.Principal{Subject: "user-1", Roles: []string{auth.RoleUser}}
+	_, err := repository.UpsertUserAccess("user-1", api.UpsertUserAccessRequest{
+		Email: "user@example.com", Role: "user", Services: []string{"projects", "agents"}, ProjectIDs: []string{"prj-demo"},
+		Compute: api.ComputeGrant{VCPUs: 2, MemoryGB: 8, MaxVMs: 4},
+	}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := api.DeployAgentRequest{
+		ProjectID: "prj-demo", Name: "scaled", Version: "1", Image: "agent:1", GraphModule: "agent:graph",
+		Autoscaling: api.AgentAutoscaling{MinReplicas: 1, MaxReplicas: 4},
+		Resources:   api.AgentResources{CPU: "500m", Memory: "1Gi"},
+	}
+	if err := store.NormalizeAgentRequest(&request); err != nil {
+		t.Fatal(err)
+	}
+	if err := enforceAgentResources(repository, value, request); err == nil || !strings.Contains(err.Error(), "including autoscaling and sidecars") {
+		t.Fatalf("maximum replica capacity must be enforced, got %v", err)
+	}
+}
+
+func TestAgentCapacityAggregatesExistingOwnedAgents(t *testing.T) {
+	_, repository := accessServer(t)
+	value := auth.Principal{Subject: "user-1", Roles: []string{auth.RoleUser}}
+	_, err := repository.UpsertUserAccess("user-1", api.UpsertUserAccessRequest{
+		Email: "user@example.com", Role: "user", Services: []string{"projects", "agents"}, ProjectIDs: []string{"prj-demo"},
+		Compute: api.ComputeGrant{VCPUs: 4, MemoryGB: 8, MaxVMs: 1},
+	}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing := api.DeployAgentRequest{
+		ProjectID: "prj-demo", Name: "existing", Version: "1", Image: "agent:1", GraphModule: "agent:graph", OwnerSubject: "user-1",
+		Autoscaling: api.AgentAutoscaling{MinReplicas: 1, MaxReplicas: 1}, Resources: api.AgentResources{CPU: "500m", Memory: "1Gi"},
+	}
+	if _, err := repository.DeployAgent(existing, "user@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	request := api.DeployAgentRequest{
+		ProjectID: "prj-demo", Name: "second", Version: "1", Image: "agent:1", GraphModule: "agent:graph", OwnerSubject: "user-1",
+		Autoscaling: api.AgentAutoscaling{MinReplicas: 1, MaxReplicas: 1}, Resources: api.AgentResources{CPU: "500m", Memory: "1Gi"},
+	}
+	if err := store.NormalizeAgentRequest(&request); err != nil {
+		t.Fatal(err)
+	}
+	if err := enforceAgentResources(repository, value, request); err == nil || !strings.Contains(err.Error(), "reserves 2 maximum replicas") {
+		t.Fatalf("existing owned agent capacity must be included, got %v", err)
 	}
 }
 

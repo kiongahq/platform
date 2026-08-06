@@ -16,11 +16,30 @@ class Project(BaseModel):
     name: str
     description: str
     template: str
+    template_version: str = ""
+    framework: str = ""
+    accelerator: str = ""
+    requested_profile: str = ""
+    capabilities: list[str] = Field(default_factory=list)
+    scaffold_command: str = ""
     namespace: str
     status: str
     created_at: datetime
     owner_subject: str | None = None
     repository: GitRepository | None = None
+
+
+class ProjectTemplate(BaseModel):
+    id: str
+    version: str
+    name: str
+    category: str
+    description: str
+    frameworks: list[str]
+    accelerators: list[str]
+    capabilities: list[str]
+    required_services: list[str]
+    recommended_profile: str
 
 
 class PipelineRun(BaseModel):
@@ -74,6 +93,7 @@ class Model(BaseModel):
     version: str
     stage: str
     artifact_uri: str
+    serving_image: str | None = None
     metrics: dict[str, float]
     created_at: datetime
     gate_status: str = ""
@@ -83,16 +103,32 @@ class Model(BaseModel):
     previous_stage: str | None = None
 
 
+class AgentAutoscaling(BaseModel):
+    min_replicas: int = 1
+    max_replicas: int = 1
+
+
+class AgentResources(BaseModel):
+    cpu: str = "500m"
+    memory: str = "1Gi"
+    gpu: int = 0
+    gpu_type: str | None = None
+
+
 class Agent(BaseModel):
     id: str
     project_id: str
+    owner_subject: str | None = None
     name: str
     version: str
     image: str
     graph_module: str
     llm_backend: str
     status: str
+    endpoint_url: str | None = None
     replicas: int
+    autoscaling: AgentAutoscaling = Field(default_factory=AgentAutoscaling)
+    resources: AgentResources = Field(default_factory=AgentResources)
     canary_weight: int
     tools: list[str]
     created_at: datetime

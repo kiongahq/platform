@@ -2,11 +2,13 @@ package operator
 
 import (
 	"errors"
-	"fmt"
 	"strings"
+
+	platformapi "github.com/ml-ai-ops/platform/pkg/api"
 )
 
 type AgentSpec struct {
+	ResourceID      string
 	Name            string
 	Namespace       string
 	Version         string
@@ -64,7 +66,11 @@ func ReconcileAgent(spec AgentSpec) (AgentPlan, error) {
 	if spec.MaxReplicas < spec.MinReplicas {
 		return AgentPlan{}, errors.New("max replicas must be greater than or equal to min replicas")
 	}
-	name := fmt.Sprintf("%s-%s", spec.Name, sanitizeVersion(spec.Version))
+	resourceID := spec.ResourceID
+	if resourceID == "" {
+		resourceID = spec.Name
+	}
+	name := platformapi.AgentDNSName(resourceID)
 	labels := map[string]string{
 		"app.kubernetes.io/name":       spec.Name,
 		"app.kubernetes.io/component":  "agent",
@@ -84,7 +90,7 @@ func ReconcileAgent(spec AgentSpec) (AgentPlan, error) {
 			Name: name, Namespace: spec.Namespace, Labels: labels, Replicas: spec.MinReplicas,
 			Annotations: map[string]string{"mlaiops.io/inject-trace-proxy": "true"},
 			Containers: []Container{
-				{Name: "agent", Image: spec.Image, Port: 8000, Env: env},
+				{Name: "agent", Image: spec.Image, Port: 8080, Env: env},
 				{Name: "trace-proxy", Image: "ghcr.io/mlaiops/trace-proxy:latest", Port: 8081, Env: map[string]string{"MLAIOPS_AGENT_NAME": spec.Name}},
 			},
 		},
@@ -99,9 +105,4 @@ func ReconcileAgent(spec AgentSpec) (AgentPlan, error) {
 		plan.Traffic.CanaryWeight = 0
 	}
 	return plan, nil
-}
-
-func sanitizeVersion(version string) string {
-	value := strings.NewReplacer(".", "-", "_", "-").Replace(strings.ToLower(version))
-	return strings.Trim(value, "-")
 }

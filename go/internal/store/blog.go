@@ -19,7 +19,7 @@ func validateBlog(req api.UpsertBlogPostRequest) (api.UpsertBlogPostRequest, err
 		req.Slug = slug(req.Title)
 	}
 	if req.Author == "" {
-		req.Author = "Nexus Engineering"
+		req.Author = "Kionga Engineering"
 	}
 	if req.Status == "" {
 		req.Status = "draft"

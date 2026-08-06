@@ -25,7 +25,8 @@ manager.
 from mlaiops_sdk import MLAIOpsClient
 
 with MLAIOpsClient(base_url="http://localhost:8080", actor="you@example.com") as c:
-    project = c.create_project("churn", template="tabular-classification")
+    project = c.create_project("churn", template="production-ml",
+                               framework="xgboost", accelerator="cpu")
     run = c.submit_pipeline(project.id)
     for model in c.list_models():
         c.promote_model(model.id, "production")
@@ -35,20 +36,29 @@ with MLAIOpsClient(base_url="http://localhost:8080", actor="you@example.com") as
 | Area | Methods |
 | --- | --- |
 | Health | `health()`, `readiness()` |
-| Projects | `list_projects()`, `create_project()`, `get_project()`, `connect_repository()` |
+| Projects | `list_project_templates()`, `get_project_template()`, `list_projects()`, `create_project()`, `get_project()`, `connect_repository()` |
 | Pipelines | run lifecycle plus `list_pipeline_definitions()` and `create_pipeline_definition()` |
 | Functions | `list_functions()`, `deploy_function()`, sync/async invoke, and delete |
-| Models | `list_models()`, `register_model()`, `promote_model()`, `deploy_model()`, `rollback_model()` |
-| Agents | `list_agents()`, `deploy_agent()`, `invoke_agent()`, `set_agent_traffic()`, `agent_sessions()`, `agent_traces()` |
+| Models | `list_models()`, `register_model(..., serving_image=...)`, `promote_model()`, `deploy_model()`, `rollback_model()` |
+| Agents | `list_agents()`, resource/autoscaling-aware `deploy_agent()`, `invoke_agent()`, `set_agent_traffic()`, `agent_sessions()`, `agent_traces()` |
 | Tools | `list_tools()`, `register_tool()` |
 | Connections | `list_connections()`, `create_connection()`, `test_connection()` |
 | Audit | `audit_events()` |
 
+Set `MLAIOPS_TOKEN` to a scoped personal key when calling a hosted platform from a
+local machine. The gateway applies the same project/service boundaries to SDK calls
+as it does to the console.
+
 ### `models.py` — typed resources
 
-Pydantic models returned by the client: `Project`, `GitRepository`,
+Pydantic models returned by the client: `ProjectTemplate`, `Project`, `GitRepository`,
 `PipelineDefinition`, `PipelineRun`, `Function`, `Model`, `Agent`,
-`AgentSession`, `AgentTrace`, `Tool`, `Connection`, `Readiness`, `AuditEvent`.
+`AgentAutoscaling`, `AgentResources`, `AgentSession`, `AgentTrace`, `Tool`,
+`Connection`, `Readiness`, `AuditEvent`.
+
+`deploy_agent()` accepts fixed/minimum replicas, optional `max_replicas`, CPU and
+memory quantities, GPU count, and GPU resource type. It sends the canonical nested
+`autoscaling` and `resources` objects used by the console and Go API.
 
 ### `agents.py` — agent memory & checkpoints
 
@@ -84,6 +94,22 @@ Pydantic models returned by the client: `Project`, `GitRepository`,
 Defines container `PipelineStep` and reusable `FunctionStep` jobs. `definition()`
 compiles either form to the validated control-plane contract and infers function or
 Prefect execution mode.
+
+## `kionga` — workspace scaffolder
+
+The workbench and optional IDE include the `kionga` command. It consumes the same
+versioned template IDs as the API and creates deterministic production-ML,
+distributed-training, production-agent, full-stack-AI, or blank expert starters.
+It synchronizes project Git remotes and can hand only the bounded generated
+directory to Codex, Claude Code, or a configured custom command. Credentials remain
+in environment/config volumes rather than the generated repository.
+
+The `distributed-training` starter separates a portable training function from
+`torchrun` launch, rank-aware MLflow logging, mixed precision, and checkpoint
+storage. The `production-agent` starter includes an executable graph/runtime,
+tool loop, `AgentMemoryClient` boundary, selectable Postgres/in-memory checkpointing,
+Langfuse callback, deterministic tests and evaluation runner, and container
+packaging. See the [template catalog](../guides/project-templates.md).
 
 ## `agent_runtime` — the agent service
 

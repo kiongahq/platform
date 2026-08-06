@@ -7,18 +7,26 @@ Day-to-day commands for running, verifying, and inspecting the local stack.
 ```bash
 make local-up       # build + start everything, create Kafka topics
 make local-down     # stop (named volumes persist)
+make local-status   # inspect running, unhealthy, and completed services
+make local-logs     # print the most recent stack logs
+make local-rebuild  # rebuild Dockerized source/dependency changes, then start
+make ide-up         # optional browser IDE sharing Jupyter's workspace
+make ide-down       # stop the IDE without deleting the workspace
 ```
 
 Restarting is idempotent — `make local-up` reconciles to the desired state and only
-rebuilds changed images. Durable state survives in the `postgres-data`,
+rebuilds changed images. It also caps concurrent downloads, retries transient image
+registry failures, waits for the gateway, and creates Kafka topics. `make local` is
+an equivalent shorter alias. Durable state survives in the `postgres-data`,
 `minio-data`, `redis-data`, `prefect-data`, and `jupyter-data` volumes.
 
 ## Status & health
 
 ```bash
+export GATEWAY="${GATEWAY:-http://localhost:8080}"
 docker compose -f deploy/compose.yaml ps                    # per-service state
-curl -s http://localhost:8080/api/v1/health                 # gateway
-curl -s http://localhost:8080/api/v1/components | python -m json.tool   # component grid
+curl -s "$GATEWAY/api/v1/health"                            # gateway
+curl -s "$GATEWAY/api/v1/components" | python -m json.tool # component grid
 ```
 
 ## Logs
@@ -50,12 +58,21 @@ docker compose -f deploy/compose.yaml up minio-init             # ensure buckets
 ## Verifying the whole platform
 
 ```bash
-./scripts/demo-smoke.sh          # 18-point end-to-end check against the running stack
+GATEWAY="$GATEWAY" ./scripts/demo-smoke.sh # configured end-to-end checks
 make verify                      # gate suite (Go+Python tests, lint, build, banned-tech)
 make test-integration            # Postgres outbox + pgvector round-trip
 ```
 
-The demo smoke expects `18 passed, 0 failed, 1 skipped` (the skip is OpenFaaS).
+The pass/skip count varies with optional services. The required invariant is zero
+failures; OpenFaaS is skipped when it is not configured.
+
+## Kubernetes fidelity stack
+
+`make kind-up` installs the Kionga CRDs/controllers and loads the locally built
+images. It also installs metrics-server with the Kind-specific kubelet TLS flag,
+so elastic `KiongaAgent` deployments have a working resource-metrics API for their
+CPU HorizontalPodAutoscalers. Run `make test-e2e` after bootstrap to exercise the
+agent and workspace reconcilers.
 
 ## Changing ports
 
@@ -65,6 +82,7 @@ then `make local-up`. Example — move the console off 8080:
 ```bash
 echo "GATEWAY_PORT=8090" >> .env
 make local-up
+export GATEWAY=http://localhost:8090
 ```
 
 ## Switching your local role
@@ -97,6 +115,9 @@ To wipe all state and start clean (destructive):
 docker compose -f deploy/compose.yaml down -v   # -v removes the named volumes
 make local-up
 ```
+
+Do not add `-v` during routine restarts. It permanently deletes platform databases,
+artifacts, models, notebooks, and IDE workspace data.
 
 ## Building the docs site
 

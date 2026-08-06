@@ -1,7 +1,8 @@
 # Go packages
 
-The Go module is `github.com/ml-ai-ops/platform` (Go 1.23). Its only third-party
-dependency is `github.com/jackc/pgx/v5` (Postgres). Commands live under `go/cmd/`,
+The Go module is `github.com/ml-ai-ops/platform` (Go 1.25). Its direct application
+dependencies include `github.com/jackc/pgx/v5` for Postgres; Kubernetes controller
+libraries and their transitive dependencies support the scale path. Commands live under `go/cmd/`,
 reusable logic under `go/internal/`, and public API types under `go/pkg/`.
 
 ## Commands (`go/cmd`)
@@ -26,9 +27,10 @@ the root `Dockerfile` (`--build-arg SERVICE=<name>`).
 ### `auth`
 
 Authentication and authorization. OIDC/JWKS verification (`Verifier`), the RBAC
-model (`Allowed`, `Permissions`, the role constants), the auth middleware, and the
-`RBAC` middleware that runs on every request. Roles: `admin`, `operator`,
-`engineer`, `viewer`, `service`. See [RBAC & security](../reference/rbac.md).
+model (`Allowed`, `Permissions`, the role constants), local/OIDC browser sessions,
+personal-key verification, and the `RBAC` middleware that runs on every request.
+Roles: `admin`, `operator`, `user`, `engineer`, `viewer`, `service`. See
+[RBAC & security](../reference/rbac.md).
 
 ### `httpapi`
 
@@ -37,26 +39,38 @@ ServeMux), all handlers, and the JSON helpers (`writeJSON`, `writeMutation`,
 `decode`). `openapi.go` serves the OpenAPI document. This is where every
 `/api/v1/*` endpoint is wired.
 
+`GET /api/v1/project-templates` exposes the same versioned project contract used by
+the Python SDK and workspace generator. Project creation returns the resolved
+framework, accelerator, profile, capabilities, template version, and scaffold
+command.
+
 ### `store`
 
 Persistence. `repository.go` is the interface contract; `store.go` is the local
 file implementation; `postgres.go` is the PostgreSQL implementation with the
 transactional **outbox** (`outbox.go`) — every mutation writes resource + audit +
-outbox atomically. Handles run-step transitions, per-agent session scoping, model
-endpoints, and feature views.
+outbox atomically. Handles user grants/access requests, personal-key digests, Git
+metadata, functions and DAG definitions, run steps, agent sessions, model endpoints,
+blog posts, and feature views.
 
 ### `integrations`
 
 HTTP clients for external systems: MLflow, KFP, Langfuse, Prefect (`client.go`),
 the Kafka REST producer/consumer (`kafka_consumer.go`), and OpenFaaS. `dispatcher.go`
-routes durable commands. `NewPrefect` normalizes the API base URL so paths don't
-double-prefix `/api`.
+routes durable commands and derives collision-safe agent resource names from the
+immutable control-plane ID. `lifecycle_worker.go` is the at-least-once boundary: it
+retries record dispatch, commits Kafka offsets manually only after the complete
+batch succeeds, retries commit without redispatch, and returns a terminal error so
+the process restarts from the last commit when retries are exhausted. `NewPrefect`
+normalizes the API base URL so paths don't double-prefix `/api`.
 
 ### `serving`
 
 Model serving over the Docker Engine API (`manager.go`). `Manager.Deploy` does a
-replace → create → start with labels and restart policy; supports an `APIVersion`
-override for older daemons. Backs the serving-manager command.
+replace → create → start with labels and restart policy, chooses the model's
+framework-compatible image with a configured fallback, and applies capability,
+privilege-escalation, and PID hardening. It supports an `APIVersion` override for
+older daemons. Backs the serving-manager command.
 
 ### `storage`
 
@@ -84,8 +98,13 @@ Prometheus exposition. Backs the metrics-collector command.
 ### `operator`
 
 Kubernetes controllers for the scale path: `agent_controller.go`,
-`lifecycle_controllers.go`, and deterministic reconciliation plans (`reconciler.go`)
-for the Nexus CRDs.
+`lifecycle_controllers.go`, workspace reconciliation, and deterministic plans
+(`reconciler.go`) for the Kionga CRDs. Agent reconciliation applies Kubernetes
+resource requirements and probes to the immutable-ID-derived Deployment/Service,
+owns a 70%-CPU HorizontalPodAutoscaler when maximum replicas exceed minimum
+replicas without fighting its replica writes, and derives CR readiness from
+available pods. Operator RBAC includes the autoscaling resource; a resource-metrics
+API is required for elastic scaling.
 
 ### `platform`
 
@@ -97,7 +116,7 @@ no hardcoded data.
 
 | Package | Contents |
 | --- | --- |
-| `pkg/api` | Request/response types shared by the gateway, CLI, and clients (`Project`, `PipelineRun`, `Model`, `Agent`, `Connection`, request bodies, `Page[T]`, `APIError`) |
+| `pkg/api` | Request/response types shared by the gateway, CLI, and clients (`ProjectTemplate`, `Project`, `PipelineRun`, `Model`, `Agent`, `Connection`, request bodies, `Page[T]`, `APIError`); `project_templates.go` owns versioned template resolution and framework/accelerator/profile validation |
 | `pkg/kube/v1alpha1` | Typed Kubernetes CRD definitions (scale path) |
 
 ## Testing

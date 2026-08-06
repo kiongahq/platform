@@ -20,9 +20,9 @@ func TestWorkspaceControllerProvisionsBoundedSharedWorkspace(t *testing.T) {
 	_ = appsv1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
 	_ = mlaiopsv1.AddToScheme(scheme)
-	workspace := &mlaiopsv1.NexusWorkspace{
-		TypeMeta: metav1.TypeMeta{APIVersion: "mlaiops.io/v1alpha1", Kind: "NexusWorkspace"}, ObjectMeta: metav1.ObjectMeta{Name: "workspace-user-1", Namespace: "team-a"},
-		Spec: mlaiopsv1.NexusWorkspaceSpec{Subject: "user-1", Services: []string{"workbench", "ide"}, Compute: mlaiopsv1.WorkspaceComputeSpec{VCPUs: 4, MemoryGB: 8}, StorageGB: 100},
+	workspace := &mlaiopsv1.KiongaWorkspace{
+		TypeMeta: metav1.TypeMeta{APIVersion: "mlaiops.io/v1alpha1", Kind: "KiongaWorkspace"}, ObjectMeta: metav1.ObjectMeta{Name: "workspace-user-1", Namespace: "team-a"},
+		Spec: mlaiopsv1.KiongaWorkspaceSpec{Subject: "user-1", Services: []string{"workbench", "ide"}, Compute: mlaiopsv1.WorkspaceComputeSpec{VCPUs: 4, MemoryGB: 8}, StorageGB: 100},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(workspace).WithObjects(workspace).Build()
 	reconciler := &WorkspaceReconciler{Client: client, WorkbenchImage: "registry/jupyter:1", IDEImage: "registry/ide:1", GatewayURL: "http://gateway:8080"}

@@ -31,13 +31,21 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 	}
 	if prefectURL := os.Getenv("PREFECT_API_URL"); prefectURL != "" {
 		parameters := map[string]any{"run_id": run.ID, "project_id": run.ProjectID, "parameters": run.Parameters}
+		// A caller-provided run name is a label, never a deployment selector.
+		// Name-only runs always use the bundled training flow; definition-backed
+		// runs use the generic container-DAG flow below.
+		flowName := "training-pipeline"
 		if run.DefinitionID != "" {
-			if definition, err := s.store.PipelineDefinition(run.DefinitionID); err == nil {
-				parameters["definition"] = definition
+			definition, err := s.store.PipelineDefinition(run.DefinitionID)
+			if err != nil {
+				failed, _ := s.store.UpdateRunStep(run.ID, api.UpdateRunStepRequest{Step: "load-definition", Status: "failed", Message: err.Error()}, "system")
+				return failed
 			}
+			parameters["definition"] = definition
+			flowName = "pipeline-definition"
 		}
 		prefect := integrations.NewPrefect(prefectURL, "")
-		engineID, err := prefect.CreateFlowRun(ctx, run.Name, "mlaiops", run.ID, parameters)
+		engineID, err := prefect.CreateFlowRun(ctx, flowName, "mlaiops", run.Name, parameters)
 		if err != nil {
 			failed, _ := s.store.UpdateRunStep(run.ID, api.UpdateRunStepRequest{Step: "submit-to-engine", Status: "failed", Message: err.Error()}, "system")
 			return failed

@@ -14,8 +14,8 @@ ways things connect:
                     you (browser / notebook / CLI)
                                   │
       ┌───────────┬───────────┬───┴────────┬───────────┬───────────┐
-   console      MLflow      Prefect     Langfuse    MinIO console  Jupyter
-   :8080        :15000      :4200       :3000       :9001          :8888
+   console      MLflow      Prefect     Langfuse    MinIO console  Jupyter / IDE
+   :8080*       :15000      :4200       :3000       :9001          :8888 / :13337
       │
    gateway ──► Prefect API ──► pipeline-runner (trains, logs to MLflow)
       │  ╲───► serving-manager ──► mlflow-serve containers (live endpoints)
@@ -39,7 +39,7 @@ Two DNS worlds:
 | Service | From your machine | Inside the stack | Credentials (local defaults) |
 | --- | --- | --- | --- |
 | Landing page (gateway) | http://localhost:8080 | `http://gateway:8080` | none |
-| Console + API (gateway) | http://localhost:8080/console.html | `http://gateway:8080` | none locally (RBAC role = `MLAIOPS_LOCAL_ROLE`, default admin) |
+| Console + API (gateway) | http://localhost:8080/console.html | `http://gateway:8080` | `admin` / `mlaiops-local`; API local role = `MLAIOPS_LOCAL_ROLE` |
 | Jupyter workbench | http://localhost:8888 | `http://jupyter:8888` | token `mlaiops-local` (`JUPYTER_TOKEN`) |
 | MLflow tracking/registry | http://localhost:15000 | `http://mlflow:5000` | none |
 | Prefect UI/API | http://localhost:4200 | `http://prefect-server:4200` | none |
@@ -55,6 +55,7 @@ Two DNS worlds:
 | Serving manager | http://localhost:8085 | `http://serving-manager:8085` | internal token in public mode |
 | Trace proxy (LLM egress) | http://localhost:8081 | `http://trace-proxy:8081` | none |
 | Agent runtime | http://localhost:19000 | `http://agent-runtime:9000` | none |
+| Browser IDE (optional) | http://localhost:13337 | `http://ide:8080` | password `mlaiops-local` (`IDE_PASSWORD`) |
 
 All local defaults are development-only; public deployments override them in
 `.env` (see `docs/hosting.md`).
@@ -120,7 +121,8 @@ Your notebooks persist in the `jupyter-data` volume across restarts.
   same keys, path-style addressing.
 - **psql**: `psql postgres://mlaiops:mlaiops-local@localhost:5432/mlaiops`.
 - **Kafka**: brokers `localhost:9092`, or REST at `http://localhost:8082`.
-- **Platform API**: `curl http://localhost:8080/api/v1/me` — see
+- **Platform API**: set `MLAIOPS_URL=http://localhost:8080` (or your overridden
+  gateway port), then `curl "$MLAIOPS_URL/api/v1/me"` — see
   `/api/openapi.json` for the surface.
 
 ## Wiring the moving parts together
@@ -134,7 +136,7 @@ Your notebooks persist in the `jupyter-data` volume across restarts.
   `docker compose -f deploy/compose.yaml up -d realtime-processor`.
 - **Serverless (OpenFaaS/faasd)**: install faasd on the VM
   (`docs/hosting.md`), then set `OPENFAAS_URL`, `OPENFAAS_USER`,
-  `OPENFAAS_PASSWORD` — the Storage & Endpoints tab lists and invokes
+  `OPENFAAS_PASSWORD` — the Functions view lists, deploys, and invokes project-owned
   functions once configured.
 
 ## Swapping in external / production services
@@ -152,10 +154,11 @@ Build once, point anywhere — set the URL and credentials, no image changes:
 ## Troubleshooting
 
 - **Connection shows unhealthy**: the URL must resolve *from the gateway
-  container*. `docker compose -f deploy/compose.yaml exec gateway wget -qO- <url>`
-  reproduces exactly what the health check sees.
+  network*. The gateway is distroless; use a disposable curl container on
+  `mlaiops_default` to reproduce the check.
 - **Works in console, fails from your laptop**: you used an in-stack hostname
   outside the stack (or vice versa) — swap per the two-DNS-worlds table.
 - **Everything down?** `make local-up` is idempotent; `docker compose -f
   deploy/compose.yaml ps` shows per-service state;
-  `./scripts/demo-smoke.sh` verifies all 18 capabilities end to end.
+  `GATEWAY=http://localhost:8080 ./scripts/demo-smoke.sh` verifies the configured
+  capabilities end to end.

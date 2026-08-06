@@ -15,7 +15,7 @@ func ensureSeedBlog(repository store.Repository) {
 		Slug:    "mounting-s3-as-a-filesystem-in-jupyter",
 		Title:   "Mounting S3 as a filesystem inside Jupyter",
 		Summary: "A production-minded guide to making object storage feel local in notebooks with S3FS, FUSE, containers, permissions, health checks, and honest operational trade-offs.",
-		Author:  "Nexus Engineering",
+		Author:  "Kionga Engineering",
 		Tags:    []string{"Jupyter", "S3", "Infrastructure", "MLOps"},
 		Status:  "published",
 		Content: `# Mounting S3 as a filesystem inside Jupyter

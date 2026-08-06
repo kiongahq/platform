@@ -10,6 +10,23 @@ const escapeHTML = value => String(value ?? "").replace(/[&<>"']/g, char => ({"&
 const when = value => new Intl.RelativeTimeFormat("en", {numeric: "auto"}).format(Math.round((new Date(value) - Date.now()) / 60000), "minute");
 const status = value => `<span class="status ${escapeHTML(value)}">${escapeHTML(String(value).replace("_", " "))}</span>`;
 const toast = message => { const node = document.querySelector("#toast"); node.textContent = message; node.classList.add("show"); setTimeout(() => node.classList.remove("show"), 2400); };
+async function copyText(value) {
+  const text = String(value || "");
+  if (!text) throw new Error("There is nothing to copy.");
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const input = document.createElement("textarea");
+  input.value = text;
+  input.setAttribute("readonly", "");
+  input.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+  document.body.appendChild(input);
+  input.select();
+  const copied = document.execCommand("copy");
+  input.remove();
+  if (!copied) throw new Error("Copy is not available in this browser.");
+}
 const bytes = size => size > 1048576 ? `${(size/1048576).toFixed(1)} MB` : size > 1024 ? `${(size/1024).toFixed(1)} KB` : `${size} B`;
 const dateTime = value => value ? new Date(value).toLocaleString() : "—";
 const metadataValue = value => {
@@ -28,7 +45,7 @@ function showMetadata(kind, title, item, actions = "") {
 // ---- identity & permissions -------------------------------------------------
 // The gateway's /api/v1/me is the single source of truth: buttons the caller's
 // role cannot use are disabled here, and the API enforces the same table.
-let me = {subject: "", email: "", roles: [], services: [], mode: "local", permissions: {}};
+let me = {subject: "", email: "", roles: [], services: [], mode: "local", permissions: {}, entitlements: null};
 const can = key => me.permissions[key] !== false;
 const isAdmin = () => me.roles.includes("admin") || me.roles.includes("operator");
 const hasService = service => isAdmin() || !me.roles.includes("user") || me.services.includes(service);
@@ -87,74 +104,48 @@ let projectCache = [];
 async function loadProjects() {
   const projects = await api("/api/v1/projects");
   projectCache = projects;
-  document.querySelector("#project-grid").innerHTML = projects.length ? projects.map(project => `<article class="card interactive-card" role="button" tabindex="0" data-project-detail="${escapeHTML(project.id)}"><span class="kind">${escapeHTML(project.template)}</span><h3>${escapeHTML(project.name)}</h3><p>${escapeHTML(project.description || "No description yet.")}</p>${project.repository ? `<div class="repository-badge"><span>⌘</span><b>${escapeHTML(project.repository.provider)}</b><small>${escapeHTML(project.repository.default_branch)}</small></div>` : `<div class="repository-badge unbound"><span>＋</span><b>Connect Git</b></div>`}<footer><span class="tag">${escapeHTML(project.namespace)}</span>${status(project.status)}</footer></article>`).join("") : `<p class="empty">No projects yet — create one to begin.</p>`;
+  document.querySelector("#project-grid").innerHTML = projects.length ? projects.map(project => `<article class="card interactive-card" role="button" tabindex="0" data-project-detail="${escapeHTML(project.id)}"><span class="kind">${escapeHTML(project.template)}${project.template_version ? ` · v${escapeHTML(project.template_version)}` : ""}</span><h3>${escapeHTML(project.name)}</h3><p>${escapeHTML(project.description || "No description yet.")}</p><div class="tags">${project.framework ? `<span class="tag">${escapeHTML(project.framework)}</span>` : ""}${project.accelerator ? `<span class="tag">${escapeHTML(project.accelerator)}</span>` : ""}${project.requested_profile ? `<span class="tag">${escapeHTML(project.requested_profile)} profile</span>` : ""}</div>${project.repository ? `<div class="repository-badge"><span>⌘</span><b>${escapeHTML(project.repository.provider)}</b><small>${escapeHTML(project.repository.default_branch)}</small></div>` : `<div class="repository-badge unbound"><span>＋</span><b>Connect Git</b></div>`}<footer><span class="tag">${escapeHTML(project.namespace)}</span>${status(project.status)}</footer></article>`).join("") : `<p class="empty">No projects yet — create one to begin.</p>`;
   const select = document.querySelector("#submit-project");
   select.innerHTML = projects.map(project => `<option value="${escapeHTML(project.id)}">${escapeHTML(project.name)}</option>`).join("");
   document.querySelector("#function-project").innerHTML = select.innerHTML;
   document.querySelector("#definition-project").innerHTML = select.innerHTML;
+  document.querySelector("#agent-project").innerHTML = select.innerHTML;
   return projects;
 }
 
 let pipelineDefinitionCache = [];
+const pipelineGraph = (jobs, options = {}) => window.KiongaPipelineGraph.render(jobs, options);
 async function loadRuns() {
   const [runs, definitions] = await Promise.all([api("/api/v1/pipelines/runs"), api("/api/v1/pipelines/definitions")]);
   pipelineDefinitionCache = definitions.items || [];
-  document.querySelector("#pipeline-definition-grid").innerHTML = pipelineDefinitionCache.length ? pipelineDefinitionCache.map(definition => `<article class="panel pipeline-definition-card" data-definition-detail="${escapeHTML(definition.id)}"><div><span class="kind">${escapeHTML(definition.execution_mode)} · v${escapeHTML(definition.version)}</span><h3>${escapeHTML(definition.name)}</h3><p>${definition.jobs.length} jobs · ${escapeHTML(definition.project_id)}</p></div><div class="mini-flow">${definition.jobs.map((job, index) => `<span>${index ? "→" : ""}<b>${escapeHTML(job.name)}</b></span>`).join("")}</div><button data-run-definition="${escapeHTML(definition.id)}" data-project-id="${escapeHTML(definition.project_id)}">Run</button></article>`).join("") : `<article class="panel empty-state"><b>No reusable flows yet</b><span>Define a flow from container jobs or deployed functions.</span></article>`;
+  document.querySelector("#pipeline-definition-grid").innerHTML = pipelineDefinitionCache.length ? pipelineDefinitionCache.map(definition => `<article class="panel pipeline-definition-card" role="button" tabindex="0" data-definition-detail="${escapeHTML(definition.id)}"><div><span class="kind">${escapeHTML(definition.execution_mode)} · v${escapeHTML(definition.version)}</span><h3>${escapeHTML(definition.name)}</h3><p>${definition.jobs.length} jobs · ${escapeHTML(definition.project_id)}</p></div><button data-run-definition="${escapeHTML(definition.id)}" data-project-id="${escapeHTML(definition.project_id)}">Run</button><div class="definition-graph">${pipelineGraph(definition.jobs, {compact:true, ariaLabel:`${definition.name} dependency graph`})}</div></article>`).join("") : `<article class="panel empty-state"><b>No reusable flows yet</b><span>Define a flow from container jobs or deployed functions.</span></article>`;
   document.querySelector("#submit-definition").innerHTML = `<option value="">Built-in training pipeline</option>${pipelineDefinitionCache.map(definition => `<option value="${escapeHTML(definition.id)}" data-project="${escapeHTML(definition.project_id)}">${escapeHTML(definition.name)} · v${escapeHTML(definition.version)} · ${escapeHTML(definition.execution_mode)}</option>`).join("")}`;
   document.querySelector("#run-table").innerHTML = runs.length ? runs.map(run => `<tr class="clickable" data-run-id="${escapeHTML(run.id)}"><td><b>${escapeHTML(run.name)}</b><br><small>${escapeHTML(run.id)}</small></td><td>${escapeHTML(run.project_id)}</td><td>${status(run.status)}</td><td><div class="bar"><i style="width:${Number(run.progress)}%"></i></div></td><td>${when(run.created_at)}</td></tr>`).join("") : `<tr><td colspan="5" class="empty">No runs yet — submit one.</td></tr>`;
 }
 
-// dagSVG uses Dagre's MIT-licensed directed-graph layout. A compact fallback
-// keeps run inspection functional if the pinned CDN asset cannot load.
-function dagSVG(steps) {
-  if (!steps || !steps.length) return "";
-  const boxW = 180, boxH = 60;
-  if (window.dagre) {
-    const graph = new dagre.graphlib.Graph().setGraph({rankdir:"LR", ranksep:64, nodesep:34, marginx:18, marginy:18}).setDefaultEdgeLabel(() => ({}));
-    steps.forEach(step => graph.setNode(step.name, {width:boxW, height:boxH}));
-    steps.forEach(step => (step.depends_on || []).forEach(parent => graph.setEdge(parent, step.name)));
-    dagre.layout(graph);
-    const colors = {succeeded:"#30d158",running:"#0a84ff",failed:"#ff453a",pending:"#8e8e93",skipped:"#8e8e93",cancelled:"#ff9f0a"};
-    const edges = graph.edges().map(edge => { const points = graph.edge(edge).points.map(point => `${point.x},${point.y}`).join(" "); return `<polyline points="${points}" class="dag-edge" marker-end="url(#dag-arrow)"/>`; }).join("");
-    const nodes = steps.map(step => { const at = graph.node(step.name); return `<g transform="translate(${at.x-boxW/2},${at.y-boxH/2})"><rect width="${boxW}" height="${boxH}" rx="12" class="dag-node"/><circle cx="18" cy="22" r="6" fill="${colors[step.status] || "#8e8e93"}"/><text x="32" y="26" class="dag-name">${escapeHTML(step.name)}</text><text x="18" y="46" class="dag-status">${escapeHTML(step.image || step.status)} · ${escapeHTML(step.status)}</text></g>`; }).join("");
-    return `<div class="dag-canvas"><svg class="dag-svg" viewBox="0 0 ${graph.graph().width} ${graph.graph().height}" role="img" aria-label="Pipeline directed acyclic graph"><defs><marker id="dag-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>${edges}${nodes}</svg></div>`;
-  }
-  const depth = {};
-  const layerOf = step => {
-    if (depth[step.name] !== undefined) return depth[step.name];
-    const parents = (step.depends_on || []).map(name => steps.find(item => item.name === name)).filter(Boolean);
-    depth[step.name] = parents.length ? Math.max(...parents.map(layerOf)) + 1 : 0;
-    return depth[step.name];
-  };
-  steps.forEach(layerOf);
-  const layers = {};
-  steps.forEach(step => { (layers[depth[step.name]] ||= []).push(step); });
-  const colWidth = 210, rowHeight = 82;
-  const columns = Object.keys(layers).length;
-  const rows = Math.max(...Object.values(layers).map(list => list.length));
-  const position = {};
-  Object.entries(layers).forEach(([layer, list]) => list.forEach((step, index) => { position[step.name] = {x: layer * colWidth + 10, y: index * rowHeight + 12}; }));
-  const colors = {succeeded:"#30d158", running:"#0a84ff", failed:"#ff453a", pending:"#8e8e93", skipped:"#8e8e93", cancelled:"#ff9f0a"};
-  const edges = steps.flatMap(step => (step.depends_on || []).map(parent => {
-    const from = position[parent], to = position[step.name];
-    if (!from || !to) return "";
-    return `<path d="M ${from.x + boxW} ${from.y + boxH/2} C ${from.x + boxW + 24} ${from.y + boxH/2}, ${to.x - 24} ${to.y + boxH/2}, ${to.x} ${to.y + boxH/2}" class="dag-edge"/>`;
-  })).join("");
-  const nodes = steps.map(step => {
-    const at = position[step.name];
-    return `<g transform="translate(${at.x},${at.y})"><rect width="${boxW}" height="${boxH}" rx="10" class="dag-node"/><circle cx="16" cy="${boxH/2}" r="5" fill="${colors[step.status] || "#8e8e93"}"/><text x="30" y="${boxH/2 - 2}" class="dag-name">${escapeHTML(step.name)}</text><text x="30" y="${boxH/2 + 14}" class="dag-status">${escapeHTML(step.status)}</text></g>`;
-  }).join("");
-  return `<svg class="dag-svg" viewBox="0 0 ${columns * colWidth + 20} ${rows * rowHeight + 24}" role="img" aria-label="Pipeline DAG">${edges}${nodes}</svg>`;
-}
-
-async function showRun(runId) {
-  const run = await api(`/api/v1/pipelines/runs/${encodeURIComponent(runId)}`);
+let openRunID = "";
+let runDetailRequest = 0;
+function renderRunDetail(run) {
   const logs = (run.logs || []).map(log => `<div class="log-line"><time>${new Date(log.timestamp).toLocaleTimeString()}</time><b>${escapeHTML(log.step || "system")}</b><span>${escapeHTML(log.message)}</span></div>`).join("") || `<p class="empty">No logs have arrived yet.</p>`;
   const engine = run.engine_run_id ? `<span class="tag">engine ${escapeHTML(run.engine_run_id)}</span>` : "";
-  const runActions = can("pipelines_write") ? `<div class="sheet-actions"><button data-run-action="cancel" data-run-id="${escapeHTML(run.id)}">Cancel</button><button class="primary" data-run-action="retry" data-run-id="${escapeHTML(run.id)}">Retry run</button></div>` : "";
-  document.querySelector("#run-detail").innerHTML = `<p class="eyebrow">PIPELINE RUN</p><h2>${escapeHTML(run.name)}</h2><div class="detail-meta">${status(run.status)}<span>${escapeHTML(run.id)}</span><span>${when(run.created_at)}</span>${engine}</div><h3>Execution graph</h3>${dagSVG(run.steps)}<h3>Logs</h3><div class="logs">${logs}</div>${runActions}`;
-  document.querySelector("#run-dialog").showModal();
+  const active = run.status === "queued" || run.status === "running";
+  const runActions = can("pipelines_write") ? `<div class="sheet-actions">${active ? `<button data-run-action="cancel" data-run-id="${escapeHTML(run.id)}">Cancel</button>` : ""}<button class="primary" data-run-action="retry" data-run-id="${escapeHTML(run.id)}">Retry run</button></div>` : "";
+  document.querySelector("#run-detail").innerHTML = `<p class="eyebrow">PIPELINE RUN</p><h2>${escapeHTML(run.name)}</h2><div class="detail-meta">${status(run.status)}<span>${escapeHTML(run.id)}</span><span>${when(run.created_at)}</span>${engine}<span>${Number(run.progress) || 0}% complete</span></div><h3>Execution graph</h3>${pipelineGraph(run.steps, {ariaLabel:`${run.name} execution graph`})}<h3>Logs</h3><div class="logs">${logs}</div>${runActions}`;
 }
+async function showRun(runId, options = {}) {
+  const dialog = document.querySelector("#run-dialog");
+  const shouldOpen = options.open !== false;
+  if (shouldOpen) {
+    openRunID = runId;
+    document.querySelector("#run-detail").innerHTML = `<p class="empty">Loading pipeline run…</p>`;
+    if (!dialog.open) dialog.showModal();
+  }
+  const request = ++runDetailRequest;
+  const run = await api(`/api/v1/pipelines/runs/${encodeURIComponent(runId)}`);
+  if (request !== runDetailRequest || openRunID !== runId || !dialog.open) return;
+  renderRunDetail(run);
+}
+document.querySelector("#run-dialog").addEventListener("close", () => { openRunID = ""; runDetailRequest++; });
 
 // metricChart draws a per-version bar chart for the selected metric.
 function metricChart(models, metric) {
@@ -208,10 +199,14 @@ async function loadAgents() {
   const sessions = sessionGroups.flatMap(group => group.items);
   const tokens = sessions.reduce((sum, item) => sum + item.input_tokens + item.output_tokens, 0);
   const cost = sessions.reduce((sum, item) => sum + item.cost_usd, 0);
-  document.querySelector("#agent-summary").innerHTML = `<article><span>Deployed agents</span><strong>${data.total}</strong><small>registered versions</small></article><article><span>Active sessions</span><strong>${sessions.filter(item => item.status === "running").length}</strong><small>${sessions.length} total sessions</small></article><article><span>LLM cost</span><strong>$${cost.toFixed(4)}</strong><small>${tokens.toLocaleString()} tokens</small></article>`;
+  const readyAgents = data.items.filter(agent => agent.status === "ready").length;
+  document.querySelector("#agent-summary").innerHTML = `<article><span>Agent versions</span><strong>${data.total}</strong><small>${readyAgents} runtime${readyAgents === 1 ? "" : "s"} ready</small></article><article><span>Active sessions</span><strong>${sessions.filter(item => item.status === "running").length}</strong><small>${sessions.length} total sessions</small></article><article><span>LLM cost</span><strong>$${cost.toFixed(4)}</strong><small>${tokens.toLocaleString()} tokens</small></article>`;
   document.querySelector("#agent-grid").innerHTML = data.items.length ? data.items.map(agent => {
-    const actions = can("agents_write") ? `<button data-agent-traffic="${escapeHTML(agent.id)}">Traffic</button><button class="primary" data-agent-chat="${escapeHTML(agent.id)}" data-agent-name="${escapeHTML(agent.name)}">Chat</button>` : `<span class="tag">read-only</span>`;
-    return `<article class="card interactive-card" role="button" tabindex="0" data-agent-detail="${escapeHTML(agent.id)}"><span class="kind">${escapeHTML(agent.llm_backend)} · v${escapeHTML(agent.version)}</span><h3>${escapeHTML(agent.name)}</h3><p>${escapeHTML(agent.graph_module)}</p><div class="tags">${(agent.tools || []).map(tool => `<span class="tag">${escapeHTML(tool)}</span>`).join("")}</div><footer>${status(agent.status)}<span class="tag">${agent.canary_weight}% canary</span>${actions}</footer></article>`;
+    const ready = agent.status === "ready";
+    const actions = can("agents_write") ? `<button data-agent-traffic="${escapeHTML(agent.id)}">Traffic</button><button class="primary" data-agent-chat="${escapeHTML(agent.id)}" data-agent-name="${escapeHTML(agent.name)}" ${ready ? "" : "disabled title=\"Runtime health check has not passed\""}>Chat</button>` : `<span class="tag">read-only</span>`;
+    const resources = agent.resources || {};
+    const scaling = agent.autoscaling || {min_replicas:agent.replicas || 1,max_replicas:agent.replicas || 1};
+    return `<article class="card interactive-card" role="button" tabindex="0" data-agent-detail="${escapeHTML(agent.id)}"><span class="kind">${escapeHTML(agent.llm_backend)} · v${escapeHTML(agent.version)}</span><h3>${escapeHTML(agent.name)}</h3><p>${escapeHTML(agent.graph_module)}</p><div class="tags"><span class="tag">${escapeHTML(resources.cpu || "500m")} CPU</span><span class="tag">${escapeHTML(resources.memory || "1Gi")} RAM</span><span class="tag">${scaling.min_replicas}–${scaling.max_replicas} replicas</span>${resources.gpu ? `<span class="tag">${resources.gpu} × ${escapeHTML(resources.gpu_type)}</span>` : ""}${(agent.tools || []).map(tool => `<span class="tag">${escapeHTML(tool)}</span>`).join("")}</div><footer>${status(agent.status)}<span class="tag">${agent.canary_weight}% canary</span>${actions}</footer></article>`;
   }).join("") : `<p class="empty">No agents deployed yet.</p>`;
   document.querySelector("#session-table").innerHTML = sessions.length ? sessions.map(session => `<tr><td>${escapeHTML(session.id)}</td><td>${escapeHTML(session.agent_id)}</td><td>${escapeHTML(session.current_node)}</td><td>${status(session.status)}</td><td>${session.turns}</td><td>${(session.input_tokens + session.output_tokens).toLocaleString()}</td><td>$${session.cost_usd.toFixed(4)}</td></tr>`).join("") : `<tr><td colspan="7" class="empty">No sessions yet — chat with an agent.</td></tr>`;
   document.querySelector("#prompt-list").innerHTML = prompts.configured
@@ -266,7 +261,7 @@ function functionTrigger(fn) {
   const annotations = fn.annotations || {};
   if (annotations.schedule) return `Cron · ${annotations.schedule}`;
   if (annotations.topic) return `Kafka · ${annotations.topic}`;
-  if (annotations["com.nexus.invocation"] === "async") return "Async queue";
+  if (annotations["io.kionga.invocation"] === "async") return "Async queue";
   return "HTTP / webhook";
 }
 async function loadFunctions() {
@@ -275,7 +270,7 @@ async function loadFunctions() {
   const serving = functionCache.filter(item => item.status === "deployed").length;
   const replicas = functionCache.reduce((total, item) => total + Number(item.replicas || 0), 0);
   document.querySelector("#function-summary").innerHTML = `<article><span>Runtime</span><strong>${data.configured ? "Connected" : "Not configured"}</strong></article><article><span>Functions</span><strong>${functionCache.length}</strong></article><article><span>Serving</span><strong>${serving}</strong></article><article><span>Replicas</span><strong>${replicas}</strong></article>`;
-  document.querySelector("#functions-grid").innerHTML = functionCache.length ? functionCache.map(fn => `<article class="card function-card"><span class="kind">${escapeHTML(fn.project_id || "unmanaged")} · ${escapeHTML(fn.status)}</span><h3>${escapeHTML(fn.name)}</h3><code>${escapeHTML(fn.image)}</code><div class="function-resources"><span>${escapeHTML(fn.cpu || "default CPU")}</span><span>${escapeHTML(fn.memory || "default memory")}</span><span>${Number(fn.replicas || 0)} replicas</span><span>${escapeHTML(functionTrigger(fn))}</span></div><footer><button data-function-invoke="${escapeHTML(fn.name)}" data-function-async="${fn.annotations?.["com.nexus.invocation"] === "async"}">Invoke</button>${can("functions_write") && fn.project_id ? `<button class="danger" data-function-delete="${escapeHTML(fn.name)}">Remove</button>` : ""}</footer></article>`).join("") : `<article class="panel empty-state"><b>No functions deployed</b><span>Connect OpenFaaS and deploy an OCI image to run it independently or inside a flow.</span></article>`;
+  document.querySelector("#functions-grid").innerHTML = functionCache.length ? functionCache.map(fn => `<article class="card function-card"><span class="kind">${escapeHTML(fn.project_id || "unmanaged")} · ${escapeHTML(fn.status)}</span><h3>${escapeHTML(fn.name)}</h3><code>${escapeHTML(fn.image)}</code><div class="function-resources"><span>${escapeHTML(fn.cpu || "default CPU")}</span><span>${escapeHTML(fn.memory || "default memory")}</span><span>${Number(fn.replicas || 0)} replicas</span><span>${escapeHTML(functionTrigger(fn))}</span></div><footer><button data-function-invoke="${escapeHTML(fn.name)}" data-function-async="${fn.annotations?.["io.kionga.invocation"] === "async"}">Invoke</button>${can("functions_write") && fn.project_id ? `<button class="danger" data-function-delete="${escapeHTML(fn.name)}">Remove</button>` : ""}</footer></article>`).join("") : `<article class="panel empty-state"><b>No functions deployed</b><span>Connect OpenFaaS and deploy an OCI image to run it independently or inside a flow.</span></article>`;
 }
 
 let realtimeCache = [];
@@ -400,7 +395,7 @@ async function loadMyAccess() {
     </div>${latestRequest ? `<article class="panel access-request-state"><div><p class="eyebrow">LATEST ACCESS REQUEST</p><h3>${escapeHTML(latestRequest.requested_services.join(", "))}</h3><p>${escapeHTML(latestRequest.reason)}</p></div><div>${status(latestRequest.status)}<small>${dateTime(latestRequest.updated_at)}</small></div></article>` : ""}${allocation}`;
 }
 
-const preferenceKey = "nexus.console.preferences";
+const preferenceKey = "kionga.console.preferences";
 function readPreferences() {
   try { return JSON.parse(localStorage.getItem(preferenceKey) || "{}"); } catch { return {}; }
 }
@@ -470,6 +465,7 @@ function connectEvents() {
     lastDigest = event.data;
     loadDashboard().catch(() => {});
     if (viewLoaders[activeView] && activeView !== "overview") viewLoaders[activeView]().catch(() => {});
+    if (openRunID && document.querySelector("#run-dialog").open) showRun(openRunID, {open:false}).catch(() => {});
   };
   source.onerror = () => { indicator.textContent = "○  Local Cluster  reconnecting"; };
 }
@@ -487,12 +483,12 @@ function toggleSidebar() {
     return;
   }
   const collapsed = shell.classList.toggle("sidebar-collapsed");
-  localStorage.setItem("nexus.sidebar.collapsed", String(collapsed));
+  localStorage.setItem("kionga.sidebar.collapsed", String(collapsed));
   sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
   sidebarToggle.title = collapsed ? "Expand navigation" : "Collapse navigation";
 }
 
-if (!isMobile() && localStorage.getItem("nexus.sidebar.collapsed") === "true") {
+if (!isMobile() && localStorage.getItem("kionga.sidebar.collapsed") === "true") {
   shell.classList.add("sidebar-collapsed");
   sidebarToggle.setAttribute("aria-expanded", "false");
   sidebarToggle.title = "Expand navigation";
@@ -553,11 +549,157 @@ document.querySelector("#storage-up").addEventListener("click", () => {
   loadStorage().catch(error => toast(error.message));
 });
 
+const projectProfiles = {
+  starter:{label:"Starter",detail:"2 vCPU · 4 GB RAM · 25 GB storage",description:"Notebook exploration and small development runs.",vcpus:2,memory:4,gpus:0,storage:25},
+  team:{label:"Team",detail:"4 vCPU · 8 GB RAM · 100 GB storage",description:"Daily model development and shared pipelines.",vcpus:4,memory:8,gpus:0,storage:100},
+  power:{label:"Power",detail:"8 vCPU · 16 GB RAM · 250 GB storage",description:"Large training runs and production delivery.",vcpus:8,memory:16,gpus:0,storage:250},
+  gpu:{label:"GPU",detail:"8 vCPU · 32 GB RAM · 1 GPU · 500 GB storage",description:"Accelerated model and generative AI development.",vcpus:8,memory:32,gpus:1,storage:500},
+  custom:{label:"Current allocation",detail:"Use exactly what your administrator assigned",description:"The backend still enforces your effective resource grant."},
+};
+let projectTemplateCache = [];
+let selectedProjectTemplate = "";
+
+const effectiveGrant = () => (me.roles.includes("user") && !isAdmin() ? me.entitlements : null);
+function profileFitsGrant(profileName) {
+  const grant = effectiveGrant();
+  const profile = projectProfiles[profileName];
+  if (!grant || profileName === "custom") return true;
+  return Number(grant.compute?.vcpus || 0) >= profile.vcpus
+    && Number(grant.compute?.memory_gb || 0) >= profile.memory
+    && Number(grant.compute?.gpus || 0) >= profile.gpus
+    && Number(grant.storage?.size_gb || 0) >= profile.storage;
+}
+const acceleratorGPUs = value => value === "multi-gpu" ? 2 : value === "single-gpu" ? 1 : 0;
+function acceleratorFitsGrant(value) {
+  const grant = effectiveGrant();
+  return !grant || Number(grant.compute?.gpus || 0) >= acceleratorGPUs(value);
+}
+
+function acceleratorCompatible(template, framework, accelerator) {
+  return !(template?.id === "production-ml" && framework === "scikit-learn" && accelerator !== "cpu");
+}
+
+function configureProjectAccelerators(template) {
+  const accelerator = document.querySelector("#project-accelerator");
+  const framework = document.querySelector("#project-framework").value;
+  const previous = accelerator.value;
+  accelerator.innerHTML = (template.accelerators || []).map(value => {
+    const provisioned = acceleratorFitsGrant(value);
+    const compatible = acceleratorCompatible(template, framework, value);
+    const reason = !compatible ? " · unsupported by framework" : !provisioned ? " · not provisioned" : "";
+    return `<option value="${escapeHTML(value)}" ${provisioned && compatible ? "" : "disabled"}>${escapeHTML(value)}${reason}</option>`;
+  }).join("");
+  const available = [...accelerator.options].filter(option => !option.disabled);
+  if (available.some(option => option.value === previous)) accelerator.value = previous;
+  else accelerator.value = available[0]?.value || "";
+  return available.length > 0;
+}
+
+function configureProjectProfileOptions() {
+  const select = document.querySelector("#project-requested-profile");
+  [...select.options].forEach(option => {
+    const allowed = profileFitsGrant(option.value);
+    option.disabled = !allowed;
+    option.title = allowed ? "" : "This profile exceeds your assigned compute or storage grant.";
+  });
+}
+
+function renderProjectTemplatePreview() {
+  const template = projectTemplateCache.find(item => item.id === selectedProjectTemplate);
+  if (!template) return;
+  const framework = document.querySelector("#project-framework").value;
+  const accelerator = document.querySelector("#project-accelerator").value;
+  const profileName = document.querySelector("#project-requested-profile").value;
+  const profile = projectProfiles[profileName] || projectProfiles.custom;
+  const grant = effectiveGrant();
+  const grantDetail = grant ? `${grant.compute?.vcpus || 0} vCPU · ${grant.compute?.memory_gb || 0} GB RAM · ${grant.compute?.gpus || 0} GPU · ${grant.storage?.size_gb || 0} GB storage assigned` : "Capacity is enforced when the project is created.";
+  document.querySelector("#project-template-preview").innerHTML = `<div class="template-preview-heading"><div><span class="kind">${escapeHTML(template.category)} · v${escapeHTML(template.version)}</span><h4>${escapeHTML(template.name)}</h4></div><span class="profile-badge">${escapeHTML(profile.label)}</span></div><p>${escapeHTML(template.description)}</p><div class="template-runtime"><span><b>Framework</b>${escapeHTML(framework)}</span><span><b>Accelerator</b>${escapeHTML(accelerator)}</span><span><b>Requested capacity</b>${escapeHTML(profile.detail)}</span></div><small>${escapeHTML(profile.description)} ${escapeHTML(grantDetail)}</small><div class="tags">${(template.capabilities || []).map(value => `<span class="tag">${escapeHTML(value)}</span>`).join("")}</div><div class="template-services"><b>Required services</b>${(template.required_services || []).map(value => `<span>${escapeHTML(value)}</span>`).join("")}</div>`;
+}
+
+function selectProjectTemplate(templateID, resetProfile = true) {
+  const template = projectTemplateCache.find(item => item.id === templateID);
+  if (!template) return;
+  selectedProjectTemplate = template.id;
+  document.querySelector("#project-template-id").value = template.id;
+  document.querySelector("#project-template-version").value = template.version;
+  document.querySelectorAll("[data-project-template]").forEach(button => {
+    const selected = button.dataset.projectTemplate === template.id;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-checked", String(selected));
+  });
+  const framework = document.querySelector("#project-framework");
+  framework.innerHTML = (template.frameworks || []).map(value => `<option value="${escapeHTML(value)}">${escapeHTML(value)}</option>`).join("");
+  configureProjectProfileOptions();
+  if (!configureProjectAccelerators(template)) {
+    document.querySelector("#project-template-preview").innerHTML = `<p class="empty">This template needs accelerator capacity that has not been assigned.</p>`;
+    document.querySelector("#project-template-id").value = "";
+    return;
+  }
+  if (resetProfile) {
+    const recommended = template.recommended_profile || "starter";
+    document.querySelector("#project-requested-profile").value = profileFitsGrant(recommended) ? recommended : "custom";
+  }
+  renderProjectTemplatePreview();
+}
+
+function renderProjectTemplateCatalog() {
+  const catalog = document.querySelector("#project-template-catalog");
+  const unavailable = template => {
+    if (!me.roles.includes("user") || isAdmin()) return [];
+    const blockers = (template.required_services || []).filter(service => !me.services.includes(service));
+    if (!(template.accelerators || []).some(acceleratorFitsGrant)) blockers.push("required accelerator capacity");
+    return blockers;
+  };
+  catalog.innerHTML = projectTemplateCache.map(template => {
+    const missing = unavailable(template);
+    const reason = missing.length ? `Not provisioned: ${missing.join(", ")}.` : "";
+    return `<button type="button" class="project-template-option${missing.length ? " unavailable" : ""}" role="radio" aria-checked="false" aria-disabled="${missing.length}" data-project-template="${escapeHTML(template.id)}" ${missing.length ? "disabled" : ""}><span class="template-option-heading"><b>${escapeHTML(template.name)}</b><small>${escapeHTML(template.category)} · v${escapeHTML(template.version)}</small></span><span>${escapeHTML(template.description)}</span><span class="template-option-meta">${(template.frameworks || []).map(escapeHTML).join(" · ")}<i>${missing.length ? escapeHTML(reason) : `${escapeHTML(template.recommended_profile)} profile`}</i></span></button>`;
+  }).join("");
+  const available = projectTemplateCache.find(template => !unavailable(template).length);
+  const selected = projectTemplateCache.find(template => template.id === selectedProjectTemplate && !unavailable(template).length);
+  selectedProjectTemplate = "";
+  document.querySelector("#project-template-id").value = "";
+  document.querySelector("#project-template-version").value = "";
+  if (selected || available) selectProjectTemplate((selected || available).id);
+  else document.querySelector("#project-template-preview").innerHTML = `<p class="empty">Your administrator must assign the services required by a project template.</p>`;
+}
+
+async function loadProjectTemplates() {
+  if (!projectTemplateCache.length) {
+    const response = await api("/api/v1/project-templates");
+    projectTemplateCache = response.items || [];
+  }
+  if (!projectTemplateCache.length) throw new Error("No project templates are available.");
+  renderProjectTemplateCatalog();
+}
+
+document.querySelector("#project-template-catalog").addEventListener("click", event => {
+  const option = event.target.closest("[data-project-template]");
+  if (option) selectProjectTemplate(option.dataset.projectTemplate);
+});
+document.querySelector("#project-framework").addEventListener("change", () => {
+  const template = projectTemplateCache.find(item => item.id === selectedProjectTemplate);
+  if (template) configureProjectAccelerators(template);
+  renderProjectTemplatePreview();
+});
+document.querySelector("#project-requested-profile").addEventListener("change", renderProjectTemplatePreview);
+document.querySelector("#project-accelerator").addEventListener("change", event => {
+  const profile = document.querySelector("#project-requested-profile");
+  if (event.target.value !== "cpu" && profile.value !== "custom") profile.value = profileFitsGrant("gpu") ? "gpu" : "custom";
+  renderProjectTemplatePreview();
+});
+
 const dialog = document.querySelector("#project-dialog");
-document.querySelector("#new-project").addEventListener("click", () => {
+document.querySelector("#new-project").addEventListener("click", async () => {
   const fields = document.querySelector("#new-project-git-fields"), allowed = can("git_write");
   fields.hidden = !allowed; fields.querySelectorAll("input").forEach(input => { input.disabled = !allowed; });
-  dialog.showModal();
+  document.querySelector("#form-error").textContent = "";
+  if (!dialog.open) dialog.showModal();
+  try { await loadProjectTemplates(); }
+  catch (failure) {
+    document.querySelector("#project-template-catalog").innerHTML = `<p class="empty">Template catalog unavailable.</p>`;
+    document.querySelector("#form-error").textContent = failure.message;
+  }
 });
 function closeDialog(node) {
   const modal = node.closest("dialog");
@@ -574,8 +716,9 @@ document.querySelector("#project-form").addEventListener("submit", async event =
   const error = document.querySelector("#form-error");
   error.textContent = "";
   try {
+    if (!event.target.elements.template.value) throw new Error("Choose a project template.");
     await api("/api/v1/projects", {method:"POST", body:JSON.stringify(Object.fromEntries(form))});
-    event.target.reset(); dialog.close(); toast("Project created. Your workspace is ready.");
+    event.target.reset(); selectedProjectTemplate = ""; dialog.close(); toast("Project saved. Open its details and copy the scaffold command to generate the workspace.");
     await Promise.all([loadDashboard(), loadProjects()]); showView("projects");
   } catch (failure) { error.textContent = failure.message; }
 });
@@ -592,15 +735,41 @@ document.querySelector("#submit-form").addEventListener("submit", async event =>
   } catch (failure) { error.textContent = failure.message; }
 });
 
+let pipelinePreviewTimer = null;
+function updatePipelineDefinitionPreview() {
+  const form = document.querySelector("#pipeline-definition-form");
+  const preview = document.querySelector("#pipeline-definition-preview");
+  const previewStatus = document.querySelector("#pipeline-preview-status");
+  try {
+    const jobs = JSON.parse(form.elements.jobs.value || "[]");
+    if (!Array.isArray(jobs)) throw new Error("Jobs must be a JSON array.");
+    const analysis = window.KiongaPipelineGraph.analyze(jobs);
+    preview.innerHTML = pipelineGraph(jobs, {ariaLabel:"Pipeline definition preview"});
+    previewStatus.textContent = analysis.errors.length ? `${analysis.errors.length} issue${analysis.errors.length === 1 ? "" : "s"}` : `${jobs.length} jobs · valid DAG`;
+    previewStatus.classList.toggle("invalid", analysis.errors.length > 0);
+  } catch (failure) {
+    preview.innerHTML = `<div class="dag-empty">${escapeHTML(failure.message)}</div>`;
+    previewStatus.textContent = "Invalid JSON";
+    previewStatus.classList.add("invalid");
+  }
+}
+document.querySelector("#pipeline-definition-form").elements.jobs.addEventListener("input", () => {
+  clearTimeout(pipelinePreviewTimer);
+  pipelinePreviewTimer = setTimeout(updatePipelineDefinitionPreview, 120);
+});
+
 document.querySelector("#new-pipeline-definition").addEventListener("click", async () => {
   await Promise.all([loadProjects(), loadFunctions()]);
   document.querySelector("#pipeline-definition-error").textContent = "";
+  updatePipelineDefinitionPreview();
   document.querySelector("#pipeline-definition-dialog").showModal();
 });
 document.querySelector("#pipeline-definition-form").addEventListener("submit", async event => {
   event.preventDefault(); const form = event.target, error = document.querySelector("#pipeline-definition-error"); error.textContent = "";
   try {
     const payload = Object.fromEntries(new FormData(form)); payload.jobs = JSON.parse(payload.jobs);
+    const analysis = window.KiongaPipelineGraph.analyze(payload.jobs);
+    if (analysis.errors.length) throw new Error(analysis.errors[0]);
     await api("/api/v1/pipelines/definitions", {method:"POST", body:JSON.stringify(payload)});
     document.querySelector("#pipeline-definition-dialog").close(); toast("Pipeline flow saved."); await loadRuns();
   } catch (failure) { error.textContent = failure.message; }
@@ -630,12 +799,124 @@ document.querySelector("#deploy-function-form").addEventListener("submit", async
   event.preventDefault(); const form = event.target, error = document.querySelector("#deploy-function-error"); error.textContent = "";
   try {
     const payload = Object.fromEntries(new FormData(form)); payload.env_vars = JSON.parse(payload.env_vars || "{}");
-    payload.annotations = {"com.nexus.invocation": payload.trigger_type === "async" ? "async" : "sync"};
+    payload.annotations = {"io.kionga.invocation": payload.trigger_type === "async" ? "async" : "sync"};
     if (payload.trigger_type === "cron") Object.assign(payload.annotations, {topic:"cron-function", schedule:payload.trigger_source});
     if (payload.trigger_type === "kafka") payload.annotations.topic = payload.trigger_source;
     delete payload.trigger_type; delete payload.trigger_source;
     await api("/api/v1/functions", {method:"POST", body:JSON.stringify(payload)});
     document.querySelector("#deploy-function-dialog").close(); toast("Function deployed."); await loadFunctions();
+  } catch (failure) { error.textContent = failure.message; }
+});
+
+document.querySelector("#deploy-agent").addEventListener("click", async () => {
+  const modal = document.querySelector("#deploy-agent-dialog");
+  const form = document.querySelector("#deploy-agent-form");
+  form.reset();
+  document.querySelector("#deploy-agent-error").textContent = "";
+  document.querySelector("#agent-tool-options").innerHTML = `<p class="empty">Loading tools…</p>`;
+  if (!modal.open) modal.showModal();
+  try {
+    const [, tools] = await Promise.all([
+      loadProjects(),
+      api("/api/v1/tools").catch(() => ({items: [], unavailable: true})),
+    ]);
+    if (!projectCache.length) throw new Error("Create a project before deploying an agent.");
+    const options = tools.items || [];
+    document.querySelector("#agent-tool-options").innerHTML = options.length
+      ? options.map(tool => `<label class="check-card"><input type="checkbox" name="agent_tools" value="${escapeHTML(tool.name)}"><span><b>${escapeHTML(tool.name)}</b><small>v${escapeHTML(tool.version)} · ${escapeHTML(tool.description || "Registered platform tool")}</small></span></label>`).join("")
+      : `<p class="empty">${tools.unavailable ? "Tool catalog access is not assigned. " : "No tools are registered. "}The agent can be deployed without tools.</p>`;
+    configureAgentCapacityFields(form);
+  } catch (failure) { document.querySelector("#deploy-agent-error").textContent = failure.message; }
+});
+
+function configureAgentCapacityFields(form) {
+  const grant = effectiveGrant();
+  if (!grant) {
+    document.querySelector("#agent-capacity-hint").textContent = "Capacity is checked against the administrator's grant.";
+    return;
+  }
+  const maximum = Math.max(1, Number(grant.compute?.max_vms || 0));
+  form.elements.min_replicas.max = maximum;
+  form.elements.max_replicas.max = maximum;
+  if (Number(form.elements.min_replicas.value) > maximum) form.elements.min_replicas.value = maximum;
+  if (Number(form.elements.max_replicas.value) > maximum) form.elements.max_replicas.value = maximum;
+  const gpus = Math.max(0, Number(grant.compute?.gpus || 0));
+  form.elements.agent_gpu.max = gpus;
+  if (Number(form.elements.agent_gpu.value) > gpus) form.elements.agent_gpu.value = gpus;
+  form.elements.agent_gpu_type.value = grant.compute?.gpu_type || "nvidia.com/gpu";
+  const owned = agentCache.filter(agent => !agent.owner_subject || agent.owner_subject === me.subject);
+  const reserved = owned.reduce((sum, agent) => sum + Number(agent.autoscaling?.max_replicas || agent.replicas || 1), 0);
+  document.querySelector("#agent-capacity-hint").textContent = `Assigned: ${grant.compute?.vcpus || 0} vCPU, ${grant.compute?.memory_gb || 0} GB RAM, ${gpus} GPU, ${maximum} maximum agent replicas. ${reserved} replicas are currently reserved; admission includes 100m CPU and 128Mi RAM per trace sidecar.`;
+}
+
+function agentContractPayload(documentValue) {
+  if (documentValue?.kind !== "KiongaAgent") return documentValue;
+  const spec = documentValue.spec || {};
+  const requests = spec.resources?.requests || {};
+  const gpuEntry = Object.entries(requests).find(([key]) => !["cpu", "memory"].includes(key));
+  return {
+    name: documentValue.metadata?.name || "",
+    version: spec.version || "",
+    image: spec.image || "",
+    graph_module: spec.graphModule || "",
+    llm_backend: spec.llm?.backend || "mock",
+    autoscaling: {min_replicas: spec.replicas?.min || 1, max_replicas: spec.replicas?.max || 1},
+    resources: {cpu: requests.cpu || "500m", memory: requests.memory || "1Gi", gpu: Number(gpuEntry?.[1] || 0), gpu_type: gpuEntry?.[0] || "nvidia.com/gpu"},
+    tools: (spec.tools || []).map(tool => typeof tool === "string" ? tool : tool.name).filter(Boolean),
+  };
+}
+
+document.querySelector("#load-agent-contract").addEventListener("click", () => {
+  const form = document.querySelector("#deploy-agent-form");
+  const error = document.querySelector("#deploy-agent-error");
+  error.textContent = "";
+  try {
+    const raw = document.querySelector("#agent-contract-json").value.trim();
+    if (!raw) throw new Error("Paste the generated platform/agent.json contract first.");
+    const payload = agentContractPayload(JSON.parse(raw));
+    if (!payload || typeof payload !== "object") throw new Error("The agent contract must be a JSON object.");
+    const values = {
+      project_id: payload.project_id, name: payload.name, version: payload.version,
+      image: payload.image, graph_module: payload.graph_module, llm_backend: payload.llm_backend,
+      min_replicas: payload.autoscaling?.min_replicas ?? payload.replicas,
+      max_replicas: payload.autoscaling?.max_replicas ?? payload.replicas,
+      agent_cpu: payload.resources?.cpu, agent_memory: payload.resources?.memory,
+      agent_gpu: payload.resources?.gpu, agent_gpu_type: payload.resources?.gpu_type,
+    };
+    Object.entries(values).forEach(([name, value]) => {
+      if (value === undefined || value === null || value === "") return;
+      const field = form.elements[name];
+      if (!field) return;
+      if (field.tagName === "SELECT" && ![...field.options].some(option => option.value === String(value))) return;
+      field.value = value;
+    });
+    const tools = new Set(payload.tools || []);
+    form.querySelectorAll("[name='agent_tools']").forEach(input => { input.checked = tools.has(input.value); });
+    configureAgentCapacityFields(form);
+    toast("Agent contract loaded. Review the project and capacity before deploying.");
+  } catch (failure) { error.textContent = failure.message; }
+});
+
+document.querySelector("#deploy-agent-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.target;
+  const error = document.querySelector("#deploy-agent-error");
+  error.textContent = "";
+  try {
+    const payload = Object.fromEntries(new FormData(form));
+    payload.autoscaling = {min_replicas:Number(payload.min_replicas), max_replicas:Number(payload.max_replicas)};
+    payload.resources = {cpu:payload.agent_cpu, memory:payload.agent_memory, gpu:Number(payload.agent_gpu), gpu_type:payload.agent_gpu_type};
+    payload.replicas = payload.autoscaling.min_replicas;
+    payload.tools = [...form.querySelectorAll("[name='agent_tools']:checked")].map(input => input.value);
+    if (payload.autoscaling.max_replicas < payload.autoscaling.min_replicas) throw new Error("Maximum replicas cannot be below minimum replicas.");
+    const grant = effectiveGrant();
+    if (grant && payload.autoscaling.max_replicas > Number(grant.compute?.max_vms || 0)) throw new Error("Maximum replicas exceed your assigned workload capacity.");
+    if (grant && payload.resources.gpu * payload.autoscaling.max_replicas > Number(grant.compute?.gpus || 0)) throw new Error("GPU capacity at maximum replicas exceeds your assignment.");
+    ["agent_tools", "min_replicas", "max_replicas", "agent_cpu", "agent_memory", "agent_gpu", "agent_gpu_type"].forEach(key => delete payload[key]);
+    await api("/api/v1/agents", {method:"POST", body:JSON.stringify(payload)});
+    document.querySelector("#deploy-agent-dialog").close();
+    toast("Agent deployment accepted.");
+    await loadAgents();
   } catch (failure) { error.textContent = failure.message; }
 });
 
@@ -715,12 +996,14 @@ document.querySelector("#api-token-form").addEventListener("submit", async event
   } catch (failure) { error.textContent = failure.message; }
 });
 document.querySelector("#copy-api-token").addEventListener("click", async () => {
-  await navigator.clipboard.writeText(document.querySelector("#api-token-secret").textContent);
-  toast("API key copied.");
+  try {
+    await copyText(document.querySelector("#api-token-secret").textContent);
+    toast("API key copied.");
+  } catch (failure) { toast(`${failure.message} Select the key and copy it manually.`); }
 });
 document.querySelector("#new-blog-post").addEventListener("click", () => {
   const form = document.querySelector("#blog-editor-form"); form.reset(); form.elements.id.value = "";
-  form.elements.author.value = "Nexus Engineering"; document.querySelector("#blog-editor-title").textContent = "New post";
+  form.elements.author.value = "Kionga Engineering"; document.querySelector("#blog-editor-title").textContent = "New post";
   document.querySelector("#blog-editor-error").textContent = ""; document.querySelector("#blog-editor-dialog").showModal();
 });
 document.querySelector("#blog-editor-form").addEventListener("submit", async event => {
@@ -931,7 +1214,7 @@ async function handleDynamicClick(event) {
   const definitionDetail = event.target.closest("[data-definition-detail]");
   if (definitionDetail && !event.target.closest("button")) {
     const item = pipelineDefinitionCache.find(definition => definition.id === definitionDetail.dataset.definitionDetail);
-    if (item) showMetadata("Pipeline flow", `${item.name} v${item.version}`, {...item, created_at:dateTime(item.created_at), updated_at:dateTime(item.updated_at)});
+    if (item) showMetadata("Pipeline flow", `${item.name} v${item.version}`, {...item, created_at:dateTime(item.created_at), updated_at:dateTime(item.updated_at)}, `<h3>Dependency graph</h3>${pipelineGraph(item.jobs, {ariaLabel:`${item.name} dependency graph`})}`);
     return;
   }
   const runRow = event.target.closest("[data-run-id]");
@@ -981,11 +1264,22 @@ async function handleDynamicClick(event) {
   if (projectDetail) {
     const item = projectCache.find(project => project.id === projectDetail.dataset.projectDetail);
     if (item) {
-      const clone = item.repository ? `<code>nexus project sync ${escapeHTML(item.id)}</code>` : "";
+      const clone = item.repository ? `<code>kionga project sync ${escapeHTML(item.id)}</code>` : "";
       const repositoryAction = can("git_write") ? `<button data-project-repository="${escapeHTML(item.id)}">${item.repository ? "Update repository" : "Connect Git repository"}</button>` : "";
-      const actions = `<div class="sheet-actions">${repositoryAction}${item.repository ? `<a class="primary button-like" href="${escapeHTML(item.repository.url.startsWith("git@") ? "#" : item.repository.url.replace(/\.git$/, ""))}" ${item.repository.url.startsWith("git@") ? "aria-disabled=\"true\"" : "target=\"_blank\" rel=\"noreferrer\""}>Open repository ↗</a>` : ""}</div>${clone}`;
+      const scaffoldAction = item.scaffold_command ? `<button class="primary" data-copy-project-scaffold="${escapeHTML(item.id)}">Copy scaffold command</button>` : "";
+      const scaffoldHelp = item.scaffold_command ? `<div class="scaffold-handoff"><small>Run this command locally to generate the starter workspace.</small><code>${escapeHTML(item.scaffold_command)}</code></div>` : "";
+      const actions = `<div class="sheet-actions">${scaffoldAction}${repositoryAction}${item.repository ? `<a class="button-like" href="${escapeHTML(item.repository.url.startsWith("git@") ? "#" : item.repository.url.replace(/\.git$/, ""))}" ${item.repository.url.startsWith("git@") ? "aria-disabled=\"true\"" : "target=\"_blank\" rel=\"noreferrer\""}>Open repository ↗</a>` : ""}</div>${scaffoldHelp}${clone}`;
       showMetadata("Project", item.name, {...item, created_at:dateTime(item.created_at)}, actions);
     }
+    return;
+  }
+  const copyScaffold = event.target.closest("[data-copy-project-scaffold]");
+  if (copyScaffold) {
+    const item = projectCache.find(project => project.id === copyScaffold.dataset.copyProjectScaffold);
+    try {
+      await copyText(item?.scaffold_command);
+      toast("Scaffold command copied.");
+    } catch (failure) { toast(`${failure.message} Select the command and copy it manually.`); }
     return;
   }
   const projectRepository = event.target.closest("[data-project-repository]");

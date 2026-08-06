@@ -393,6 +393,8 @@ func serviceForPath(path string) string {
 	switch {
 	case path == "/api/v1/dashboard", path == "/api/v1/onboarding/readiness", path == "/api/v1/events":
 		return "overview"
+	case strings.HasPrefix(path, "/api/v1/project-templates"):
+		return "projects"
 	case strings.HasPrefix(path, "/api/v1/projects/") && strings.HasSuffix(path, "/repository"):
 		return "git"
 	case strings.HasPrefix(path, "/api/v1/projects"):

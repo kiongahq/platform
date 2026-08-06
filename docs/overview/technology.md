@@ -18,8 +18,8 @@ reflect the images and dependency pins in the repository.
 | **PostgreSQL + pgvector** | `pgvector/pgvector:pg16` | Control-plane state, Kafka outbox, MLflow & Langfuse backends, agent checkpoints, vector memory |
 | **Redis** | `redis:7.4.5-alpine` | Online feature store |
 | **Apache Kafka** | `apache/kafka:3.9.1` (KRaft) | Durable events, LLM traces, real-time topics |
-| **Kafka REST Proxy** | `confluentinc/cp-kafka-rest:7.8.0` | HTTP access to Kafka (keeps Python dependency-free) |
-| **MinIO** | `quay.io/minio/minio` (2025-05 release) | S3-compatible object storage |
+| **Kafka REST Proxy** | Karapace `6.1.4` | Apache-licensed, Confluent-compatible HTTP access to Kafka (keeps Python dependency-free) |
+| **MinIO** | `minio/minio` (pinned 2025-07 release) | S3-compatible object storage |
 | **MLflow** | `mlflow==3.1.1` (custom image `mlaiops-mlflow`) | Experiment tracking + model registry |
 
 ## Orchestration & serving
@@ -28,8 +28,10 @@ reflect the images and dependency pins in the repository.
 | --- | --- | --- |
 | **Prefect** | `prefect>=3.0` (`prefecthq/prefect:3-latest`) | Pipeline execution engine (the Compose-native stand-in for KFP/Argo) |
 | **scikit-learn** | `scikit-learn==1.7.0` | Demo training; **pinned identically** in trainer, serving, and workbench images to prevent training-serving skew |
+| **PyTorch DDP** | Project-template dependency, selected by workload | Multi-process and multi-GPU training in the `distributed-training` starter; `torchrun` owns process launch |
 | **mlflow models serve** | via serving-manager | Live model REST endpoints (the Compose-native stand-in for KServe/Knative) |
 | **Docker Engine API** | — | The serving-manager launches serving containers over the Docker socket |
+| **Dagre** | `@dagrejs/dagre@2.0.0` (MIT, pinned browser asset with integrity metadata) | `pipeline-graph.js` lays out accessible persisted pipeline dependency graphs; execution order remains server-side and a compact renderer remains available if the asset cannot load |
 
 ## Agentic AI
 
@@ -49,6 +51,8 @@ reflect the images and dependency pins in the repository.
 | **Caddy** | `caddy:2.8` | Automatic Let's Encrypt TLS + reverse proxy (stands in for Istio ingress) |
 | **Dex** | `dexidp/dex:v2.41.1` | OIDC identity provider for console login |
 | **OpenFaaS / faasd** | VM-level install | Open-source serverless (stands in for Knative) |
+| **code-server** | optional Compose profile | Browser IDE sharing the persistent Jupyter workspace |
+| **JupyterLab + Jupyter AI** | custom workbench image | Notebook/terminal primary interface and natural-language coding surface |
 
 ## Client & SDK
 
@@ -76,8 +80,8 @@ Maintained but **not required** for local or single-VM use:
 
 | Asset | Location | Role |
 | --- | --- | --- |
-| **CRDs** | `config/crd/` | `NexusAgent`, `NexusPipelineRun`, `NexusTool`, `NexusConnection`, `NexusModelPromotion` |
-| **Operator RBAC** | `config/rbac/` | Scoped operator permissions |
+| **CRDs** | `config/crd/` | `KiongaAgent`, `KiongaPipelineRun`, `KiongaTool`, `KiongaConnection`, `KiongaModelPromotion`, `KiongaWorkspace` |
+| **Operator RBAC** | `config/rbac/` | Scoped operator permissions, including owned agent HPAs |
 | **NetworkPolicies** | `config/network/`, `config/network-istio/` | Default-deny + platform-allow, and strict mTLS |
 | **Security** | `config/security/` | Dex and Vault auth assets |
 | **Backup** | `config/backup/` | CloudNativePG backup |
@@ -86,11 +90,11 @@ Maintained but **not required** for local or single-VM use:
 ## Technology choices
 
 The platform uses open-source, non-proprietary tools throughout. Where a
-capability is commonly associated with a Kubernetes-only tool, Nexus uses a
-Docker-friendly equivalent that runs identically on a laptop, a single VM, or a
-cluster:
+capability is commonly associated with a Kubernetes-only tool, Kionga uses a
+Docker-friendly equivalent for a laptop or single VM, with separate Kubernetes
+integration contracts for the scale path:
 
-| Capability | Nexus uses | Kubernetes-native equivalent |
+| Capability | Kionga uses | Kubernetes-native equivalent |
 | --- | --- | --- |
 | Model serving | `mlflow models serve` containers | KServe / Knative |
 | Pipelines | Prefect | KFP / Argo |

@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -28,39 +29,41 @@ type TrafficPolicy struct {
 	StableRef    string `json:"stableRef,omitempty"`
 }
 
-type NexusAgentSpec struct {
-	Version         string          `json:"version"`
-	Image           string          `json:"image"`
-	GraphModule     string          `json:"graphModule"`
-	Replicas        ReplicaSpec     `json:"replicas,omitempty"`
-	LLM             LLMSpec         `json:"llm,omitempty"`
-	Tools           []ToolReference `json:"tools,omitempty"`
-	LangfuseProject string          `json:"langfuseProject,omitempty"`
-	TrafficPolicy   TrafficPolicy   `json:"trafficPolicy,omitempty"`
+type KiongaAgentSpec struct {
+	Version         string                      `json:"version"`
+	Image           string                      `json:"image"`
+	GraphModule     string                      `json:"graphModule"`
+	Replicas        ReplicaSpec                 `json:"replicas,omitempty"`
+	LLM             LLMSpec                     `json:"llm,omitempty"`
+	Tools           []ToolReference             `json:"tools,omitempty"`
+	Resources       corev1.ResourceRequirements `json:"resources,omitempty"`
+	LangfuseProject string                      `json:"langfuseProject,omitempty"`
+	TrafficPolicy   TrafficPolicy               `json:"trafficPolicy,omitempty"`
 }
 
-type NexusAgentStatus struct {
+type KiongaAgentStatus struct {
 	Phase              string             `json:"phase,omitempty"`
+	WorkloadRef        string             `json:"workloadRef,omitempty"`
 	ReadyReplicas      int32              `json:"readyReplicas,omitempty"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
 
-type NexusAgent struct {
+type KiongaAgent struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              NexusAgentSpec   `json:"spec,omitempty"`
-	Status            NexusAgentStatus `json:"status,omitempty"`
+	Spec              KiongaAgentSpec   `json:"spec,omitempty"`
+	Status            KiongaAgentStatus `json:"status,omitempty"`
 }
 
-type NexusAgentList struct {
+type KiongaAgentList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []NexusAgent `json:"items"`
+	Items           []KiongaAgent `json:"items"`
 }
 
 func AddToScheme(scheme *runtime.Scheme) error {
-	scheme.AddKnownTypes(GroupVersion, &NexusAgent{}, &NexusAgentList{}, &NexusPipelineRun{}, &NexusPipelineRunList{}, &NexusModelPromotion{}, &NexusModelPromotionList{}, &NexusWorkspace{}, &NexusWorkspaceList{})
+	scheme.AddKnownTypes(GroupVersion, &KiongaAgent{}, &KiongaAgentList{}, &KiongaPipelineRun{}, &KiongaPipelineRunList{}, &KiongaModelPromotion{}, &KiongaModelPromotionList{}, &KiongaWorkspace{}, &KiongaWorkspaceList{})
 	metav1.AddToGroupVersion(scheme, GroupVersion)
 	return nil
 }
@@ -73,7 +76,7 @@ type WorkspaceComputeSpec struct {
 	MaxVMs   int32  `json:"maxVMs,omitempty"`
 }
 
-type NexusWorkspaceSpec struct {
+type KiongaWorkspaceSpec struct {
 	Subject   string               `json:"subject"`
 	Services  []string             `json:"services,omitempty"`
 	Compute   WorkspaceComputeSpec `json:"compute"`
@@ -81,7 +84,7 @@ type NexusWorkspaceSpec struct {
 	Disabled  bool                 `json:"disabled,omitempty"`
 }
 
-type NexusWorkspaceStatus struct {
+type KiongaWorkspaceStatus struct {
 	Phase              string             `json:"phase,omitempty"`
 	ReadyReplicas      int32              `json:"readyReplicas,omitempty"`
 	WorkbenchURL       string             `json:"workbenchURL,omitempty"`
@@ -90,26 +93,26 @@ type NexusWorkspaceStatus struct {
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
 
-type NexusWorkspace struct {
+type KiongaWorkspace struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              NexusWorkspaceSpec   `json:"spec,omitempty"`
-	Status            NexusWorkspaceStatus `json:"status,omitempty"`
+	Spec              KiongaWorkspaceSpec   `json:"spec,omitempty"`
+	Status            KiongaWorkspaceStatus `json:"status,omitempty"`
 }
 
-type NexusWorkspaceList struct {
+type KiongaWorkspaceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []NexusWorkspace `json:"items"`
+	Items           []KiongaWorkspace `json:"items"`
 }
 
-type NexusPipelineRunSpec struct {
+type KiongaPipelineRunSpec struct {
 	PipelineRef        string            `json:"pipelineRef"`
 	Parameters         map[string]string `json:"parameters,omitempty"`
 	ServiceAccountName string            `json:"serviceAccountName,omitempty"`
 }
 
-type NexusPipelineRunStatus struct {
+type KiongaPipelineRunStatus struct {
 	Phase       string       `json:"phase,omitempty"`
 	WorkflowRef string       `json:"workflowRef,omitempty"`
 	StartedAt   *metav1.Time `json:"startedAt,omitempty"`
@@ -117,17 +120,17 @@ type NexusPipelineRunStatus struct {
 	Message     string       `json:"message,omitempty"`
 }
 
-type NexusPipelineRun struct {
+type KiongaPipelineRun struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              NexusPipelineRunSpec   `json:"spec,omitempty"`
-	Status            NexusPipelineRunStatus `json:"status,omitempty"`
+	Spec              KiongaPipelineRunSpec   `json:"spec,omitempty"`
+	Status            KiongaPipelineRunStatus `json:"status,omitempty"`
 }
 
-type NexusPipelineRunList struct {
+type KiongaPipelineRunList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []NexusPipelineRun `json:"items"`
+	Items           []KiongaPipelineRun `json:"items"`
 }
 
 type PromotionGate struct {
@@ -136,62 +139,63 @@ type PromotionGate struct {
 	Value    float64 `json:"value"`
 }
 
-type NexusModelPromotionSpec struct {
+type KiongaModelPromotionSpec struct {
 	ModelName   string          `json:"modelName"`
 	Version     string          `json:"version"`
 	TargetStage string          `json:"targetStage"`
 	Gates       []PromotionGate `json:"gates,omitempty"`
 }
 
-type NexusModelPromotionStatus struct {
+type KiongaModelPromotionStatus struct {
 	Phase               string `json:"phase,omitempty"`
 	Message             string `json:"message,omitempty"`
 	InferenceServiceRef string `json:"inferenceServiceRef,omitempty"`
 }
 
-type NexusModelPromotion struct {
+type KiongaModelPromotion struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              NexusModelPromotionSpec   `json:"spec,omitempty"`
-	Status            NexusModelPromotionStatus `json:"status,omitempty"`
+	Spec              KiongaModelPromotionSpec   `json:"spec,omitempty"`
+	Status            KiongaModelPromotionStatus `json:"status,omitempty"`
 }
 
-type NexusModelPromotionList struct {
+type KiongaModelPromotionList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []NexusModelPromotion `json:"items"`
+	Items           []KiongaModelPromotion `json:"items"`
 }
 
-func (in *NexusAgent) DeepCopyObject() runtime.Object {
+func (in *KiongaAgent) DeepCopyObject() runtime.Object {
 	if in == nil {
 		return nil
 	}
-	out := new(NexusAgent)
+	out := new(KiongaAgent)
 	*out = *in
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 	out.Spec.Tools = append([]ToolReference(nil), in.Spec.Tools...)
+	out.Spec.Resources = *in.Spec.Resources.DeepCopy()
 	out.Status.Conditions = append([]metav1.Condition(nil), in.Status.Conditions...)
 	return out
 }
 
-func (in *NexusAgentList) DeepCopyObject() runtime.Object {
+func (in *KiongaAgentList) DeepCopyObject() runtime.Object {
 	if in == nil {
 		return nil
 	}
-	out := new(NexusAgentList)
+	out := new(KiongaAgentList)
 	*out = *in
-	out.Items = make([]NexusAgent, len(in.Items))
+	out.Items = make([]KiongaAgent, len(in.Items))
 	for i := range in.Items {
-		out.Items[i] = *(in.Items[i].DeepCopyObject().(*NexusAgent))
+		out.Items[i] = *(in.Items[i].DeepCopyObject().(*KiongaAgent))
 	}
 	return out
 }
 
-func (in *NexusPipelineRun) DeepCopyObject() runtime.Object {
+func (in *KiongaPipelineRun) DeepCopyObject() runtime.Object {
 	if in == nil {
 		return nil
 	}
-	out := new(NexusPipelineRun)
+	out := new(KiongaPipelineRun)
 	*out = *in
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 	out.Spec.Parameters = make(map[string]string, len(in.Spec.Parameters))
@@ -208,46 +212,46 @@ func (in *NexusPipelineRun) DeepCopyObject() runtime.Object {
 	}
 	return out
 }
-func (in *NexusPipelineRunList) DeepCopyObject() runtime.Object {
+func (in *KiongaPipelineRunList) DeepCopyObject() runtime.Object {
 	if in == nil {
 		return nil
 	}
-	out := new(NexusPipelineRunList)
+	out := new(KiongaPipelineRunList)
 	*out = *in
-	out.Items = make([]NexusPipelineRun, len(in.Items))
+	out.Items = make([]KiongaPipelineRun, len(in.Items))
 	for i := range in.Items {
-		out.Items[i] = *(in.Items[i].DeepCopyObject().(*NexusPipelineRun))
+		out.Items[i] = *(in.Items[i].DeepCopyObject().(*KiongaPipelineRun))
 	}
 	return out
 }
-func (in *NexusModelPromotion) DeepCopyObject() runtime.Object {
+func (in *KiongaModelPromotion) DeepCopyObject() runtime.Object {
 	if in == nil {
 		return nil
 	}
-	out := new(NexusModelPromotion)
+	out := new(KiongaModelPromotion)
 	*out = *in
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 	out.Spec.Gates = append([]PromotionGate(nil), in.Spec.Gates...)
 	return out
 }
-func (in *NexusModelPromotionList) DeepCopyObject() runtime.Object {
+func (in *KiongaModelPromotionList) DeepCopyObject() runtime.Object {
 	if in == nil {
 		return nil
 	}
-	out := new(NexusModelPromotionList)
+	out := new(KiongaModelPromotionList)
 	*out = *in
-	out.Items = make([]NexusModelPromotion, len(in.Items))
+	out.Items = make([]KiongaModelPromotion, len(in.Items))
 	for i := range in.Items {
-		out.Items[i] = *(in.Items[i].DeepCopyObject().(*NexusModelPromotion))
+		out.Items[i] = *(in.Items[i].DeepCopyObject().(*KiongaModelPromotion))
 	}
 	return out
 }
 
-func (in *NexusWorkspace) DeepCopyObject() runtime.Object {
+func (in *KiongaWorkspace) DeepCopyObject() runtime.Object {
 	if in == nil {
 		return nil
 	}
-	out := new(NexusWorkspace)
+	out := new(KiongaWorkspace)
 	*out = *in
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 	out.Spec.Services = append([]string(nil), in.Spec.Services...)
@@ -255,15 +259,15 @@ func (in *NexusWorkspace) DeepCopyObject() runtime.Object {
 	return out
 }
 
-func (in *NexusWorkspaceList) DeepCopyObject() runtime.Object {
+func (in *KiongaWorkspaceList) DeepCopyObject() runtime.Object {
 	if in == nil {
 		return nil
 	}
-	out := new(NexusWorkspaceList)
+	out := new(KiongaWorkspaceList)
 	*out = *in
-	out.Items = make([]NexusWorkspace, len(in.Items))
+	out.Items = make([]KiongaWorkspace, len(in.Items))
 	for i := range in.Items {
-		out.Items[i] = *(in.Items[i].DeepCopyObject().(*NexusWorkspace))
+		out.Items[i] = *(in.Items[i].DeepCopyObject().(*KiongaWorkspace))
 	}
 	return out
 }

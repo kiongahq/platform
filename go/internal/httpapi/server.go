@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,6 +57,8 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	mux.HandleFunc("DELETE /api/v1/admin/blogs/{id}", server.deleteBlogPost)
 	mux.HandleFunc("GET /api/v1/dashboard", server.dashboard)
 	mux.HandleFunc("GET /api/v1/onboarding/readiness", server.readiness)
+	mux.HandleFunc("GET /api/v1/project-templates", server.projectTemplates)
+	mux.HandleFunc("GET /api/v1/project-templates/{id}", server.projectTemplate)
 	mux.HandleFunc("GET /api/v1/projects", server.projects)
 	mux.HandleFunc("POST /api/v1/projects", server.createProject)
 	mux.HandleFunc("GET /api/v1/projects/{id}", server.project)
@@ -412,6 +415,20 @@ func (s *Server) pipelineDefinitions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, api.Page[api.PipelineDefinition]{Items: items, Total: len(items)})
 }
 
+func (s *Server) projectTemplates(w http.ResponseWriter, _ *http.Request) {
+	items := api.ProjectTemplates()
+	writeJSON(w, http.StatusOK, api.Page[api.ProjectTemplate]{Items: items, Total: len(items)})
+}
+
+func (s *Server) projectTemplate(w http.ResponseWriter, r *http.Request) {
+	item, err := api.ResolveProjectTemplateVersion(r.PathValue("id"), r.URL.Query().Get("version"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "project template not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
 func (s *Server) pipelineDefinition(w http.ResponseWriter, r *http.Request) {
 	item, err := s.store.PipelineDefinition(r.PathValue("id"))
 	if err == nil && !projectAllowed(s.store, principal(r), item.ProjectID) {
@@ -426,8 +443,18 @@ func (s *Server) upsertPipelineDefinition(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	var err error
+	req, err = store.ValidatePipelineDefinition(req)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
+		return
+	}
 	if !projectAllowed(s.store, principal(r), req.ProjectID) {
 		writeError(w, http.StatusForbidden, "access_denied", "project is not assigned to this user")
+		return
+	}
+	if err := enforcePipelineResources(s.store, principal(r), req.Jobs); err != nil {
+		writeError(w, http.StatusForbidden, "resource_not_provisioned", err.Error())
 		return
 	}
 	registered := map[string]bool{}
@@ -460,13 +487,25 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	if _, err := api.NormalizeProjectRequest(&req); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
+		return
+	}
 	if req.RepositoryURL != "" && !auth.Allowed(principal(r), http.MethodPut, "/api/v1/projects/new/repository") {
 		writeError(w, http.StatusForbidden, "access_denied", "Git service access is required to connect a repository")
+		return
+	}
+	if err := enforceProjectTemplateAccess(s.store, principal(r), &req); err != nil {
+		writeError(w, http.StatusForbidden, "resource_not_provisioned", err.Error())
 		return
 	}
 	req.OwnerSubject = principal(r).Subject
 	project, err := s.store.CreateProject(req, actor(r))
 	if err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			writeError(w, http.StatusConflict, "conflict", err.Error())
+			return
+		}
 		writeError(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
 		return
 	}
@@ -862,6 +901,10 @@ func (s *Server) deployFunction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	if err := enforceFunctionResources(s.store, principal(r), req); err != nil {
+		writeError(w, http.StatusForbidden, "resource_not_provisioned", err.Error())
+		return
+	}
 	if existing := functionAllowed(s.store, principal(r), req.Name); !existing {
 		if err := enforceFunctionQuota(s.store, principal(r)); err != nil {
 			writeError(w, http.StatusForbidden, "quota_exceeded", err.Error())
@@ -1019,7 +1062,11 @@ func (s *Server) deployModel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) requestServing(r *http.Request, managerURL string, model api.Model) (string, error) {
-	body, _ := json.Marshal(map[string]string{"name": model.Name, "artifact_uri": model.ArtifactURI})
+	body, _ := json.Marshal(struct {
+		Name         string `json:"name"`
+		ArtifactURI  string `json:"artifact_uri"`
+		ServingImage string `json:"serving_image,omitempty"`
+	}{Name: model.Name, ArtifactURI: model.ArtifactURI, ServingImage: model.ServingImage})
 	request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, strings.TrimRight(managerURL, "/")+"/deployments", bytes.NewReader(body))
 	if err != nil {
 		return "", err
@@ -1120,6 +1167,7 @@ func (s *Server) predictModel(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
 	items := filterAgents(s.store.Agents(), allowedProjectIDs(s.store, principal(r)))
+	enrichAgentRuntimeReadiness(r.Context(), items)
 	writeJSON(w, http.StatusOK, api.Page[api.Agent]{Items: items, Total: len(items)})
 }
 
@@ -1131,6 +1179,25 @@ func (s *Server) deployAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if !projectAllowed(s.store, principal(r), req.ProjectID) {
 		writeError(w, http.StatusForbidden, "access_denied", "project is not assigned to this user")
+		return
+	}
+	if err := store.NormalizeAgentRequest(&req); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
+		return
+	}
+	availableTools := make(map[string]bool, len(s.store.Tools()))
+	for _, tool := range s.store.Tools() {
+		availableTools[tool.Name] = true
+	}
+	for _, tool := range req.Tools {
+		if !availableTools[tool] {
+			writeError(w, http.StatusUnprocessableEntity, "validation_error", "agent references an unregistered tool: "+tool)
+			return
+		}
+	}
+	req.OwnerSubject = principal(r).Subject
+	if err := enforceAgentResources(s.store, principal(r), req); err != nil {
+		writeError(w, http.StatusForbidden, "resource_not_provisioned", err.Error())
 		return
 	}
 	item, err := s.store.DeployAgent(req, actor(r))
@@ -1151,9 +1218,81 @@ func (s *Server) agentTraffic(w http.ResponseWriter, r *http.Request) {
 	writeMutation(w, item, err, http.StatusOK)
 }
 
-// invokeAgent proxies a test-console or SDK turn to the agent runtime, which
-// executes the LangGraph graph and reports the session back through
-// POST /api/v1/traces. The runtime address comes from AGENT_RUNTIME_URL.
+// agentRuntimeEndpoint keeps Compose's shared runtime override while routing
+// Kubernetes traffic to the immutable ID-derived Service reconciled for the
+// selected agent.
+func agentRuntimeEndpoint(agentID string) string {
+	if override := strings.TrimSpace(os.Getenv("AGENT_RUNTIME_URL")); override != "" {
+		return strings.TrimRight(override, "/")
+	}
+	namespace := strings.TrimSpace(os.Getenv("MLAIOPS_AGENT_NAMESPACE"))
+	if namespace == "" {
+		namespace = "default"
+	}
+	return fmt.Sprintf("http://%s.%s.svc", api.AgentDNSName(agentID), namespace)
+}
+
+func setAgentRuntimeHeaders(request *http.Request, agent *api.Agent) {
+	request.Header.Set("X-MLAIOps-Agent-ID", agent.ID)
+	request.Header.Set("X-MLAIOps-Agent-Name", agent.Name)
+}
+
+func agentRuntimeReady(ctx context.Context, runtime string, agent *api.Agent, timeout time.Duration) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, runtime+"/healthz", nil)
+	if err != nil {
+		return err
+	}
+	setAgentRuntimeHeaders(request, agent)
+	client := &http.Client{Timeout: timeout}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = response.Body.Close() }()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("health probe returned %d", response.StatusCode)
+	}
+	return nil
+}
+
+// enrichAgentRuntimeReadiness turns persisted deployment intent into a live
+// list view. A small worker pool prevents large tenants from spawning an
+// unbounded number of sockets, while a request-wide deadline caps list
+// latency even when several runtimes are unavailable.
+func enrichAgentRuntimeReadiness(parent context.Context, agents []api.Agent) {
+	if len(agents) == 0 {
+		return
+	}
+	for index := range agents {
+		agents[index].EndpointURL = agentRuntimeEndpoint(agents[index].ID)
+		agents[index].Status = "pending"
+	}
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+	defer cancel()
+	workerCount := min(len(agents), 8)
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				if agentRuntimeReady(ctx, agents[index].EndpointURL, &agents[index], 1500*time.Millisecond) == nil {
+					agents[index].Status = "ready"
+				}
+			}
+		}()
+	}
+	for index := range agents {
+		jobs <- index
+	}
+	close(jobs)
+	workers.Wait()
+}
+
+// invokeAgent proxies a test-console or SDK turn to the selected runtime,
+// after a bounded health probe prevents traffic from reaching unavailable pods.
 func (s *Server) invokeAgent(w http.ResponseWriter, r *http.Request) {
 	if !agentAllowed(s.store, principal(r), r.PathValue("id")) {
 		writeError(w, http.StatusNotFound, "not_found", "agent not found")
@@ -1181,19 +1320,19 @@ func (s *Server) invokeAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "validation_error", "message is required")
 		return
 	}
-	runtime := os.Getenv("AGENT_RUNTIME_URL")
-	if runtime == "" {
-		runtime = "http://localhost:9000"
+	runtime := agentRuntimeEndpoint(agent.ID)
+	if err := agentRuntimeReady(r.Context(), runtime, agent, 3*time.Second); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "agent_not_ready", "agent runtime is not ready")
+		return
 	}
 	body, _ := json.Marshal(req)
-	request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, strings.TrimRight(runtime, "/")+"/invoke", bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, runtime+"/invoke", bytes.NewReader(body))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "runtime_unreachable", err.Error())
 		return
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-MLAIOps-Agent-ID", agent.ID)
-	request.Header.Set("X-MLAIOps-Agent-Name", agent.Name)
+	setAgentRuntimeHeaders(request, agent)
 	client := &http.Client{Timeout: 120 * time.Second}
 	response, err := client.Do(request)
 	if err != nil {

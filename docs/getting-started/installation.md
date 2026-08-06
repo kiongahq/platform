@@ -1,6 +1,6 @@
 # Installation
 
-Nexus runs as one Docker Compose stack. The fastest path to a working platform is
+Kionga runs as one Docker Compose stack. The fastest path to a working platform is
 `make local-up`.
 
 ## Prerequisites
@@ -8,9 +8,10 @@ Nexus runs as one Docker Compose stack. The fastest path to a working platform i
 | Requirement | Why | Notes |
 | --- | --- | --- |
 | **Docker Engine + Compose v2** | Runs the whole stack | Docker Desktop on macOS/Windows, Docker Engine on Linux |
-| **~6–8 GB RAM free for Docker** | ~17 services | Raise Docker Desktop's memory if services get OOM-killed |
+| **~8 GB RAM free for Docker** | The full multi-service stack | Raise Docker Desktop's memory if services get OOM-killed; 12 GB is more comfortable |
+| **25–35 GB free Docker storage** | First build downloads and compiles several large images | Cached rebuilds need less; check with `docker system df` |
 | **Make** | Convenience targets | Optional — you can call `docker compose` directly |
-| **Go 1.23+** | Only for building Go binaries outside Docker or running Go tests | Not needed just to run the stack |
+| **Go 1.25+** | Only for building Go binaries outside Docker or running Go tests | Not needed just to run the stack |
 | **Python 3.11+** | Only for the SDK, tests, or docs outside Docker | Not needed just to run the stack |
 | **Node.js** | Only for `make verify` (JS syntax check) | Not needed to run the stack |
 
@@ -29,17 +30,42 @@ make local-up
 
 `make local-up`:
 
-1. Builds and starts every service defined in `deploy/compose.yaml`.
-2. Creates the Kafka topics (`scripts/local-topics.sh`).
+1. Verifies that Docker and Compose v2 are available and the daemon is running.
+2. Downloads missing upstream images with conservative concurrency and retries
+   transient registry/CDN failures such as `EOF`.
+3. Builds and starts every service defined in `deploy/compose.yaml`.
+4. Waits for the control-plane health endpoint.
+5. Creates the Kafka topics (`scripts/local-topics.sh`).
+
+The shorter `make local` alias does the same thing. The bootstrap is idempotent: if
+a download fails even after the bounded retries, run the command again and Docker
+resumes from layers already cached. Tune unusual environments with
+`COMPOSE_PARALLEL_LIMIT`, `KIONGA_START_RETRIES`, and
+`KIONGA_START_TIMEOUT_SECONDS` without editing the Compose file.
+
+Routine `make local-up` runs reuse cached images and build only images that are
+missing. After changing application source, a Dockerfile, or an image dependency,
+use `make local-rebuild`; it performs the same resilient bootstrap with explicit
+image rebuilding.
 
 The first run builds several images (Go services, MLflow, agent runtime, pipeline
-runner, Jupyter workbench), so it takes a few minutes. Subsequent runs are fast.
+runner, and Jupyter workbench). Allow roughly 10–25 minutes depending on bandwidth,
+CPU architecture, and cache state. Subsequent runs are much faster.
 
 When it finishes, open the landing page:
 
 <http://localhost:8080>
 
 The operational console is at <http://localhost:8080/console.html>.
+Sign in with `admin` / `mlaiops-local`.
+
+If port 8080 is already used, choose another host port without changing the
+container network:
+
+```bash
+GATEWAY_PORT=18080 make local-up
+export GATEWAY=http://localhost:18080
+```
 
 ### Verify it works
 
@@ -47,15 +73,12 @@ The operational console is at <http://localhost:8080/console.html>.
 ./scripts/demo-smoke.sh
 ```
 
-This exercises the whole platform end to end — creates a project, runs a real
+This exercises the configured platform end to end — creates a project, runs a real
 pipeline, deploys a model and gets a live prediction, invokes an agent, reads
-features from Redis, browses storage, and scores fraud events. Expect:
-
-```
-RESULT: 18 passed, 0 failed, 1 skipped
-```
-
-The one skip is OpenFaaS (a VM-level install, by design).
+features from Redis, browses storage, and scores fraud events. Use
+`GATEWAY=http://localhost:18080 ./scripts/demo-smoke.sh` when the port was
+overridden. The pass/skip count is dynamic; the command must finish with zero
+failures. OpenFaaS is skipped until an external gateway is configured.
 
 ### Service URLs
 
@@ -77,6 +100,9 @@ See [Configuration reference](configuration.md) for every port and setting, and
 ```bash
 make local-down     # stop the stack (volumes persist)
 make local-up       # bring it back
+make local-status   # show every service, including completed one-shot jobs
+make local-logs     # show the latest logs from the stack
+make local-rebuild  # rebuild changed local source images, then start
 ```
 
 Durable state lives in named volumes (`postgres-data`, `minio-data`, `redis-data`,
@@ -119,7 +145,7 @@ docker build --build-arg SERVICE=gateway -t mlaiops/gateway .
 ## Running the test suites
 
 ```bash
-make verify           # go test + vet + gofmt, ruff, pytest, build, JS check, banned-tech scan
+make verify           # Go/Python tests + vet/ruff, builds, JS check, banned-tech scan
 make test-integration # Postgres outbox + pgvector round-trip
 make test-e2e         # Kind-based end-to-end (optional scale path)
 make test-load        # k6 load test against the gateway

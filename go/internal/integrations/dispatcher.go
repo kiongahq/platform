@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	platformapi "github.com/ml-ai-ops/platform/pkg/api"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -49,30 +50,46 @@ func (d *Dispatcher) Dispatch(ctx context.Context, record KafkaRecord) error {
 	var spec map[string]any
 	switch command.Kind {
 	case "pipeline_run":
-		plural, kind = "nexuspipelineruns", "NexusPipelineRun"
+		plural, kind = "kiongapipelineruns", "KiongaPipelineRun"
 		spec = map[string]any{"pipelineRef": resource["name"], "parameters": map[string]any{"project_id": resource["project_id"]}}
 	case "model":
 		if command.Action != "model.promoted" {
 			return nil
 		}
-		plural, kind = "nexusmodelpromotions", "NexusModelPromotion"
+		plural, kind = "kiongamodelpromotions", "KiongaModelPromotion"
 		spec = map[string]any{"modelName": resource["name"], "version": resource["version"], "targetStage": resource["stage"]}
 	case "agent":
-		plural, kind = "nexusagents", "NexusAgent"
+		plural, kind = "kiongaagents", "KiongaAgent"
+		name = platformapi.AgentDNSName(command.ID)
+		autoscaling, _ := resource["autoscaling"].(map[string]any)
+		minimum, maximum := integer(autoscaling["min_replicas"]), integer(autoscaling["max_replicas"])
+		if minimum < 1 {
+			minimum = integer(resource["replicas"])
+		}
+		if maximum < minimum {
+			maximum = minimum
+		}
 		spec = map[string]any{
 			"version": resource["version"], "image": resource["image"], "graphModule": resource["graph_module"],
-			"replicas": map[string]any{"min": resource["replicas"], "max": resource["replicas"]},
+			"replicas": map[string]any{"min": minimum, "max": maximum},
 			"llm":      map[string]any{"backend": resource["llm_backend"]}, "tools": toolRefs(resource["tools"]),
 			"trafficPolicy": map[string]any{"canaryWeight": resource["canary_weight"]},
 		}
+		resources, err := agentResourceRequirements(resource["resources"])
+		if err != nil {
+			return fmt.Errorf("invalid agent resources: %w", err)
+		}
+		if resources != nil {
+			spec["resources"] = resources
+		}
 	case "tool":
-		plural, kind = "nexustools", "NexusTool"
+		plural, kind = "kiongatools", "KiongaTool"
 		spec = map[string]any{"version": resource["version"], "description": resource["description"], "tags": resource["tags"], "inputSchema": resource["input_schema"]}
 	case "connection":
-		plural, kind = "nexusconnections", "NexusConnection"
+		plural, kind = "kiongaconnections", "KiongaConnection"
 		spec = map[string]any{"type": resource["type"], "endpoint": resource["endpoint"], "secretRef": map[string]any{"name": resource["secret_ref"]}}
 	case "user_access":
-		plural, kind = "nexusworkspaces", "NexusWorkspace"
+		plural, kind = "kiongaworkspaces", "KiongaWorkspace"
 		name = "workspace-" + command.ID
 		compute, _ := resource["compute"].(map[string]any)
 		storage, _ := resource["storage"].(map[string]any)
@@ -118,6 +135,40 @@ func toolRefs(value any) []any {
 		result = append(result, map[string]any{"name": item, "version": "latest"})
 	}
 	return result
+}
+
+func agentResourceRequirements(value any) (map[string]any, error) {
+	resources, _ := value.(map[string]any)
+	quantities := map[string]any{}
+	if cpu, _ := resources["cpu"].(string); cpu != "" {
+		quantities["cpu"] = cpu
+	}
+	if memory, _ := resources["memory"].(string); memory != "" {
+		quantities["memory"] = memory
+	}
+	if gpu := integer(resources["gpu"]); gpu > 0 {
+		gpuType, _ := resources["gpu_type"].(string)
+		gpuType = strings.TrimSpace(gpuType)
+		if gpuType == "" {
+			gpuType = "nvidia.com/gpu"
+		}
+		// Lifecycle events are an external trust boundary. Even if an event
+		// bypassed API/store normalization, a forged GPU key must never replace
+		// native CPU or memory quantities in the Kubernetes resource map.
+		switch gpuType {
+		case "cpu", "memory", "ephemeral-storage", "storage":
+			return nil, fmt.Errorf("gpu_type %q collides with a native Kubernetes resource", gpuType)
+		}
+		quantities[gpuType] = gpu
+	}
+	if len(quantities) == 0 {
+		return nil, nil
+	}
+	requests, limits := map[string]any{}, map[string]any{}
+	for name, quantity := range quantities {
+		requests[name], limits[name] = quantity, quantity
+	}
+	return map[string]any{"requests": requests, "limits": limits}, nil
 }
 
 func integer(value any) int64 {

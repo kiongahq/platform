@@ -87,6 +87,46 @@ func TestUpdateRunStepValidation(t *testing.T) {
 	}
 }
 
+func TestPipelineRunResultsDoNotAliasStoredExecutionState(t *testing.T) {
+	s := New()
+	project, err := s.CreateProject(api.CreateProjectRequest{Name: "run ownership project"}, "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := s.SubmitPipeline(api.SubmitPipelineRequest{
+		ProjectID:  project.ID,
+		Parameters: map[string]any{"nested": map[string]any{"value": "original"}},
+	}, "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Steps[0].Status = "caller-mutated"
+	run.Steps[0].DependsOn = append(run.Steps[0].DependsOn, "caller-dependency")
+	run.Parameters["nested"].(map[string]any)["value"] = "caller-mutated"
+	run.Logs[0].Message = "caller-mutated"
+
+	stored, err := s.Run(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Steps[0].Status == "caller-mutated" ||
+		len(stored.Steps[0].DependsOn) != 0 ||
+		stored.Parameters["nested"].(map[string]any)["value"] != "original" ||
+		stored.Logs[0].Message == "caller-mutated" {
+		t.Fatalf("returned run aliases stored state: %#v", stored)
+	}
+
+	listed := s.Runs()
+	listed[0].Steps[0].Status = "list-mutated"
+	reloaded, err := s.Run(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Steps[0].Status == "list-mutated" {
+		t.Fatal("Runs returned a step slice backed by repository state")
+	}
+}
+
 func TestSessionsScopedPerAgent(t *testing.T) {
 	s := New()
 	// Same session id reported by two different agents must produce two

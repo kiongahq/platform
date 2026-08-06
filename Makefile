@@ -1,4 +1,4 @@
-.PHONY: install run test test-go test-python test-integration test-load test-stress test-security test-e2e lint format build verify local-up local-down ide-up ide-down kind-up docs-install docs-serve docs-build
+.PHONY: install run test test-go test-python test-integration test-load test-stress test-security test-e2e lint format build verify local local-up local-rebuild local-down local-status local-logs ide-up ide-down kind-up docs-install docs-serve docs-build
 
 install:
 	python -m pip install -r requirements.txt
@@ -50,12 +50,22 @@ verify: test lint build
 	python -m compileall -q python/mlaiops_sdk
 	! rg -i '\b(mlrun|nuclio|v3io|iguazio)\b' go config
 
+local: local-up
+
 local-up:
-	docker compose -f deploy/compose.yaml up -d --build
-	bash scripts/local-topics.sh
+	bash scripts/local-up.sh
+
+local-rebuild:
+	KIONGA_REBUILD=1 bash scripts/local-up.sh
 
 local-down:
 	docker compose -f deploy/compose.yaml down
+
+local-status:
+	docker compose -f deploy/compose.yaml ps --all
+
+local-logs:
+	docker compose -f deploy/compose.yaml logs --tail 100
 
 ide-up:
 	docker compose -f deploy/compose.yaml --profile ide up -d --build ide

@@ -13,9 +13,9 @@ RUN apt-get update \
  && npm install -g @openai/codex@0.142.5 @anthropic-ai/claude-code@2.1.200 \
  && rm -rf /var/lib/apt/lists/* /root/.npm
 
-COPY deploy/workspace/nexus.py /usr/local/bin/nexus
+COPY deploy/workspace/kionga.py /usr/local/bin/kionga
 COPY deploy/ide/entrypoint.sh /usr/local/bin/ide-workspace
-RUN chmod 0755 /usr/local/bin/nexus /usr/local/bin/ide-workspace \
+RUN chmod 0755 /usr/local/bin/kionga /usr/local/bin/ide-workspace \
  && mkdir -p /workspace \
  && chown -R coder:coder /workspace
 

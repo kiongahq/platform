@@ -47,8 +47,8 @@ func (s HTTPSink) Emit(event Event) {
 	}
 }
 
-// KafkaRESTSink publishes events to a Kafka REST Proxy topic endpoint using
-// the Confluent envelope, e.g. http://kafka-rest:8082/topics/mlaiops.llm.traces.
+// KafkaRESTSink publishes events to the Karapace Kafka REST endpoint using its
+// Confluent-compatible envelope, e.g. http://kafka-rest:8082/topics/mlaiops.llm.traces.
 type KafkaRESTSink struct {
 	URL    string
 	Client *http.Client

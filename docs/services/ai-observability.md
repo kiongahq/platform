@@ -5,9 +5,10 @@ observability UI, and the real-time stream processor.
 
 ## agent-runtime
 
-Serves **any** platform-registered LangGraph agent over HTTP. It is a shared
-runtime: the gateway passes the agent's identity per request, so one runtime serves
-every deployed agent.
+Serves platform-registered LangGraph agents over HTTP. Compose uses one shared
+runtime and the gateway passes identity per request. Kubernetes instead runs the
+agent's immutable image in a dedicated Deployment behind a collision-safe Service
+whose name is derived from the immutable control-plane agent ID.
 
 | | |
 | --- | --- |
@@ -29,6 +30,28 @@ every deployed agent.
 Endpoints: `POST /invoke` (one turn) and `POST /stream` (SSE streaming). Token
 counts come from LangChain usage metadata — **measured, never estimated**. Cost is
 computed from `MLAIOPS_COST_PER_1K_INPUT/OUTPUT`.
+
+New agent applications should start from the versioned `production-agent` project
+template. Its generated source is runnable before customization and separates the
+graph/tool loop, memory client boundary, checkpointer selection, Langfuse callback,
+deterministic graph tests/golden evaluation runner, HTTP runtime, and container
+packaging. The project is then deployed by immutable image and
+`module:function` graph entry point; provider secrets are injected at runtime.
+The deploy contract also carries per-replica CPU/memory/GPU requirements and
+minimum/maximum replicas. For normal users, the gateway aggregates every owned
+agent at maximum replicas, including `100m` CPU and `128Mi` memory per trace
+sidecar, before admitting desired state. GPU types must be valid domain-qualified,
+non-reserved Kubernetes extended resources and match typed grants.
+
+The operator creates an owned 70%-CPU HorizontalPodAutoscaler only when the maximum
+exceeds the minimum and leaves the replica field to that HPA after creation. A
+working resource-metrics API is therefore required (the Kind bootstrap installs
+metrics-server). Readiness reflects available pods and both runtime containers have
+health probes. The gateway selects the ID-derived Service in
+`MLAIOPS_AGENT_NAMESPACE`, enriches list responses with bounded live readiness, and
+returns `503 agent_not_ready` before invocation if `/healthz` fails. Compose sets
+`AGENT_RUNTIME_URL` to retain the shared runtime and does not emulate Kubernetes
+autoscaling.
 
 ## trace-proxy
 
@@ -102,3 +125,9 @@ docker compose -f deploy/compose.yaml exec jupyter \
 The development workbench — see the dedicated [workbench guide](../guides/workbench.md).
 JupyterLab (with a browser terminal) preloaded with the SDK and every connection,
 at <http://localhost:8888> (token `mlaiops-local`).
+
+Configured MinIO buckets are mounted with S3FS under
+`/workspace/object-store/<bucket>`. The optional code-server IDE (`make ide-up`,
+<http://localhost:13337>) mounts the same `jupyter-data` volume but does not receive
+FUSE privileges. Kubernetes replaces the shared development profile with isolated
+per-user `KiongaWorkspace` workloads.

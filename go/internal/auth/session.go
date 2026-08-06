@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	SessionCookieName = "nexus_session"
-	stateCookieName   = "nexus_oauth_state"
-	returnCookieName  = "nexus_return_to"
+	SessionCookieName = "kionga_session"
+	stateCookieName   = "kionga_oauth_state"
+	returnCookieName  = "kionga_return_to"
 )
 
 type SessionConfig struct {

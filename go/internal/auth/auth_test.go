@@ -110,6 +110,15 @@ func TestProvisionedUserRequiresGitServiceForRepositoryBinding(t *testing.T) {
 	}
 }
 
+func TestProvisionedProjectUserCanReadTemplateCatalog(t *testing.T) {
+	principal := Principal{Roles: []string{RoleUser}, Provisioned: true, Services: []string{"projects"}}
+	for _, path := range []string{"/api/v1/project-templates", "/api/v1/project-templates/production-ml"} {
+		if !Allowed(principal, http.MethodGet, path) {
+			t.Fatalf("projects service should allow template catalog read at %s", path)
+		}
+	}
+}
+
 func TestRBACLocalRole(t *testing.T) {
 	handler := RBAC(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := PrincipalFrom(r.Context())

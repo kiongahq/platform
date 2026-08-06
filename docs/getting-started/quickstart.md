@@ -6,18 +6,23 @@ or the [Jupyter workbench](../guides/workbench.md) — all three drive the same 
 ## 0. Confirm the stack is up
 
 ```bash
-curl -s http://localhost:8080/api/v1/health
+export MLAIOPS_URL="${MLAIOPS_URL:-http://localhost:8080}"
+curl -s "$MLAIOPS_URL/api/v1/health"
 # {"status":"ok","service":"mlaiops-gateway","version":"0.1.0"}
-curl -s http://localhost:8080/api/v1/me
+curl -s "$MLAIOPS_URL/api/v1/me"
 # identity + roles + effective permissions
 ```
+
+Open `$MLAIOPS_URL`, enter the console, and sign in locally with
+`admin` / `mlaiops-local`. The local API development principal is separate from
+the browser session.
 
 ## 1. Create a project
 
 === "Console"
 
-    Click **＋ New project**, pick a template (e.g. *Tabular classification*), and
-    create it. You land in the Projects view.
+    Click **＋ New project**, choose a versioned template, framework, accelerator,
+    and resource profile, then create it. You land in the Projects view.
 
 === "SDK"
 
@@ -26,17 +31,34 @@ curl -s http://localhost:8080/api/v1/me
 
     with MLAIOpsClient(base_url="http://localhost:8080",
                        actor="you@example.com") as client:
-        project = client.create_project("churn", template="tabular-classification")
+        project = client.create_project(
+            "churn",
+            template="production-ml",
+            framework="scikit-learn",
+            accelerator="cpu",
+        )
         print(project.id)
     ```
 
 === "curl"
 
     ```bash
-    curl -s -X POST http://localhost:8080/api/v1/projects \
+    curl -s -X POST "$MLAIOPS_URL/api/v1/projects" \
       -H 'Content-Type: application/json' \
-      -d '{"name":"churn","template":"tabular-classification"}'
+      -d '{"name":"churn","template":"production-ml","framework":"scikit-learn","accelerator":"cpu"}'
     ```
+
+The response includes the template version, resolved capabilities, requested
+profile, and a `kionga scaffold ...` command. Browse all choices with:
+
+```bash
+curl -s "$MLAIOPS_URL/api/v1/project-templates" | python -m json.tool
+```
+
+For multi-GPU work choose `distributed-training` + `pytorch-ddp` + `multi-gpu`;
+for a runnable LangGraph service choose `production-agent`. These selections record
+intent but never bypass the administrator's CPU/RAM/GPU/service grants. See the
+[project-template catalog](../guides/project-templates.md).
 
 ## 2. Run a real pipeline
 
@@ -44,7 +66,8 @@ curl -s http://localhost:8080/api/v1/me
 
     Go to **Pipelines → ▶ Run pipeline**, choose your project and
     `training-pipeline`, submit. Watch the **DAG go green** as each step reports
-    live. The run executes a real Prefect flow:
+    live. The open-source Dagre renderer lays out the validated backend graph; it
+    does not determine execution order. The run executes a real Prefect flow:
     `validate → train → evaluate → register`.
 
 === "SDK"
@@ -92,7 +115,7 @@ your project.
 === "curl"
 
     ```bash
-    curl -s -X POST http://localhost:8080/api/v1/models/<model-id>/predict \
+    curl -s -X POST "$MLAIOPS_URL/api/v1/models/<model-id>/predict" \
       -H 'Content-Type: application/json' \
       -d '{"inputs": [[0.1,-1.2,0.5,2.0,0.3,-0.7,1.1,0.0,-0.4,0.9,-1.5,0.2]]}'
     ```
@@ -142,9 +165,24 @@ It has a browser terminal (File → New → Terminal) and a seeded `quickstart.i
 that reproduces everything above in code, with every connection preconfigured. See
 the [workbench guide](../guides/workbench.md).
 
+## 8. Add Git, functions, and reusable flows
+
+Connect a project to an HTTPS/SSH Git remote from its detail panel. Open
+**Pipelines → Define flow** to persist a versioned container or function DAG with
+resources, retries, parameters, and commit lineage. Functions become deployable and
+invocable after an administrator configures `OPENFAAS_URL`; until then the console
+correctly reports that serverless is not configured.
+
+For a distributed team, an administrator provisions each OIDC subject under
+**Users & access**, choosing services and a starter/team/power/GPU/custom resource
+profile. Compose provides the shared workbench; Kubernetes reconciles those grants
+into isolated `KiongaWorkspace` workloads.
+
 ## Where to go next
 
 - [Connecting all services](../connecting-services.md) — the full connection map.
 - [Models & serving](../guides/models-serving.md), [Agents](../guides/agents.md),
   [Feature store](../guides/features.md), [Real-time](../guides/realtime.md).
 - [REST API reference](../reference/api.md) and [CLI](../reference/cli.md).
+- [Implementation status](../reference/implementation-status.md) — bundled versus
+  optional, external, and scale-path capabilities.

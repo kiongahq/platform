@@ -37,7 +37,7 @@ func main() {
 		HealthProbeBindAddress: probeAddress, Metrics: metricsserver.Options{BindAddress: metricsAddress},
 	})
 	must(err)
-	must((&platformoperator.AgentReconciler{Client: manager.GetClient()}).SetupWithManager(manager))
+	must((&platformoperator.AgentReconciler{Client: manager.GetClient(), TraceProxyImage: env("TRACE_PROXY_IMAGE", "ghcr.io/mlaiops/trace-proxy:latest")}).SetupWithManager(manager))
 	must((&platformoperator.WorkspaceReconciler{
 		Client: manager.GetClient(), WorkbenchImage: env("WORKBENCH_IMAGE", "ghcr.io/ml-ai-ops/jupyter:latest"),
 		IDEImage: env("IDE_IMAGE", "ghcr.io/ml-ai-ops/ide:latest"), GatewayURL: env("MLAIOPS_URL", "http://mlaiops-gateway.mlaiops-system:8080"),

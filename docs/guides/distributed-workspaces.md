@@ -1,7 +1,7 @@
 # Distributed ML/AI workspaces, functions, and Git
 
 This guide covers the shortest production path from an authenticated teammate to
-a reproducible, event-driven application. Nexus keeps four contracts together:
+a reproducible, event-driven application. Kionga keeps four contracts together:
 
 1. an administrator grants services and a named resource profile;
 2. Kubernetes reconciles that grant into a bounded workspace and persistent disk;
@@ -25,7 +25,7 @@ integer number of GB in the admin surface; function and job memory uses familiar
 Kubernetes quantities such as `512Mi`, `2Gi`, and `8Gi`.
 
 On Kubernetes, the access outbox emits a workspace lifecycle command. The
-integration worker creates or updates a `NexusWorkspace`; the operator then owns:
+integration worker creates or updates a `KiongaWorkspace`; the operator then owns:
 
 - one persistent volume claim sized from `storage.size_gb`;
 - one pod with only the assigned Jupyter and/or IDE containers;
@@ -39,7 +39,7 @@ bucket, and service boundaries remain enforced by the gateway even if a user cal
 the API directly instead of using the console.
 
 ```bash
-kubectl get nexusworkspaces -A
+kubectl get kiongaworkspaces -A
 kubectl get deployment,pvc,service -l app.kubernetes.io/component=workspace -A
 ```
 
@@ -50,7 +50,7 @@ profile.
 ## Make a project Git-native
 
 Create a project with an HTTPS or SSH repository URL, or open an existing project
-card and choose **Connect Git repository**. Nexus stores the remote URL, provider,
+card and choose **Connect Git repository**. Kionga stores the remote URL, provider,
 default branch, and sync metadata; it rejects URLs containing embedded credentials.
 
 Inside Jupyter or the IDE:
@@ -58,16 +58,16 @@ Inside Jupyter or the IDE:
 ```bash
 export MLAIOPS_URL=https://platform.example.com
 export MLAIOPS_TOKEN='<personal key from Console → Settings>'
-nexus project sync prj-123
+kionga project sync prj-123
 ```
 
 To start a new container-ready ML/API application with a tiny browser client and
 GitHub Actions test lane:
 
 ```bash
-nexus scaffold risk-app --template fullstack --agent none
+kionga scaffold risk-app --template fullstack-ai --agent none
 # or let an installed coding agent complete the bounded starter
-nexus scaffold risk-app --template fullstack --agent codex \
+kionga scaffold risk-app --template fullstack-ai --agent codex \
   --prompt "Add a feature lookup, model scoring, tests, and deployment docs"
 ```
 
@@ -75,6 +75,11 @@ The command clones into `/workspace/<project-namespace>`. Existing checkouts are
 updated with `fetch`, branch checkout, and `pull --ff-only`; a mismatched origin or
 non-empty non-Git target fails closed. Private-repository credentials stay in the
 workspace Git credential helper and never enter control-plane state.
+
+For multi-GPU training, use the `distributed-training` project template and the
+administrator-provisioned GPU profile. The starter uses rank-aware experiment
+logging and durable checkpoint paths; the Kubernetes scheduler remains responsible
+for satisfying the declared GPU topology. See [Project templates](project-templates.md).
 
 ## Deploy an independent function
 
@@ -142,8 +147,11 @@ references before saving.
 Save this from **Pipelines → Define flow** or `POST
 /api/v1/pipelines/definitions`, then run it with a parameter object. Ready jobs run
 in parallel; dependency output is passed to downstream functions; every attempt and
-step transition is persisted. Container-mode definitions dispatch through Prefect
-locally and the Kubernetes execution path in a cluster.
+step transition is persisted. Function-mode definitions dispatch through configured
+OpenFaaS. Container-mode definitions dispatch to the bundled
+`pipeline-definition/mlaiops` deployment, which runs admitted OCI jobs locally; the
+Kubernetes scale path replaces that Docker-socket trust boundary with
+scheduler-isolated workloads.
 
 The console uses the pinned, MIT-licensed
 [@dagrejs/dagre](https://github.com/dagrejs/dagre) layout engine to render the

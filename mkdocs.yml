@@ -1,14 +1,14 @@
-site_name: Nexus — ml-ai-ops-platform
+site_name: Kionga — ml-ai-ops-platform
 site_description: >-
-  Self-hosted MLOps, data-centric AI, and agentic AI platform — one Docker
-  Compose stack from laptop to public VM. Full documentation: architecture,
+  Self-hosted MLOps, data-centric AI, and agentic AI platform — a Compose
+  application stack with a Kubernetes scale path. Full documentation: architecture,
   services, modules, installation, configuration, API, RBAC, and operations.
-site_author: Nexus platform team
+site_author: Kionga platform team
 repo_name: ml-ai-ops/platform
 repo_url: https://github.com/ml-ai-ops/platform
 edit_uri: edit/main/docs/
 docs_dir: docs
-copyright: Nexus is a self-hosted platform. Local credentials in this documentation are development defaults — override every one for public deployments.
+copyright: Kionga is a self-hosted platform. Local credentials in this documentation are development defaults — override every one for public deployments.
 
 theme:
   name: material
@@ -76,7 +76,7 @@ plugins:
 nav:
   - Home: index.md
   - Overview:
-      - What is Nexus: overview/what-is-nexus.md
+      - What is Kionga: overview/what-is-kionga.md
       - Architecture: overview/architecture.md
       - Core concepts: overview/concepts.md
       - Technology & modules used: overview/technology.md
@@ -97,6 +97,7 @@ nav:
       - Connecting all services: connecting-services.md
       - Jupyter workbench: guides/workbench.md
       - AI coding & IDE workspace: guides/coding-workspace.md
+      - Project templates: guides/project-templates.md
       - Engineering blog: guides/engineering-blog.md
       - Pipelines: guides/pipelines.md
       - Distributed workspaces, functions & Git: guides/distributed-workspaces.md
@@ -105,9 +106,12 @@ nav:
       - Feature store: guides/features.md
       - Real-time processing: guides/realtime.md
   - Reference:
+      - Implementation status: reference/implementation-status.md
+      - Backend contracts: reference/backend.md
       - REST API: reference/api.md
       - RBAC & security: reference/rbac.md
       - CLI: reference/cli.md
+      - Kionga identifier migration: reference/kionga-migration.md
   - Operations:
       - Local operations: operations/local.md
       - Public hosting: hosting.md

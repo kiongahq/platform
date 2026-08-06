@@ -12,7 +12,7 @@ drift from the backend.
 | `admin`, `operator` | Everything, including user provisioning and platform connections |
 | `user` | Only explicitly assigned services and projects, within assigned quotas |
 | `engineer` | Full ML lifecycle — projects, pipelines, models, agents, tools, features, functions, realtime — but **not** platform connections |
-| `viewer` | Read-only (all `GET`s) |
+| `viewer` | Read-only (all `GET` requests) |
 | `service` | Internal reporting only — traces, pipeline step transitions, materialization reports, realtime stats |
 
 The `engineer` write scope is the ML lifecycle paths; connections stay
@@ -40,7 +40,7 @@ DELETE /api/v1/admin/users/{subject}
 ```
 
 Users who are not covered by an identity-provider group can submit a scoped
-request from **My access → Request access**. Nexus prevents duplicate pending
+request from **My access → Request access**. Kionga prevents duplicate pending
 requests, records the requested services and business reason, and exposes an
 administrator approval queue. Provisioning from that queue marks the request
 approved; rejection records the reviewer and note. Both actions are audited.
@@ -62,7 +62,7 @@ Use it as a bearer token:
 ```bash
 export MLAIOPS_TOKEN='nxs_...'
 curl -H "Authorization: Bearer $MLAIOPS_TOKEN" \
-  http://localhost:8080/api/v1/projects
+  "${MLAIOPS_URL:-http://localhost:8080}/api/v1/projects"
 ```
 
 Store keys in an OS keychain or secret manager, never in source control.
@@ -76,6 +76,27 @@ convenience; it is never the security boundary.
 The capacity fields are control-plane allocations consumed by workspace and
 compute provisioners. They do not replace Kubernetes ResourceQuota, LimitRange,
 network policy, or per-user workload identities in a multi-user deployment.
+
+Project templates do not grant capacity. For normal users, project admission checks
+every template-required service, verifies the requested profile fits the assigned
+CPU/RAM/GPU/storage grant, requires at least one GPU for `single-gpu` and two for
+`multi-gpu`, and preserves the existing project-count quota. Agent projects
+similarly require the `agents` service and remain constrained to assigned project
+IDs and tool/service access. Deploying an agent reserves the new request and every
+existing agent owned by that subject at `max_replicas`. Each possible pod is charged
+its agent CPU/RAM/GPU plus the trace sidecar's `100m` CPU and `128Mi` RAM; the summed
+capacity and summed maximum replicas must fit the compute and workload (`max_vms`)
+grants. GPU type must match a typed grant and must be a valid domain-qualified,
+non-reserved Kubernetes extended resource name; it cannot alias native keys such as
+`cpu` or `memory`.
+
+Pipeline-definition admission calculates each potentially concurrent DAG layer and
+rejects CPU, memory, or GPU totals above the grant. Function deployment separately
+caps CPU and memory and enforces the function-count quota. Agent deployment applies
+the replica-aware checks above before emitting desired state. These checks run before
+calling Prefect/OpenFaaS or reconciling Kubernetes resources. Admin/operator roles
+bypass admission limits so they can provision and recover platform workloads; the
+normal `user` role never does.
 
 ## Where identity comes from
 
@@ -128,15 +149,16 @@ allocation, quotas, and suspension/provisioning status.
 Preview the read-only console by starting the gateway as a viewer:
 
 ```bash
+export MLAIOPS_URL="${MLAIOPS_URL:-http://localhost:8080}"
 MLAIOPS_LOCAL_ROLE=viewer docker compose -f deploy/compose.yaml up -d gateway
 ```
 
 Then a write is denied and a read succeeds:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8080/api/v1/projects \
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$MLAIOPS_URL/api/v1/projects" \
   -H 'Content-Type: application/json' -d '{"name":"x","template":"blank"}'   # 403
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/v1/projects  # 200
+curl -s -o /dev/null -w "%{http_code}\n" "$MLAIOPS_URL/api/v1/projects"  # 200
 ```
 
 Restore admin by removing the override and restarting the gateway.
@@ -153,12 +175,12 @@ more. Generate it with `openssl rand -hex 24` and set it in `.env`.
 | Control | Local | Public |
 | --- | --- | --- |
 | **Transport** | HTTP on localhost | HTTPS via Caddy (automatic Let's Encrypt) |
-| **AuthN** | local console session; API local role | OIDC authorization-code session and bearer tokens |
-| **CORS** | `*` | pinned to `MLAIOPS_ALLOWED_ORIGIN` (your domain) |
-| **Ports** | all published | only Caddy (80/443); everything else internal-only |
-| **Secrets** | dev defaults | `.env` on the VM; connections store only a secret *reference* |
-| **LLM keys** | env-only | env-only — never written to traces, logs, or the store |
-| **Object store creds** | in the storage-proxy only | same (sole credential holder) |
+| **AuthN** | Local console session; API local role | OIDC authorization-code session and bearer tokens |
+| **CORS** | `*` | Pinned to `MLAIOPS_ALLOWED_ORIGIN` (your domain) |
+| **Ports** | All published | Only Caddy (80/443); everything else internal-only |
+| **Secrets** | Development defaults | `.env` on the VM; connections store only a secret *reference* |
+| **LLM keys** | Environment only | Environment only — never written to traces, logs, or the store |
+| **Object-store credentials** | Storage proxy and Jupyter mount | Storage proxy is the application credential holder; isolate per-user mounts |
 
 ## Network isolation (scale path)
 

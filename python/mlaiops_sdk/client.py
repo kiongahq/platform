@@ -15,6 +15,7 @@ from .models import (
     PipelineRun,
     PipelineDefinition,
     Project,
+    ProjectTemplate,
     Readiness,
     Tool,
 )
@@ -58,19 +59,47 @@ class MLAIOpsClient:
     def list_projects(self) -> list[Project]:
         return [Project.model_validate(item) for item in self._request("GET", "/api/v1/projects")]
 
+    def list_project_templates(self) -> list[ProjectTemplate]:
+        return [
+            ProjectTemplate.model_validate(item)
+            for item in self._page("/api/v1/project-templates")
+        ]
+
+    def get_project_template(
+        self, template_id: str, *, version: str = ""
+    ) -> ProjectTemplate:
+        suffix = f"?version={version}" if version else ""
+        return ProjectTemplate.model_validate(
+            self._request("GET", f"/api/v1/project-templates/{template_id}{suffix}")
+        )
+
     def create_project(
         self,
         name: str,
         *,
         description: str = "",
-        template: str = "tabular-classification",
+        template: str = "production-ml",
+        template_version: str = "",
+        framework: str = "",
+        accelerator: str = "",
+        requested_profile: str = "",
         repository_url: str = "",
         default_branch: str = "main",
     ) -> Project:
         data = self._request(
             "POST",
             "/api/v1/projects",
-            json={"name": name, "description": description, "template": template, "repository_url": repository_url, "default_branch": default_branch},
+            json={
+                "name": name,
+                "description": description,
+                "template": template,
+                "template_version": template_version,
+                "framework": framework,
+                "accelerator": accelerator,
+                "requested_profile": requested_profile,
+                "repository_url": repository_url,
+                "default_branch": default_branch,
+            },
         )
         return Project.model_validate(data)
 
@@ -141,6 +170,7 @@ class MLAIOpsClient:
         artifact_uri: str,
         *,
         metrics: dict[str, float] | None = None,
+        serving_image: str | None = None,
     ) -> Model:
         data = self._request(
             "POST",
@@ -151,6 +181,7 @@ class MLAIOpsClient:
                 "version": version,
                 "artifact_uri": artifact_uri,
                 "metrics": metrics or {},
+                **({"serving_image": serving_image} if serving_image else {}),
             },
         )
         return Model.model_validate(data)
@@ -185,8 +216,13 @@ class MLAIOpsClient:
         image: str,
         graph_module: str,
         *,
-        llm_backend: str = "self-hosted",
+        llm_backend: str = "mock",
         replicas: int = 1,
+        max_replicas: int | None = None,
+        cpu: str = "500m",
+        memory: str = "1Gi",
+        gpu: int = 0,
+        gpu_type: str = "nvidia.com/gpu",
         tools: list[str] | None = None,
     ) -> Agent:
         data = self._request(
@@ -200,6 +236,16 @@ class MLAIOpsClient:
                 "graph_module": graph_module,
                 "llm_backend": llm_backend,
                 "replicas": replicas,
+                "autoscaling": {
+                    "min_replicas": replicas,
+                    "max_replicas": max_replicas or replicas,
+                },
+                "resources": {
+                    "cpu": cpu,
+                    "memory": memory,
+                    "gpu": gpu,
+                    "gpu_type": gpu_type if gpu else "",
+                },
                 "tools": tools or [],
             },
         )

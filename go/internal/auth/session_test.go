@@ -12,7 +12,7 @@ func TestSessionLoginCreatesStateAndRedirects(t *testing.T) {
 	manager, err := NewSessionManager(SessionConfig{
 		ClientID: "console", ClientSecret: "secret",
 		AuthURL: "https://identity.example/auth", TokenURL: "https://identity.example/token",
-		RedirectURL: "https://nexus.example/auth/callback", Secure: true,
+		RedirectURL: "https://kionga.example/auth/callback", Secure: true,
 	}, &Verifier{})
 	if err != nil {
 		t.Fatal(err)
@@ -28,7 +28,7 @@ func TestSessionLoginCreatesStateAndRedirects(t *testing.T) {
 		t.Fatal(err)
 	}
 	if location.Host != "identity.example" || location.Query().Get("state") == "" ||
-		location.Query().Get("redirect_uri") != "https://nexus.example/auth/callback" {
+		location.Query().Get("redirect_uri") != "https://kionga.example/auth/callback" {
 		t.Fatalf("unexpected authorization redirect: %s", location)
 	}
 	cookies := response.Result().Cookies()

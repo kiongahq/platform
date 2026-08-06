@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const localSessionCookie = "nexus_local_session"
+const localSessionCookie = "kionga_local_session"
 
 type LocalSessionManager struct {
 	username string

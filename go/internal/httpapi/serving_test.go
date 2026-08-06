@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,7 +14,7 @@ func registerDeployableModel(t *testing.T, server http.Handler) string {
 	t.Helper()
 	projectID := createTestProject(t, server)
 	register := httptest.NewRequest(http.MethodPost, "/api/v1/models", strings.NewReader(
-		`{"project_id":"`+projectID+`","name":"churn-classifier","version":"3","artifact_uri":"models:/churn-classifier/3","metrics":{"accuracy":0.93}}`))
+		`{"project_id":"`+projectID+`","name":"churn-classifier","version":"3","artifact_uri":"models:/churn-classifier/3","serving_image":"ghcr.io/acme/churn-xgboost:3","metrics":{"accuracy":0.93}}`))
 	registered := httptest.NewRecorder()
 	server.ServeHTTP(registered, register)
 	if registered.Code != http.StatusCreated {
@@ -26,6 +27,17 @@ func TestDeployModelStartsRealServing(t *testing.T) {
 	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/deployments" {
 			t.Fatalf("unexpected serving manager call %s %s", r.Method, r.URL.Path)
+		}
+		var request struct {
+			Name         string `json:"name"`
+			ArtifactURI  string `json:"artifact_uri"`
+			ServingImage string `json:"serving_image"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Name != "churn-classifier" || request.ArtifactURI != "models:/churn-classifier/3" || request.ServingImage != "ghcr.io/acme/churn-xgboost:3" {
+			t.Fatalf("model serving metadata was not forwarded: %#v", request)
 		}
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"name":"churn-classifier","endpoint":"http://mlaiops-serve-churn-classifier:5001"}`))

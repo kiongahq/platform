@@ -1,6 +1,6 @@
 # AI coding and IDE workspace
 
-Nexus treats `/workspace` as the primary development surface. JupyterLab and
+Kionga treats `/workspace` as the primary development surface. JupyterLab and
 the optional browser IDE mount the same persistent volume, so a project created
 in either interface appears immediately in the other.
 
@@ -25,31 +25,39 @@ opt-in Compose profile and is not exposed by the public deployment overlay.
 Run this in either the Jupyter terminal or the IDE terminal:
 
 ```bash
-nexus scaffold churn-service \
-  --template ml \
+kionga scaffold churn-service \
+  --template production-ml \
   --agent codex \
   --prompt "Train, evaluate, and expose a churn classifier with tests"
 ```
 
-Templates are `python`, `ml`, `agent`, and `api`. Use `--agent none` for a
-deterministic starter without an LLM, or choose `codex` or `claude`.
+Canonical templates are `production-ml`, `distributed-training`,
+`production-agent`, `fullstack-ai`, and `blank-python`. Use `--agent none` for a
+deterministic runnable starter without an LLM, or choose `codex` or `claude`. The
+[template catalog](project-templates.md) lists supported frameworks, accelerators,
+required services, and generated boundaries.
 
-Other command-line agents can be connected without changing Nexus:
+Other command-line agents can be connected without changing Kionga:
 
 ```bash
-export NEXUS_CUSTOM_AGENT_COMMAND="your-agent --non-interactive"
-nexus scaffold experiment --template ml --agent custom \
+export KIONGA_CUSTOM_AGENT_COMMAND="your-agent --non-interactive"
+kionga scaffold experiment --template production-ml --agent custom \
   --prompt "Build a reproducible classification experiment"
 ```
 
-Nexus appends the task as the final command argument and runs it from the new
+Kionga appends the task as the final command argument and runs it from the new
 project directory. Only configure agents whose permission model you understand.
 
 ```bash
-nexus agents
+kionga agents
 ```
 
 shows whether each CLI and its API credential are available.
+
+For substantial workloads, create the project through the API/console first and
+run the returned `scaffold_command`. This preserves template version, framework,
+accelerator, resource-profile intent, capabilities, and Git lineage in control-plane
+state instead of leaving those decisions only in generated files.
 
 ## Direct agent use
 
@@ -60,7 +68,7 @@ codex
 claude
 ```
 
-For unattended scaffolding, Nexus runs Codex with workspace-write sandboxing.
+For unattended scaffolding, Kionga runs Codex with workspace-write sandboxing.
 Claude Code starts in the generated project with edit acceptance. Review agent
 changes and tests before committing.
 
@@ -74,4 +82,5 @@ changes and tests before committing.
   `SYS_ADMIN` for the object-store mount.
 
 For production multi-user deployments, replace the single shared code-server
-container with isolated Coder workspaces or per-user Kubernetes pods.
+container with isolated per-user `KiongaWorkspace` pods. A GPU or custom resource
+profile bounds the workspace; pipeline job requests are enforced separately.

@@ -4,6 +4,10 @@
 control plane. It's intentionally small — a thin, scriptable wrapper over the REST
 API. For anything richer, use the [Python SDK](../modules/python.md).
 
+The development workspaces also contain a separate `kionga` command. `mlaiops`
+operates control-plane resources; `kionga` generates/synchronizes project source and
+can invoke a configured coding agent inside the generated directory.
+
 ## Build
 
 ```bash
@@ -65,6 +69,21 @@ mlaiops pipeline submit prj-1783101021841102592
 
 Non-2xx responses print the error body to stderr and exit non-zero, so the CLI
 composes cleanly in shell scripts.
+
+## Workspace project commands
+
+```bash
+kionga agents
+kionga templates --json
+kionga project sync <project-id>
+kionga scaffold vision-training --template distributed-training --agent none
+kionga scaffold support-agent --template production-agent --agent codex \
+  --prompt "Add retrieval, refusal, escalation, and deterministic tests"
+```
+
+Prefer the `scaffold_command` returned by project creation: it pins the canonical
+template selected by the control plane. See
+[Project templates](../guides/project-templates.md).
 
 !!! tip "Auth"
     Set `MLAIOPS_TOKEN` to a scoped personal key from **Console → Settings**.

@@ -27,15 +27,15 @@ func TestHealth(t *testing.T) {
 
 func TestLandingAndConsoleRoutes(t *testing.T) {
 	static, _ := fs.Sub(fstest.MapFS{
-		"index.html":   &fstest.MapFile{Data: []byte("<h1>Nexus landing</h1>")},
-		"console.html": &fstest.MapFile{Data: []byte("<h1>Nexus console</h1>")},
+		"index.html":   &fstest.MapFile{Data: []byte("<h1>Kionga landing</h1>")},
+		"console.html": &fstest.MapFile{Data: []byte("<h1>Kionga console</h1>")},
 	}, ".")
 	server := New(store.New(), static)
 	for _, test := range []struct {
 		path, expected string
 	}{
-		{"/", "Nexus landing"},
-		{"/console.html", "Nexus console"},
+		{"/", "Kionga landing"},
+		{"/console.html", "Kionga console"},
 	} {
 		response := httptest.NewRecorder()
 		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.path, nil))
@@ -68,5 +68,61 @@ func TestCreateProjectRejectsUnknownFields(t *testing.T) {
 	testServer().ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", response.Code)
+	}
+}
+
+func TestProjectTemplatesExposeHeavyMLAndAgentStarters(t *testing.T) {
+	server := testServer()
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/project-templates", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("templates: %d %s", response.Code, response.Body.String())
+	}
+	for _, id := range []string{"production-ml", "distributed-training", "production-agent", "fullstack-ai"} {
+		if !strings.Contains(response.Body.String(), `"id":"`+id+`"`) {
+			t.Fatalf("missing template %s: %s", id, response.Body.String())
+		}
+	}
+}
+
+func TestProjectTemplateLookupAndProjectConflict(t *testing.T) {
+	server := testServer()
+	found := httptest.NewRecorder()
+	server.ServeHTTP(found, httptest.NewRequest(http.MethodGet, "/api/v1/project-templates/distributed-training", nil))
+	if found.Code != http.StatusOK || !strings.Contains(found.Body.String(), `"recommended_profile":"gpu"`) {
+		t.Fatalf("template lookup: %d %s", found.Code, found.Body.String())
+	}
+	missing := httptest.NewRecorder()
+	server.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/api/v1/project-templates/not-real", nil))
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing template = %d, want 404", missing.Code)
+	}
+	for index, want := range []int{http.StatusCreated, http.StatusConflict} {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"Duplicate Project","template":"blank-python"}`)))
+		if response.Code != want {
+			t.Fatalf("create attempt %d = %d, want %d: %s", index+1, response.Code, want, response.Body.String())
+		}
+	}
+}
+
+func TestAgentDeploymentRequiresRegisteredTools(t *testing.T) {
+	server := testServer()
+	unknown := httptest.NewRecorder()
+	server.ServeHTTP(unknown, httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"project_id":"prj-demo","name":"support-agent","version":"1.0.0","image":"ghcr.io/acme/support:1.0.0","graph_module":"agents.support:build","tools":["knowledge-search"]}`)))
+	if unknown.Code != http.StatusUnprocessableEntity || !strings.Contains(unknown.Body.String(), "unregistered tool") {
+		t.Fatalf("unknown tool should fail closed: %d %s", unknown.Code, unknown.Body.String())
+	}
+
+	registered := httptest.NewRecorder()
+	server.ServeHTTP(registered, httptest.NewRequest(http.MethodPost, "/api/v1/tools", strings.NewReader(`{"name":"knowledge-search","version":"1.0.0","input_schema":{"type":"object"}}`)))
+	if registered.Code != http.StatusCreated {
+		t.Fatalf("register tool: %d %s", registered.Code, registered.Body.String())
+	}
+
+	deployed := httptest.NewRecorder()
+	server.ServeHTTP(deployed, httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"project_id":"prj-demo","name":"support-agent","version":"1.0.0","image":"ghcr.io/acme/support:1.0.0","graph_module":"agents.support:build","tools":["knowledge-search"]}`)))
+	if deployed.Code != http.StatusAccepted || !strings.Contains(deployed.Body.String(), `"tools":["knowledge-search"]`) {
+		t.Fatalf("registered tool should deploy: %d %s", deployed.Code, deployed.Body.String())
 	}
 }

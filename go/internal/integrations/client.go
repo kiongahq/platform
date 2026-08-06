@@ -24,6 +24,10 @@ func New(baseURL, token string) *Client {
 }
 
 func (c *Client) JSON(ctx context.Context, method, path string, input, output any) error {
+	return c.jsonWithMediaType(ctx, method, path, input, output, "application/json", "application/json")
+}
+
+func (c *Client) jsonWithMediaType(ctx context.Context, method, path string, input, output any, contentType, accept string) error {
 	if c.BaseURL == "" {
 		return errors.New("integration base URL is not configured")
 	}
@@ -39,7 +43,8 @@ func (c *Client) JSON(ctx context.Context, method, path string, input, output an
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", contentType)
+	request.Header.Set("Accept", accept)
 	if c.Token != "" {
 		request.Header.Set("Authorization", "Bearer "+c.Token)
 	}
@@ -274,5 +279,13 @@ func (k KafkaREST) Publish(ctx context.Context, topic string, event any) error {
 	if topic == "" {
 		return errors.New("topic is required")
 	}
-	return k.client.JSON(ctx, http.MethodPost, "/topics/"+url.PathEscape(topic), map[string]any{"records": []map[string]any{{"value": event}}}, &map[string]any{})
+	return k.client.jsonWithMediaType(
+		ctx,
+		http.MethodPost,
+		"/topics/"+url.PathEscape(topic),
+		map[string]any{"records": []map[string]any{{"value": event}}},
+		&map[string]any{},
+		"application/vnd.kafka.json.v2+json",
+		"application/vnd.kafka.v2+json",
+	)
 }

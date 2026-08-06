@@ -1,7 +1,8 @@
 # Services overview
 
-The stack is ~17 containers on one Compose network (`deploy/compose.yaml`). This
-section documents each one. They fall into four groups.
+The default stack declares 19 regular and one-shot services on one Compose network
+(`deploy/compose.yaml`), plus the optional IDE profile and dynamically launched
+model-serving containers. This section documents each one.
 
 ## Full inventory
 
@@ -11,8 +12,8 @@ section documents each one. They fall into four groups.
 | **postgres** | `pgvector/pgvector:pg16` | 5432 | Data plane | Control-plane, MLflow, Langfuse, checkpoints, vectors |
 | **redis** | `redis:7.4.5-alpine` | 6379 | Data plane | Online feature store |
 | **kafka** | `apache/kafka:3.9.1` | 9092 | Data plane | Events, traces, real-time topics |
-| **kafka-rest** | `confluentinc/cp-kafka-rest:7.8.0` | 8082 | Data plane | HTTP access to Kafka |
-| **minio** | `quay.io/minio/minio` | 9000 / 9001 | Data plane | S3 object storage + console |
+| **kafka-rest** | `ghcr.io/aiven-open/karapace:6.1.4` | 8082 | Data plane | Confluent-compatible HTTP access to Kafka |
+| **minio** | `minio/minio` | 9000 / 9001 | Data plane | S3 object storage + console |
 | **minio-init** | `minio/mc` | — | Data plane | One-shot bucket creation |
 | **mlflow** | `mlaiops-mlflow` (built) | 15000 | Data plane | Tracking + registry |
 | **feature-gateway** | Go (`SERVICE=feature-gateway`) | 8083 | Data plane | Online feature retrieval |
@@ -26,6 +27,7 @@ section documents each one. They fall into four groups.
 | **realtime-processor** | Python (`agent_runtime/Dockerfile`) | — | AI | Kafka stream scoring |
 | **feature-materializer** | Python (`agent_runtime/Dockerfile`) | — | Data plane | One-shot feature materialization |
 | **jupyter** | `mlaiops-jupyter` (built) | 8888 | Dev | Notebooks + terminal |
+| **ide** *(profile)* | code-server image (built) | 13337 | Dev | Browser IDE sharing the Jupyter workspace |
 
 ## The four groups
 
@@ -57,3 +59,7 @@ then MLflow and the Go/Python services that need them. `minio-init` and
 `feature-materializer` are **one-shot** jobs (`restart: "no"`) that complete and
 exit. `pipeline-runner`, `realtime-processor`, `serving-manager`, and `agent-runtime`
 run continuously (`restart: unless-stopped` where applicable).
+
+OpenFaaS/faasd is not a Compose service. It is an external function engine connected
+with `OPENFAAS_URL`. Model-serving containers are created dynamically by the
+serving manager and therefore do not appear as static Compose services.

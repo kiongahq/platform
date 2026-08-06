@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ml-ai-ops/platform/pkg/api"
 )
@@ -63,12 +64,23 @@ func (p *Postgres) Close()                         { p.pool.Close() }
 func (p *Postgres) Ping(ctx context.Context) error { return p.pool.Ping(ctx) }
 
 func (p *Postgres) Migrate(ctx context.Context) error {
-	raw, err := migrations.ReadFile("migrations/001_initial.sql")
+	entries, err := migrations.ReadDir("migrations")
 	if err != nil {
 		return err
 	}
-	_, err = p.pool.Exec(ctx, string(raw))
-	return err
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		raw, err := migrations.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			return err
+		}
+		if _, err := p.pool.Exec(ctx, string(raw)); err != nil {
+			return fmt.Errorf("migration %s: %w", entry.Name(), err)
+		}
+	}
+	return nil
 }
 
 func (p *Postgres) Projects() []api.Project { return list[api.Project](p, "project") }
@@ -304,15 +316,24 @@ func (p *Postgres) CreateProject(req api.CreateProjectRequest, actors ...string)
 	if len(strings.TrimSpace(req.Name)) < 3 {
 		return api.Project{}, errors.New("name must contain at least 3 characters")
 	}
-	if req.Template == "" {
-		req.Template = "tabular-classification"
+	template, err := api.NormalizeProjectRequest(&req)
+	if err != nil {
+		return api.Project{}, err
 	}
+	namespace := slug(req.Name)
 	for _, project := range p.Projects() {
-		if strings.EqualFold(project.Name, req.Name) {
+		if strings.EqualFold(project.Name, req.Name) || project.Namespace == namespace {
 			return api.Project{}, ErrConflict
 		}
 	}
-	project := api.Project{ID: id("prj"), Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description), Template: req.Template, Namespace: slug(req.Name), Status: "ready", CreatedAt: time.Now().UTC(), OwnerSubject: req.OwnerSubject}
+	project := api.Project{
+		ID: id("prj"), Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description),
+		Template: template.ID, TemplateVersion: template.Version, Framework: req.Framework,
+		Accelerator: req.Accelerator, RequestedProfile: req.RequestedProfile,
+		Capabilities:    append([]string(nil), template.Capabilities...),
+		ScaffoldCommand: scaffoldCommand(namespace, template, req),
+		Namespace:       namespace, Status: "ready", CreatedAt: time.Now().UTC(), OwnerSubject: req.OwnerSubject,
+	}
 	if strings.TrimSpace(req.RepositoryURL) != "" {
 		repository, err := validateGitRepository(api.SetProjectRepositoryRequest{URL: req.RepositoryURL, DefaultBranch: req.DefaultBranch})
 		if err != nil {
@@ -320,7 +341,12 @@ func (p *Postgres) CreateProject(req api.CreateProjectRequest, actors ...string)
 		}
 		project.Repository = &repository
 	}
-	return project, p.write("project", project.ID, project, "project.created", first(actors), nil)
+	err = p.write("project", project.ID, project, "project.created", first(actors), nil)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return api.Project{}, ErrConflict
+	}
+	return project, err
 }
 
 func (p *Postgres) SubmitPipeline(req api.SubmitPipelineRequest, actors ...string) (api.PipelineRun, error) {
@@ -408,6 +434,14 @@ func (p *Postgres) UpdateRunStep(runID string, req api.UpdateRunStepRequest, act
 }
 
 func (p *Postgres) RegisterModel(req api.RegisterModelRequest, actor string) (api.Model, error) {
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
+	req.Name = strings.TrimSpace(req.Name)
+	req.Version = strings.TrimSpace(req.Version)
+	req.ArtifactURI = strings.TrimSpace(req.ArtifactURI)
+	servingImage, err := normalizeServingImage(req.ServingImage)
+	if err != nil {
+		return api.Model{}, err
+	}
 	if !p.exists("project", req.ProjectID) {
 		return api.Model{}, ErrNotFound
 	}
@@ -423,7 +457,7 @@ func (p *Postgres) RegisterModel(req api.RegisterModelRequest, actor string) (ap
 	if accuracy, ok := req.Metrics["accuracy"]; ok && accuracy < .8 {
 		gate = "failed"
 	}
-	model := api.Model{ID: id("mdl"), ProjectID: req.ProjectID, Name: req.Name, Version: req.Version, Stage: "candidate", ArtifactURI: req.ArtifactURI, Metrics: req.Metrics, GateStatus: gate, DeploymentStatus: "not_deployed", CreatedAt: time.Now().UTC()}
+	model := api.Model{ID: id("mdl"), ProjectID: req.ProjectID, Name: req.Name, Version: req.Version, Stage: "candidate", ArtifactURI: req.ArtifactURI, ServingImage: servingImage, Metrics: req.Metrics, GateStatus: gate, DeploymentStatus: "not_deployed", CreatedAt: time.Now().UTC()}
 	return model, p.write("model", model.ID, model, "model.registered", actor, nil)
 }
 
@@ -482,16 +516,13 @@ func (p *Postgres) RollbackModel(modelID, actor string) (api.Model, error) {
 }
 
 func (p *Postgres) DeployAgent(req api.DeployAgentRequest, actor string) (api.Agent, error) {
+	if err := NormalizeAgentRequest(&req); err != nil {
+		return api.Agent{}, err
+	}
 	if !p.exists("project", req.ProjectID) {
 		return api.Agent{}, ErrNotFound
 	}
-	if req.Name == "" || req.Version == "" || req.Image == "" || req.GraphModule == "" {
-		return api.Agent{}, errors.New("name, version, image and graph_module are required")
-	}
-	if req.Replicas < 1 {
-		req.Replicas = 1
-	}
-	agent := api.Agent{ID: id("agt"), ProjectID: req.ProjectID, Name: req.Name, Version: req.Version, Image: req.Image, GraphModule: req.GraphModule, LLMBackend: req.LLMBackend, Status: "pending", Replicas: req.Replicas, Tools: req.Tools, CreatedAt: time.Now().UTC()}
+	agent := api.Agent{ID: id("agt"), ProjectID: req.ProjectID, OwnerSubject: req.OwnerSubject, Name: req.Name, Version: req.Version, Image: req.Image, GraphModule: req.GraphModule, LLMBackend: req.LLMBackend, Status: "pending", Replicas: req.Replicas, Autoscaling: req.Autoscaling, Resources: req.Resources, Tools: req.Tools, CreatedAt: time.Now().UTC()}
 	return agent, p.write("agent", agent.ID, agent, "agent.deployed", actor, nil)
 }
 
@@ -703,8 +734,11 @@ func list[T any](p *Postgres, kind string) []T {
 	result := make([]T, 0)
 	for rows.Next() {
 		var raw []byte
-		var value T
-		if rows.Scan(&raw) == nil && json.Unmarshal(raw, &value) == nil {
+		if rows.Scan(&raw) != nil {
+			continue
+		}
+		value, decodeErr := decodeStoredValue[T](raw)
+		if decodeErr == nil {
 			result = append(result, value)
 		}
 	}
@@ -712,16 +746,28 @@ func list[T any](p *Postgres, kind string) []T {
 }
 
 func get[T any](p *Postgres, kind, resourceID string) (T, error) {
-	var value T
 	var raw []byte
 	err := p.pool.QueryRow(context.Background(), `SELECT payload FROM platform_resources WHERE tenant_id=$1 AND kind=$2 AND id=$3`, p.tenant, kind, resourceID).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
+		var value T
 		return value, ErrNotFound
 	}
 	if err != nil {
+		var value T
 		return value, err
 	}
-	return value, json.Unmarshal(raw, &value)
+	return decodeStoredValue[T](raw)
+}
+
+func decodeStoredValue[T any](raw []byte) (T, error) {
+	var value T
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return value, err
+	}
+	if agent, ok := any(&value).(*api.Agent); ok {
+		NormalizeAgentRecord(agent)
+	}
+	return value, nil
 }
 
 func (p *Postgres) exists(kind, resourceID string) bool {

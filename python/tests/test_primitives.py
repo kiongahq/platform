@@ -10,7 +10,7 @@ def test_pipeline_compiles_dependency_order() -> None:
         PipelineStep("train", "trainer:1", ["train.py"], depends_on=["prepare"], retries=2)
     )
     document = pipeline.compile()
-    assert document["kind"] == "NexusPipeline"
+    assert document["kind"] == "KiongaPipeline"
     assert document["spec"]["steps"][1]["depends_on"] == ["prepare"]
 
 

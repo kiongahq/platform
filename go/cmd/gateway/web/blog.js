@@ -50,7 +50,7 @@ async function loadArticle() {
   const response = await fetch(`/api/v1/blogs/${encodeURIComponent(slug)}`);
   if (!response.ok) { document.querySelector("#article-header").innerHTML = "<h1>Article not found.</h1>"; return; }
   const post = await response.json();
-  document.title = `${post.title} — Nexus Engineering`;
+  document.title = `${post.title} — Kionga Engineering`;
   document.querySelector("#article-header").innerHTML = `<div class="blog-tags">${post.tags.map(tag => `<span>${escapeBlog(tag)}</span>`).join("")}</div><h1>${escapeBlog(post.title)}</h1><p>${escapeBlog(post.summary)}</p><div class="article-byline"><span>${escapeBlog(post.author)}</span><time>${blogDate(post.published_at || post.created_at)}</time><span>${Math.max(1,Math.ceil(post.content.split(/\s+/).length/220))} min read</span></div>`;
   document.querySelector("#article-content").innerHTML = renderMarkdown(post.content);
 }

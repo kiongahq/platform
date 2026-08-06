@@ -1,6 +1,6 @@
 # Configuration reference
 
-Nexus is configured entirely through environment variables. Locally, sane defaults
+Kionga is configured entirely through environment variables. Locally, sane defaults
 mean the stack runs with **zero configuration**. For public hosting you supply a
 `.env` file (copy `.env.example`). This page is the complete reference.
 
@@ -40,12 +40,13 @@ Every port is overridable via the `*_PORT` variable. Defaults:
 | `MLAIOPS_DATA_PATH` | `data/platform.json` | File-store path (file mode only) |
 | `MLAIOPS_TENANT` | `local` | Tenant scoping |
 | `KAFKA_REST_URL` | `http://kafka-rest:8082` | Outbox delivery target |
-| `AGENT_RUNTIME_URL` | `http://agent-runtime:9000` | Where agent invokes are proxied |
+| `AGENT_RUNTIME_URL` | `http://agent-runtime:9000` in Compose; unset on Kubernetes | Static shared-runtime override. When non-empty it takes precedence over per-agent Kubernetes routing |
+| `MLAIOPS_AGENT_NAMESPACE` | `default` | Kubernetes namespace used to derive each agent Service endpoint when `AGENT_RUNTIME_URL` is unset |
 | `STORAGE_PROXY_URL` | `http://storage-proxy:8084` | Storage browse proxy target |
 | `PREFECT_API_URL` | `http://prefect-server:4200/api` | Pipeline engine |
 | `SERVING_MANAGER_URL` | `http://serving-manager:8085` | Model serving control |
 | `LANGFUSE_URL` / `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | local defaults | Prompt library proxy |
-| `MLAIOPS_LOCAL_ROLE` | `admin` | RBAC role for unauthenticated (local) requests |
+| `MLAIOPS_LOCAL_ROLE` | `admin` | RBAC role for local API requests when OIDC is disabled; the browser console still requires login |
 | `MLAIOPS_ALLOWED_ORIGIN` | `*` | CORS origin (pinned to your domain in public) |
 | `MLAIOPS_INTERNAL_TOKEN` | *(unset locally)* | Shared bearer token granting the `service` role |
 
@@ -106,7 +107,8 @@ Used by the agent runtime and trace proxy.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `SERVE_IMAGE` | `mlaiops-mlflow` | Image used for serving containers |
+| `SERVE_IMAGE` | `mlaiops-mlflow` | Fallback for models registered without a framework-specific `serving_image` |
+| `SERVE_PIDS_LIMIT` | `256` | Serving-container process/thread limit (manager caps it at `4096`) |
 | `PLATFORM_NETWORK` | `mlaiops_default` | Docker network to attach serving containers to |
 | `DOCKER_API_VERSION` | *(unset = negotiate)* | Pin the Docker Engine API version if needed |
 | `MLFLOW_TRACKING_URI` / `MLFLOW_S3_ENDPOINT_URL` / `AWS_*` | compose defaults | Model source |
@@ -165,6 +167,23 @@ Used by the agent runtime and trace proxy.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `JUPYTER_TOKEN` | `mlaiops-local` | Login token |
+| `S3_ENDPOINT` | `http://minio:9000` | S3-compatible endpoint mounted through S3FS |
+| `S3_MOUNT_ROOT` | `/workspace/object-store` | Filesystem root for bucket mounts |
+| `S3_MOUNT_BUCKETS` | platform bucket list | Space-separated buckets to mount |
+| `KIONGA_WORKSPACE` | `/workspace` | Root in which the project generator and Git sync command may write |
+| `KIONGA_CUSTOM_AGENT_COMMAND` | *(unset)* | Optional non-interactive coding-agent command used by the scaffolder |
+
+## Browser IDE (optional profile)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `IDE_PORT` | `13337` | code-server host port |
+| `IDE_PASSWORD` | `mlaiops-local` | Local code-server password |
+| `KIONGA_CUSTOM_AGENT_COMMAND` | *(unset)* | Optional non-interactive coding-agent command used by the scaffolder |
+
+`KIONGA_SUBJECT` is injected into reconciled Kubernetes workspaces for identity
+context; users should not override it. The platform API remains configured by
+`MLAIOPS_URL` and `MLAIOPS_TOKEN`.
 
 ## Local file mode & tests
 
@@ -189,8 +208,13 @@ Read by the operator and integration worker only:
 | `WORKSPACE_MLFLOW_URL` / `WORKSPACE_PREFECT_URL` | in-cluster upstreams | Experiment and orchestration endpoints injected into each workspace |
 | `WORKSPACE_LANGFUSE_URL` / `WORKSPACE_KAFKA_REST_URL` | in-cluster upstreams | Observability and event endpoints injected into each workspace |
 | `MLAIOPS_TARGET_NAMESPACE` | `default` | Namespace where lifecycle CRDs and workspaces are created |
+| `MLAIOPS_AGENT_NAMESPACE` | `default` | Namespace the gateway uses for ID-derived agent Service DNS; keep equal to the agent lifecycle target namespace |
+| `TRACE_PROXY_IMAGE` | `ghcr.io/mlaiops/trace-proxy:latest` | Sidecar image reconciled into every Kubernetes agent pod |
 
 These configure the Kubernetes fidelity path and are not needed for local or
-single-VM use. A `NexusWorkspace` receives a generated authentication secret; put
-its internal service behind the organization's authenticated ingress before
-exposing it outside the cluster.
+single-VM use. If `AGENT_RUNTIME_URL` remains set in a Kubernetes gateway it
+deliberately disables per-agent Service selection, so reserve that override for the
+shared Compose topology. Elastic agents additionally require a working Kubernetes
+resource-metrics API (normally metrics-server). A `KiongaWorkspace` receives a
+generated authentication secret; put its internal service behind the organization's
+authenticated ingress before exposing it outside the cluster.

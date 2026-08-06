@@ -1,7 +1,9 @@
 # Feature store
 
-Nexus provides an integrated feature store for both **real-time** (online) and
+Kionga provides an integrated feature store for both **real-time** (online) and
 **batch** (offline) use, centralized behind the feature gateway.
+
+Gateway examples assume `export MLAIOPS_URL=http://localhost:8080`.
 
 ## Online vs offline
 
@@ -44,7 +46,7 @@ Parquet to `s3://mlaiops-features/...`, and reports counts
 === "API"
 
     ```bash
-    curl -s http://localhost:8080/api/v1/features | python -m json.tool
+    curl -s "$MLAIOPS_URL/api/v1/features" | python -m json.tool
     ```
 
 ## Online lookups

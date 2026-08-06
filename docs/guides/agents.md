@@ -1,13 +1,19 @@
 # Agents
 
-Agents are **LangGraph** graphs served by the shared agent-runtime. They answer via
-a real LLM, keep session state in Postgres, retrieve features and long-term memory,
-call tools, and emit full traces with measured token/cost accounting.
+Agents are **LangGraph** graphs served by the agent runtime. Compose deliberately
+uses one shared runtime; Kubernetes reconciles an isolated Deployment and Service
+per control-plane agent ID. Agents answer via a real LLM, keep session state in
+Postgres, retrieve features and long-term memory, call tools, and emit full traces
+with measured token/cost accounting.
+
+Shell examples assume `export MLAIOPS_URL=http://localhost:8080`; change it when
+the gateway port or host differs.
 
 ## Anatomy of an agent
 
 An agent is a deployed record pointing at a **graph module** (`module:function`),
-with an LLM backend, a tool list, a canary weight, and status. The default agent is
+with an LLM backend, a tool list, per-replica CPU/memory/GPU requests, minimum and
+maximum replicas, a canary weight, and status. The default agent is
 `agents.customer_support.graph:build` — a `StateGraph` with a reason → tools →
 respond loop and two registered tools:
 
@@ -29,23 +35,42 @@ respond loop and two registered tools:
     reply = client.invoke_agent(agents[0].id, message="When are invoices issued?")
     ```
 
+## Deploying from the console
+
+Choose **Agents → Deploy agent** and provide the assigned project, semantic version,
+immutable OCI image, graph entry point, LLM backend, registered tools, per-replica
+CPU and memory, optional GPU count/type, and minimum/maximum replicas. The same modal
+can be populated from a `production-agent` project's generated manifest. Submission
+uses `POST /api/v1/agents`; a disabled or unassigned project is not selectable, and
+the gateway enforces the boundary again.
+
+After acceptance, open the agent card to inspect deployment metadata, endpoint,
+sessions, traces, measured usage/cost, and canary traffic. `GET /api/v1/agents`
+performs bounded live `/healthz` probes and returns `status: ready` only for a
+reachable runtime; otherwise it returns `pending` and the console disables Chat.
+The probe view is deliberately ephemeral—persisted desired state alone is not proof
+that a workload is ready.
+
 === "API"
 
     ```bash
-    curl -s -X POST http://localhost:8080/api/v1/agents/<id>/invoke \
+    curl -s -X POST "$MLAIOPS_URL/api/v1/agents/<id>/invoke" \
       -H 'Content-Type: application/json' \
       -d '{"message":"When are invoices issued?","session_id":"","user_id":"console"}'
     ```
 
 ## What happens per turn
 
-1. The gateway proxies to the agent-runtime with the agent's identity headers.
-2. The runtime loads the **Postgres checkpoint** for the session (state persists
+1. The gateway resolves the selected runtime and performs a three-second
+   `/healthz` gate. An unavailable runtime returns `503 agent_not_ready`; no turn is
+   sent.
+2. The gateway proxies to the healthy runtime with the agent's identity headers.
+3. The runtime loads the **Postgres checkpoint** for the session (state persists
    across turns; sessions are scoped per agent).
-3. The graph runs — reasoning, tool calls, feature/memory retrieval.
-4. The LLM is called **through the trace-proxy**, which forwards to the provider and
+4. The graph runs — reasoning, tool calls, feature/memory retrieval.
+5. The LLM is called **through the trace-proxy**, which forwards to the provider and
    publishes the call to Kafka.
-5. The runtime reports the session (turns, current node, tokens, cost) to the
+6. The runtime reports the session (turns, current node, tokens, cost) to the
    gateway; the reply returns.
 
 ## Sessions, traces, cost
@@ -78,17 +103,105 @@ cost dashboard. Keys are env-only and never written to traces, logs, or the stor
 ## Canary traffic
 
 ```bash
-curl -s -X PUT http://localhost:8080/api/v1/agents/<id>/traffic \
+curl -s -X PUT "$MLAIOPS_URL/api/v1/agents/<id>/traffic" \
   -d '{"canary_weight":10}'
 ```
 
 ## Writing your own agent
 
-Add a package under `python/agents/` exposing a `build(model, checkpointer)` that
-returns a compiled graph, `StateGraph`, or factory. Register tools with
-`mlaiops_sdk.register_tool` and convert them with `langchain_tools([...])`. Point the
-runtime at it with `MLAIOPS_GRAPH_MODULE=agents.your_agent.graph:build`, or deploy it
-as a distinct agent so the shared runtime serves it by identity.
+Create a versioned `production-agent` project rather than starting from an empty
+module:
+
+```python
+project = client.create_project(
+    "incident-response-agent",
+    template="production-agent",
+    framework="langgraph",
+    accelerator="cpu",
+)
+print(project.scaffold_command)
+```
+
+Run the returned command in Jupyter or the IDE. The generated project is functional
+before customization: it includes a LangGraph tool loop, safe example tool,
+`AgentMemoryClient` integration boundary, PostgreSQL/in-memory checkpointer
+selection, Langfuse callback, deterministic graph test and golden evaluation runner,
+an HTTP health/invocation runtime, container packaging, and a deployable platform
+manifest. Use `--agent codex`,
+`--agent claude`, or the configured custom command to extend only that generated
+directory.
+
+The graph entry point must expose a `build(model, checkpointer)` compatible callable
+that returns a compiled graph, `StateGraph`, or factory. Register tools with
+`mlaiops_sdk.register_tool` and convert them with `langchain_tools([...])`.
+
+Build and push an immutable image, then deploy it:
+
+```bash
+curl -s -X POST "$MLAIOPS_URL/api/v1/agents" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "project_id":"<project-id>",
+    "name":"incident-response",
+    "version":"1.0.0",
+    "image":"ghcr.io/acme/incident-response@sha256:<digest>",
+    "graph_module":"incident_response_agent.graph:build",
+    "llm_backend":"openai-compatible",
+    "autoscaling":{"min_replicas":2,"max_replicas":6},
+    "resources":{"cpu":"1","memory":"2Gi","gpu":0},
+    "tools":["runbook_search","create_escalation"]
+  }'
+```
+
+The gateway enforces project assignment and agent service access before persisting
+desired state. CPU and memory use Kubernetes quantity syntax. When GPU is positive,
+`gpu_type` defaults to `nvidia.com/gpu`; set it explicitly for another extended
+resource. Omitted resources default to `500m` CPU and `1Gi` memory. The legacy
+top-level `replicas` field remains an input compatibility alias, but `autoscaling`
+is the canonical response and reconciliation contract.
+
+For a normal user, the gateway reserves every owned agent at `max_replicas` and
+adds the trace-sidecar CPU and memory request for each possible pod. The aggregate
+CPU, memory, GPU, and maximum replica count must fit the user's compute/workload
+grant. GPU resource types must be domain-qualified Kubernetes extended resources
+(for example `nvidia.com/gpu`), must not use Kubernetes-reserved domains, must not
+collide with native keys such as `cpu` or `memory`, and must match the grant. The
+lifecycle dispatcher repeats this check before constructing a Kubernetes resource
+map. Admin/operator principals explicitly bypass capacity admission, not schema
+validation. Invalid quantities or a maximum below the minimum (or above 100) are
+rejected before desired state is persisted.
+
+On Kubernetes, the dispatcher derives one collision-safe DNS name from the immutable
+agent ID (a readable stem plus digest). The operator uses that same name for the
+`KiongaAgent` workload and Service, and the gateway routes to
+`http://<derived-name>.<MLAIOPS_AGENT_NAMESPACE>.svc`. Human names can therefore be
+reused without overwriting another agent. Readiness becomes true only when the
+Deployment has at least `min_replicas` available, and `status.workloadRef` identifies
+the generated workload.
+
+If `max_replicas` exceeds `min_replicas`, the operator owns a
+HorizontalPodAutoscaler targeting 70% average CPU utilization and does not reset the
+HPA-owned replica field during reconciliation. Equal values keep a fixed replica
+count and remove a stale autoscaler. A working Kubernetes resource-metrics API is
+required; the Kind bootstrap installs metrics-server for this reason. In Compose,
+`AGENT_RUNTIME_URL` intentionally overrides per-agent DNS and points every agent at
+the shared runtime; Kubernetes HPA behavior does not apply.
+
+See [Project templates](project-templates.md#create-a-functional-agent-project) for
+the full source-control and scaffolding workflow.
+
+## Production acceptance gates
+
+Before shifting traffic to a new agent version:
+
+1. run deterministic graph/tool tests with the mock model;
+2. run golden evaluation cases and failure-path tests;
+3. verify tool schemas, timeouts, permissions, and idempotency;
+4. verify checkpoint and semantic-memory isolation by agent and tenant;
+5. inspect Langfuse traces for secrets and unexpected tool payloads;
+6. deploy by immutable image digest with a small canary weight;
+7. compare measured quality, latency, tokens, cost, and error rate;
+8. promote or return traffic to the stable version.
 
 ## Long-term memory (pgvector)
 

@@ -31,6 +31,12 @@ func TestKafkaPublishesConfluentRESTEnvelope(t *testing.T) {
 		if r.URL.Path != "/topics/mlaiops.audit.operations" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
+		if got := r.Header.Get("Content-Type"); got != "application/vnd.kafka.json.v2+json" {
+			t.Errorf("content type = %q", got)
+		}
+		if got := r.Header.Get("Accept"); got != "application/vnd.kafka.v2+json" {
+			t.Errorf("accept = %q", got)
+		}
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer server.Close()

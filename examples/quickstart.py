@@ -1,4 +1,4 @@
-"""Create a project and submit its first run against a local Nexus gateway."""
+"""Create a project and submit its first run against a local Kionga gateway."""
 
 from mlaiops_sdk import MLAIOpsClient
 

@@ -24,7 +24,7 @@ type PipelineReconciler struct {
 }
 
 func (r *PipelineReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	var run mlaiopsv1.NexusPipelineRun
+	var run mlaiopsv1.KiongaPipelineRun
 	if err := r.Get(ctx, request.NamespacedName, &run); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -46,7 +46,7 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, request ctrl.Request
 }
 
 func (r *PipelineReconciler) SetupWithManager(manager ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(manager).For(&mlaiopsv1.NexusPipelineRun{}).Complete(r)
+	return ctrl.NewControllerManagedBy(manager).For(&mlaiopsv1.KiongaPipelineRun{}).Complete(r)
 }
 
 type ModelPromotionReconciler struct {
@@ -55,7 +55,7 @@ type ModelPromotionReconciler struct {
 }
 
 func (r *ModelPromotionReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	var promotion mlaiopsv1.NexusModelPromotion
+	var promotion mlaiopsv1.KiongaModelPromotion
 	if err := r.Get(ctx, request.NamespacedName, &promotion); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -89,7 +89,7 @@ func (r *ModelPromotionReconciler) Reconcile(ctx context.Context, request ctrl.R
 }
 
 func (r *ModelPromotionReconciler) SetupWithManager(manager ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(manager).For(&mlaiopsv1.NexusModelPromotion{}).Complete(r)
+	return ctrl.NewControllerManagedBy(manager).For(&mlaiopsv1.KiongaModelPromotion{}).Complete(r)
 }
 
 func stringValue(values map[string]any, keys ...string) string {

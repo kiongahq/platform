@@ -6,14 +6,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
 
 type KafkaRecord struct {
-	Topic string          `json:"topic"`
-	Key   json.RawMessage `json:"key"`
-	Value json.RawMessage `json:"value"`
+	Topic     string          `json:"topic"`
+	Key       json.RawMessage `json:"key"`
+	Value     json.RawMessage `json:"value"`
+	Partition int             `json:"partition"`
+	Offset    int64           `json:"offset"`
+}
+
+type KafkaOffset struct {
+	Topic     string `json:"topic"`
+	Partition int    `json:"partition"`
+	Offset    int64  `json:"offset"`
 }
 
 type KafkaConsumer struct {
@@ -29,7 +38,7 @@ func NewKafkaConsumer(restURL, group, instance string) *KafkaConsumer {
 }
 
 func (c *KafkaConsumer) Connect(ctx context.Context, topics []string) error {
-	payload := map[string]any{"name": c.instance, "format": "json", "auto.offset.reset": "earliest", "auto.commit.enable": "true"}
+	payload := map[string]any{"name": c.instance, "format": "json", "auto.offset.reset": "earliest", "auto.commit.enable": "false"}
 	var response struct {
 		BaseURI string `json:"base_uri"`
 	}
@@ -50,6 +59,55 @@ func (c *KafkaConsumer) Poll(ctx context.Context) ([]KafkaRecord, error) {
 	var records []KafkaRecord
 	err := c.request(ctx, http.MethodGet, c.baseURI+"/records", nil, &records)
 	return records, err
+}
+
+// Commit advances each partition to the first offset after the successfully
+// processed records. Callers must only invoke it after the complete poll batch has
+// been dispatched; Kafka will redeliver the batch after a restart if this request
+// does not succeed.
+func (c *KafkaConsumer) Commit(ctx context.Context, records []KafkaRecord) error {
+	if c.baseURI == "" {
+		return fmt.Errorf("consumer is not connected")
+	}
+	offsets, err := nextOffsets(records)
+	if err != nil {
+		return err
+	}
+	if len(offsets) == 0 {
+		return nil
+	}
+	return c.request(ctx, http.MethodPost, c.baseURI+"/offsets", map[string]any{"offsets": offsets}, nil)
+}
+
+func nextOffsets(records []KafkaRecord) ([]KafkaOffset, error) {
+	type partition struct {
+		topic string
+		id    int
+	}
+	highest := make(map[partition]int64)
+	for _, record := range records {
+		if strings.TrimSpace(record.Topic) == "" {
+			return nil, fmt.Errorf("Kafka record topic is required for offset commit")
+		}
+		if record.Partition < 0 || record.Offset < 0 {
+			return nil, fmt.Errorf("Kafka record %s has invalid partition or offset", record.Topic)
+		}
+		key := partition{topic: record.Topic, id: record.Partition}
+		if current, ok := highest[key]; !ok || record.Offset > current {
+			highest[key] = record.Offset
+		}
+	}
+	offsets := make([]KafkaOffset, 0, len(highest))
+	for key, offset := range highest {
+		offsets = append(offsets, KafkaOffset{Topic: key.topic, Partition: key.id, Offset: offset + 1})
+	}
+	sort.Slice(offsets, func(i, j int) bool {
+		if offsets[i].Topic == offsets[j].Topic {
+			return offsets[i].Partition < offsets[j].Partition
+		}
+		return offsets[i].Topic < offsets[j].Topic
+	})
+	return offsets, nil
 }
 
 func (c *KafkaConsumer) Close(ctx context.Context) error {

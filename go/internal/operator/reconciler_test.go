@@ -2,16 +2,18 @@ package operator
 
 import "testing"
 
+import platformapi "github.com/ml-ai-ops/platform/pkg/api"
+
 func TestReconcileAgentBuildsWorkloadAndTraffic(t *testing.T) {
 	plan, err := ReconcileAgent(AgentSpec{
-		Name: "support", Namespace: "team-a", Version: "2.1.0", Image: "registry/support:2.1.0",
+		ResourceID: "agt-support-v2", Name: "support", Namespace: "team-a", Version: "2.1.0", Image: "registry/support:2.1.0",
 		GraphModule: "agents.support:graph", MinReplicas: 2, MaxReplicas: 10,
 		LLMBackend: "self-hosted", CanaryWeight: 15, StableRef: "support-1-9-0",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Workload.Name != "support-2-1-0" || plan.Workload.Replicas != 2 {
+	if plan.Workload.Name != platformapi.AgentDNSName("agt-support-v2") || plan.Workload.Replicas != 2 {
 		t.Fatalf("unexpected workload: %#v", plan.Workload)
 	}
 	if plan.Traffic.StableWeight != 85 || plan.Traffic.CanaryWeight != 15 {

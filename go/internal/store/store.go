@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/ml-ai-ops/platform/pkg/api"
 )
@@ -129,7 +130,7 @@ func (s *Store) Functions() []api.Function {
 func (s *Store) Runs() []api.PipelineRun {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return clone(s.data.Runs)
+	return clonePipelineRuns(s.data.Runs)
 }
 func (s *Store) Models() []api.Model { s.mu.RLock(); defer s.mu.RUnlock(); return clone(s.data.Models) }
 func (s *Store) Agents() []api.Agent { s.mu.RLock(); defer s.mu.RUnlock(); return clone(s.data.Agents) }
@@ -150,17 +151,26 @@ func (s *Store) CreateProject(req api.CreateProjectRequest, actor ...string) (ap
 	if len(name) < 3 {
 		return api.Project{}, errors.New("name must contain at least 3 characters")
 	}
-	if req.Template == "" {
-		req.Template = "tabular-classification"
+	template, err := api.NormalizeProjectRequest(&req)
+	if err != nil {
+		return api.Project{}, err
 	}
+	namespace := slug(name)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, v := range s.data.Projects {
-		if strings.EqualFold(v.Name, name) {
+		if strings.EqualFold(v.Name, name) || v.Namespace == namespace {
 			return api.Project{}, ErrConflict
 		}
 	}
-	p := api.Project{ID: id("prj"), Name: name, Description: strings.TrimSpace(req.Description), Template: req.Template, Namespace: slug(name), Status: "ready", CreatedAt: time.Now().UTC(), OwnerSubject: req.OwnerSubject}
+	p := api.Project{
+		ID: id("prj"), Name: name, Description: strings.TrimSpace(req.Description),
+		Template: template.ID, TemplateVersion: template.Version, Framework: req.Framework,
+		Accelerator: req.Accelerator, RequestedProfile: req.RequestedProfile,
+		Capabilities:    append([]string(nil), template.Capabilities...),
+		ScaffoldCommand: scaffoldCommand(namespace, template, req),
+		Namespace:       namespace, Status: "ready", CreatedAt: time.Now().UTC(), OwnerSubject: req.OwnerSubject,
+	}
 	if strings.TrimSpace(req.RepositoryURL) != "" {
 		repository, err := validateGitRepository(api.SetProjectRepositoryRequest{URL: req.RepositoryURL, DefaultBranch: req.DefaultBranch})
 		if err != nil {
@@ -171,6 +181,13 @@ func (s *Store) CreateProject(req api.CreateProjectRequest, actor ...string) (ap
 	s.data.Projects = append([]api.Project{p}, s.data.Projects...)
 	s.record("project.created", "project", p.ID, first(actor), nil)
 	return p, s.persist()
+}
+
+func scaffoldCommand(namespace string, template api.ProjectTemplate, req api.CreateProjectRequest) string {
+	return fmt.Sprintf(
+		"kionga scaffold %s --template %s --template-version %s --framework %s --accelerator %s --profile %s",
+		namespace, template.ID, template.Version, req.Framework, req.Accelerator, req.RequestedProfile,
+	)
 }
 
 func (s *Store) SubmitPipeline(req api.SubmitPipelineRequest, actor ...string) (api.PipelineRun, error) {
@@ -197,7 +214,8 @@ func (s *Store) SubmitPipeline(req api.SubmitPipelineRequest, actor ...string) (
 	run := api.PipelineRun{ID: id("run"), ProjectID: req.ProjectID, Name: strings.TrimSpace(req.Name), Status: "queued", Progress: 0, CreatedAt: now, UpdatedAt: now, DefinitionID: req.DefinitionID, ExecutionMode: mode, Parameters: req.Parameters, Steps: steps, Logs: []api.RunLog{{Timestamp: now, Level: "info", Message: "Run accepted by control plane"}}}
 	s.data.Runs = append([]api.PipelineRun{run}, s.data.Runs...)
 	s.record("pipeline.submitted", "pipeline_run", run.ID, first(actor), nil)
-	return run, s.persist()
+	err := s.persist()
+	return clonePipelineRun(run), err
 }
 
 func (s *Store) Run(runID string) (api.PipelineRun, error) {
@@ -205,7 +223,7 @@ func (s *Store) Run(runID string) (api.PipelineRun, error) {
 	defer s.mu.RUnlock()
 	for _, run := range s.data.Runs {
 		if run.ID == runID {
-			return run, nil
+			return clonePipelineRun(run), nil
 		}
 	}
 	return api.PipelineRun{}, ErrNotFound
@@ -222,7 +240,8 @@ func (s *Store) CancelRun(runID, actor string) (api.PipelineRun, error) {
 			s.data.Runs[i].Status, s.data.Runs[i].UpdatedAt = "cancelled", time.Now().UTC()
 			s.data.Runs[i].Logs = append(s.data.Runs[i].Logs, api.RunLog{Timestamp: time.Now().UTC(), Level: "warning", Message: "Run cancelled by " + actor})
 			s.record("pipeline.cancelled", "pipeline_run", runID, actor, nil)
-			return s.data.Runs[i], s.persist()
+			err := s.persist()
+			return clonePipelineRun(s.data.Runs[i]), err
 		}
 	}
 	return api.PipelineRun{}, ErrNotFound
@@ -238,7 +257,8 @@ func (s *Store) RetryRun(runID, actor string) (api.PipelineRun, error) {
 			run := api.PipelineRun{ID: id("run"), ProjectID: previous.ProjectID, Name: previous.Name, ParentRunID: previous.ID, Status: "queued", CreatedAt: now, UpdatedAt: now, DefinitionID: previous.DefinitionID, ExecutionMode: previous.ExecutionMode, Parameters: previous.Parameters, Steps: steps, Logs: []api.RunLog{{Timestamp: now, Level: "info", Message: "Retry created from " + previous.ID}}}
 			s.data.Runs = append([]api.PipelineRun{run}, s.data.Runs...)
 			s.record("pipeline.retried", "pipeline_run", run.ID, actor, map[string]any{"parent_run_id": previous.ID})
-			return run, s.persist()
+			err := s.persist()
+			return clonePipelineRun(run), err
 		}
 	}
 	return api.PipelineRun{}, ErrNotFound
@@ -252,7 +272,8 @@ func (s *Store) SetRunEngine(runID, engineRunID string) (api.PipelineRun, error)
 		if s.data.Runs[i].ID == runID {
 			s.data.Runs[i].EngineRunID = engineRunID
 			s.data.Runs[i].UpdatedAt = time.Now().UTC()
-			return s.data.Runs[i], s.persist()
+			err := s.persist()
+			return clonePipelineRun(s.data.Runs[i]), err
 		}
 	}
 	return api.PipelineRun{}, ErrNotFound
@@ -282,11 +303,13 @@ func (s *Store) UpdateRunStep(runID string, req api.UpdateRunStepRequest, actor 
 		run.Logs = append(run.Logs, api.RunLog{Timestamp: now, Step: req.Step, Level: level, Message: stepMessage(req)})
 		if run.Status == "cancelled" || run.Status == "failed" || run.Status == "succeeded" {
 			// Terminal runs keep their state; late reports are only logged.
-			return *run, s.persist()
+			err := s.persist()
+			return clonePipelineRun(*run), err
 		}
 		applyStepTransition(run, req)
 		run.UpdatedAt = now
-		return *run, s.persist()
+		err := s.persist()
+		return clonePipelineRun(*run), err
 	}
 	return api.PipelineRun{}, ErrNotFound
 }
@@ -355,6 +378,14 @@ func applyStepTransition(run *api.PipelineRun, req api.UpdateRunStepRequest) {
 func (s *Store) RegisterModel(req api.RegisterModelRequest, actor string) (api.Model, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
+	req.Name = strings.TrimSpace(req.Name)
+	req.Version = strings.TrimSpace(req.Version)
+	req.ArtifactURI = strings.TrimSpace(req.ArtifactURI)
+	servingImage, err := normalizeServingImage(req.ServingImage)
+	if err != nil {
+		return api.Model{}, err
+	}
 	if !hasProject(s.data.Projects, req.ProjectID) {
 		return api.Model{}, ErrNotFound
 	}
@@ -370,10 +401,27 @@ func (s *Store) RegisterModel(req api.RegisterModelRequest, actor string) (api.M
 	if accuracy, ok := req.Metrics["accuracy"]; ok && accuracy < .8 {
 		gate = "failed"
 	}
-	m := api.Model{ID: id("mdl"), ProjectID: req.ProjectID, Name: req.Name, Version: req.Version, Stage: "candidate", ArtifactURI: req.ArtifactURI, Metrics: req.Metrics, GateStatus: gate, DeploymentStatus: "not_deployed", CreatedAt: time.Now().UTC()}
+	m := api.Model{ID: id("mdl"), ProjectID: req.ProjectID, Name: req.Name, Version: req.Version, Stage: "candidate", ArtifactURI: req.ArtifactURI, ServingImage: servingImage, Metrics: req.Metrics, GateStatus: gate, DeploymentStatus: "not_deployed", CreatedAt: time.Now().UTC()}
 	s.data.Models = append([]api.Model{m}, s.data.Models...)
 	s.record("model.registered", "model", m.ID, actor, nil)
 	return m, s.persist()
+}
+
+func normalizeServingImage(value string) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	if strings.IndexFunc(value, unicode.IsControl) >= 0 {
+		return "", errors.New("serving_image must not contain control characters")
+	}
+	image := strings.TrimSpace(value)
+	if image == "" {
+		return "", errors.New("serving_image must not be whitespace-only")
+	}
+	if strings.IndexFunc(image, unicode.IsSpace) >= 0 {
+		return "", errors.New("serving_image must not contain whitespace")
+	}
+	return image, nil
 }
 
 func (s *Store) PromoteModel(modelID, stage, actor string) (api.Model, error) {
@@ -450,18 +498,15 @@ func (s *Store) RollbackModel(modelID, actor string) (api.Model, error) {
 }
 
 func (s *Store) DeployAgent(req api.DeployAgentRequest, actor string) (api.Agent, error) {
+	if err := NormalizeAgentRequest(&req); err != nil {
+		return api.Agent{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !hasProject(s.data.Projects, req.ProjectID) {
 		return api.Agent{}, ErrNotFound
 	}
-	if req.Name == "" || req.Version == "" || req.Image == "" || req.GraphModule == "" {
-		return api.Agent{}, errors.New("name, version, image and graph_module are required")
-	}
-	if req.Replicas < 1 {
-		req.Replicas = 1
-	}
-	a := api.Agent{ID: id("agt"), ProjectID: req.ProjectID, Name: req.Name, Version: req.Version, Image: req.Image, GraphModule: req.GraphModule, LLMBackend: req.LLMBackend, Replicas: req.Replicas, Tools: req.Tools, Status: "pending", CreatedAt: time.Now().UTC()}
+	a := api.Agent{ID: id("agt"), ProjectID: req.ProjectID, OwnerSubject: req.OwnerSubject, Name: req.Name, Version: req.Version, Image: req.Image, GraphModule: req.GraphModule, LLMBackend: req.LLMBackend, Replicas: req.Replicas, Autoscaling: req.Autoscaling, Resources: req.Resources, Tools: req.Tools, Status: "pending", CreatedAt: time.Now().UTC()}
 	s.data.Agents = append([]api.Agent{a}, s.data.Agents...)
 	s.record("agent.deployed", "agent", a.ID, actor, nil)
 	return a, s.persist()
@@ -640,7 +685,13 @@ func (s *Store) load() error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(raw, &s.data)
+	if err := json.Unmarshal(raw, &s.data); err != nil {
+		return err
+	}
+	for i := range s.data.Agents {
+		NormalizeAgentRecord(&s.data.Agents[i])
+	}
+	return nil
 }
 
 func (s *Store) persist() error {
@@ -672,6 +723,57 @@ func (s *Store) record(action, resource, resourceID, actor string, metadata map[
 // clone always returns a non-nil slice so list endpoints serialize as [] —
 // never null — regardless of state.
 func clone[T any](values []T) []T { return append([]T{}, values...) }
+
+// Pipeline runs are updated asynchronously by execution engines. A shallow
+// struct copy still aliases Steps, DependsOn, Logs, and Parameters, which lets a
+// background step transition race with an HTTP encoder (or lets a caller mutate
+// persisted state after the store lock is released). Always detach those fields
+// at the repository boundary.
+func clonePipelineRun(value api.PipelineRun) api.PipelineRun {
+	value.Parameters = cloneJSONMap(value.Parameters)
+	value.Steps = append([]api.PipelineStep{}, value.Steps...)
+	for i := range value.Steps {
+		value.Steps[i].DependsOn = append([]string{}, value.Steps[i].DependsOn...)
+	}
+	value.Logs = append([]api.RunLog{}, value.Logs...)
+	return value
+}
+
+func clonePipelineRuns(values []api.PipelineRun) []api.PipelineRun {
+	result := make([]api.PipelineRun, len(values))
+	for i := range values {
+		result[i] = clonePipelineRun(values[i])
+	}
+	return result
+}
+
+func cloneJSONMap(value map[string]any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	result := make(map[string]any, len(value))
+	for key, item := range value {
+		result[key] = cloneJSONValue(item)
+	}
+	return result
+}
+
+func cloneJSONValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneJSONMap(typed)
+	case []any:
+		result := make([]any, len(typed))
+		for i := range typed {
+			result[i] = cloneJSONValue(typed[i])
+		}
+		return result
+	case []string:
+		return append([]string{}, typed...)
+	default:
+		return value
+	}
+}
 func hasProject(values []api.Project, id string) bool {
 	for _, v := range values {
 		if v.ID == id {

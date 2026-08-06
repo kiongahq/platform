@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -17,19 +19,25 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if err := run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		log.Fatal(err)
+	}
+}
+
+func run(ctx context.Context) error {
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	client, err := dynamic.NewForConfig(config)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	namespace := env("MLAIOPS_TARGET_NAMESPACE", "default")
 	consumer := integrations.NewKafkaConsumer(env("KAFKA_REST_URL", "http://kafka-rest:8082"), "mlaiops-integration", env("HOSTNAME", "worker"))
 	topics := []string{"mlaiops.pipeline.commands", "mlaiops.model.commands", "mlaiops.agent.commands", "mlaiops.tool.commands", "mlaiops.connection.commands", "mlaiops.workspace.commands"}
 	if err := consumer.Connect(ctx, topics); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -37,19 +45,25 @@ func main() {
 		_ = consumer.Close(closeCtx)
 	}()
 	dispatcher := integrations.NewDispatcher(client, namespace)
+	worker := integrations.NewLifecycleWorker(consumer, dispatcher)
 	for ctx.Err() == nil {
 		records, err := consumer.Poll(ctx)
 		if err != nil {
 			log.Printf("Kafka poll failed: %v", err)
-			time.Sleep(time.Second)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Second):
+			}
 			continue
 		}
-		for _, record := range records {
-			if err := dispatcher.Dispatch(ctx, record); err != nil {
-				log.Printf("dispatch topic=%s failed: %v", record.Topic, err)
-			}
+		if err := worker.ProcessBatch(ctx, records); err != nil {
+			// Stop before polling another batch. Continuing could later commit past
+			// the failed offsets; process restart resumes from the last durable commit.
+			return fmt.Errorf("Kafka lifecycle batch failed: %w", err)
 		}
 	}
+	return ctx.Err()
 }
 
 func env(key, fallback string) string {

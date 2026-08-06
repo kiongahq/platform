@@ -17,16 +17,21 @@ endpoints and appears in the console.
 
 | Resource | What it is |
 | --- | --- |
-| **Project** | A workspace with a namespace and a starting template (tabular classification, forecasting, RAG/agent, or blank). Everything else belongs to a project. |
+| **Project template** | An immutable versioned contract describing supported frameworks, accelerators, capabilities, required services, recommended resource profile, and generator behavior. |
+| **Project** | An ownership and isolation boundary with a namespace, pinned template/version, framework, accelerator intent, resource profile, capabilities, scaffold command, and optional credential-free Git repository reference. Workloads and assets belong to a project. |
+| **User access profile** | An immutable identity subject plus role, services, projects, buckets, suspension state, and compute/storage/run/function quotas. |
+| **Access request** | A user's request for selected services and a reason, resolved through the administrator approval queue and audit log. |
+| **Workspace** | Jupyter and/or IDE development surface. Compose provides a shared volume; Kubernetes reconciles per-user `KiongaWorkspace` pods, PVCs, services, and credentials. |
 | **Pipeline run** | One execution of a pipeline through the engine. Has a status, a progress percentage, an ordered set of **steps** (a DAG), and logs. |
+| **Pipeline definition** | A reusable, versioned container/function DAG with dependencies, resources, retries, parameters, repository, and commit lineage. The backend validates the graph; Dagre only lays it out for the console. |
 | **Model** | A registered model version with metrics, a **quality gate** status, a **stage** (candidate/production), and — once deployed — a live **endpoint URL** and deployment status. |
-| **Agent** | A deployed LangGraph agent: a graph module, an LLM backend, a tool list, a canary weight, and status. Produces sessions and traces. |
+| **Agent** | A deployed LangGraph application: project, image, graph module, LLM backend, tool list, per-replica CPU/memory/GPU, min/max replicas, canary weight, and status. Produces sessions and traces; Kubernetes can reconcile an HPA when the range is elastic. |
 | **Agent session** | One conversation/thread with an agent: turns, current node, token usage, and cost. |
 | **Tool** | A registered capability an agent can call (name, description, schema). |
 | **Feature view** | A named group of features for an entity, with a schema, TTL, and online materialization status. |
 | **Connection** | A registered external service (MLflow, S3, Kafka, Langfuse, Prefect, Redis, Kubernetes) that the control plane actively health-checks. Stores only a secret *reference*, never raw credentials. |
 | **Audit event** | An immutable record of a mutation — who did what, when. |
-| **Function** | A serverless function (OpenFaaS) deployable and invocable when configured. |
+| **Function** | A project-owned OCI workload with CPU/memory limits and HTTP, async, Cron, or Kafka trigger metadata; deployed and invoked through OpenFaaS when configured. |
 
 ## Connections and health
 
@@ -50,12 +55,14 @@ real — a deployed model answers live predictions from the console's test conso
 
 ## Agents, sessions, and tracing
 
-An **agent** is a LangGraph graph served by the shared agent-runtime. When you invoke
-it, the runtime maintains a **session** (state checkpointed in Postgres, keyed per
-agent) and records **turns**. Every LLM call egresses through the **trace-proxy**,
-which captures it to Kafka; **Langfuse** provides the observability UI. Token counts
-come from the model's usage metadata (measured, never estimated); **cost** is
-computed from configured per-1k rates.
+An **agent** is a LangGraph graph served by the runtime. Compose shares one runtime;
+Kubernetes creates an immutable-ID-derived Service per agent. Live health, not the
+persisted deploy record, determines whether Chat/invocation is enabled. The runtime
+maintains a **session** (state checkpointed in Postgres, keyed per agent) and records
+**turns**. Every LLM call egresses through the **trace-proxy**, which captures it to
+Kafka; **Langfuse** provides the observability UI. Token counts come from the model's
+usage metadata (measured, never estimated); **cost** is computed from configured
+per-1k rates.
 
 ## The feature store: online vs offline
 
@@ -77,14 +84,14 @@ console's Real-Time panel shows live throughput, latency, and recent scored even
 
 ## Serverless
 
-**Serverless** deployment uses **OpenFaaS / faasd** — single-node, Docker-native,
-open source. Agents and model endpoints can be deployed as functions with
-scale-to-zero. This is a VM-level install (not part of the default Compose stack)
-and is the one capability the demo smoke marks as *skipped* locally by design.
+**Serverless** deployment uses **OpenFaaS / faasd**. Kionga owns the project/function
+contract, quotas, trigger configuration, invocations, audit, UI, and function-DAG
+composition. The execution gateway is external to the default Compose stack and
+the capability remains **not configured** until `OPENFAAS_URL` is set.
 
 !!! info "Serverless with OpenFaaS"
-    Serverless is delivered with OpenFaaS/faasd — fully open source, Docker-native
-    on a single node, and carrying to OpenFaaS-on-Kubernetes at scale.
+    Use faasd for a single node or OpenFaaS on Kubernetes at scale. Trigger
+    connectors and their operational/licensing terms are selected by the operator.
 
 ## Trace-proxy egress
 

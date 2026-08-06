@@ -130,24 +130,49 @@ type UpsertBlogPostRequest struct {
 }
 
 type Project struct {
-	ID           string         `json:"id"`
-	Name         string         `json:"name"`
-	Description  string         `json:"description"`
-	Template     string         `json:"template"`
-	Namespace    string         `json:"namespace"`
-	Status       string         `json:"status"`
-	CreatedAt    time.Time      `json:"created_at"`
-	OwnerSubject string         `json:"owner_subject,omitempty"`
-	Repository   *GitRepository `json:"repository,omitempty"`
+	ID               string         `json:"id"`
+	Name             string         `json:"name"`
+	Description      string         `json:"description"`
+	Template         string         `json:"template"`
+	TemplateVersion  string         `json:"template_version"`
+	Framework        string         `json:"framework"`
+	Accelerator      string         `json:"accelerator"`
+	RequestedProfile string         `json:"requested_profile"`
+	Capabilities     []string       `json:"capabilities"`
+	ScaffoldCommand  string         `json:"scaffold_command"`
+	Namespace        string         `json:"namespace"`
+	Status           string         `json:"status"`
+	CreatedAt        time.Time      `json:"created_at"`
+	OwnerSubject     string         `json:"owner_subject,omitempty"`
+	Repository       *GitRepository `json:"repository,omitempty"`
 }
 
 type CreateProjectRequest struct {
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Template      string `json:"template"`
-	RepositoryURL string `json:"repository_url,omitempty"`
-	DefaultBranch string `json:"default_branch,omitempty"`
-	OwnerSubject  string `json:"-"`
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	Template         string `json:"template"`
+	TemplateVersion  string `json:"template_version,omitempty"`
+	Framework        string `json:"framework,omitempty"`
+	Accelerator      string `json:"accelerator,omitempty"`
+	RequestedProfile string `json:"requested_profile,omitempty"`
+	RepositoryURL    string `json:"repository_url,omitempty"`
+	DefaultBranch    string `json:"default_branch,omitempty"`
+	OwnerSubject     string `json:"-"`
+}
+
+// ProjectTemplate is a versioned, API-visible starter contract shared by the
+// console, SDK and the Kionga workspace generator.
+type ProjectTemplate struct {
+	ID                 string   `json:"id"`
+	Version            string   `json:"version"`
+	Name               string   `json:"name"`
+	Category           string   `json:"category"`
+	Description        string   `json:"description"`
+	Frameworks         []string `json:"frameworks"`
+	Accelerators       []string `json:"accelerators"`
+	Capabilities       []string `json:"capabilities"`
+	RequiredServices   []string `json:"required_services"`
+	RecommendedProfile string   `json:"recommended_profile"`
 }
 
 // GitRepository binds a platform project to its source of truth without
@@ -302,6 +327,7 @@ type Model struct {
 	Version          string             `json:"version"`
 	Stage            string             `json:"stage"`
 	ArtifactURI      string             `json:"artifact_uri"`
+	ServingImage     string             `json:"serving_image,omitempty"`
 	Metrics          map[string]float64 `json:"metrics"`
 	CreatedAt        time.Time          `json:"created_at"`
 	GateStatus       string             `json:"gate_status"`
@@ -312,11 +338,12 @@ type Model struct {
 }
 
 type RegisterModelRequest struct {
-	ProjectID   string             `json:"project_id"`
-	Name        string             `json:"name"`
-	Version     string             `json:"version"`
-	ArtifactURI string             `json:"artifact_uri"`
-	Metrics     map[string]float64 `json:"metrics"`
+	ProjectID    string             `json:"project_id"`
+	Name         string             `json:"name"`
+	Version      string             `json:"version"`
+	ArtifactURI  string             `json:"artifact_uri"`
+	ServingImage string             `json:"serving_image,omitempty"`
+	Metrics      map[string]float64 `json:"metrics"`
 }
 
 type PromoteModelRequest struct {
@@ -328,29 +355,48 @@ type DeployModelRequest struct {
 }
 
 type Agent struct {
-	ID           string    `json:"id"`
-	ProjectID    string    `json:"project_id"`
-	Name         string    `json:"name"`
-	Version      string    `json:"version"`
-	Image        string    `json:"image"`
-	GraphModule  string    `json:"graph_module"`
-	LLMBackend   string    `json:"llm_backend"`
-	Status       string    `json:"status"`
-	Replicas     int       `json:"replicas"`
-	CanaryWeight int       `json:"canary_weight"`
-	Tools        []string  `json:"tools"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string           `json:"id"`
+	ProjectID    string           `json:"project_id"`
+	OwnerSubject string           `json:"owner_subject,omitempty"`
+	Name         string           `json:"name"`
+	Version      string           `json:"version"`
+	Image        string           `json:"image"`
+	GraphModule  string           `json:"graph_module"`
+	LLMBackend   string           `json:"llm_backend"`
+	Status       string           `json:"status"`
+	EndpointURL  string           `json:"endpoint_url,omitempty"`
+	Replicas     int              `json:"replicas"`
+	Autoscaling  AgentAutoscaling `json:"autoscaling"`
+	Resources    AgentResources   `json:"resources"`
+	CanaryWeight int              `json:"canary_weight"`
+	Tools        []string         `json:"tools"`
+	CreatedAt    time.Time        `json:"created_at"`
 }
 
 type DeployAgentRequest struct {
-	ProjectID   string   `json:"project_id"`
-	Name        string   `json:"name"`
-	Version     string   `json:"version"`
-	Image       string   `json:"image"`
-	GraphModule string   `json:"graph_module"`
-	LLMBackend  string   `json:"llm_backend"`
-	Replicas    int      `json:"replicas"`
-	Tools       []string `json:"tools"`
+	ProjectID    string           `json:"project_id"`
+	OwnerSubject string           `json:"-"`
+	Name         string           `json:"name"`
+	Version      string           `json:"version"`
+	Image        string           `json:"image"`
+	GraphModule  string           `json:"graph_module"`
+	LLMBackend   string           `json:"llm_backend"`
+	Replicas     int              `json:"replicas,omitempty"`
+	Autoscaling  AgentAutoscaling `json:"autoscaling,omitempty"`
+	Resources    AgentResources   `json:"resources,omitempty"`
+	Tools        []string         `json:"tools"`
+}
+
+type AgentAutoscaling struct {
+	MinReplicas int `json:"min_replicas"`
+	MaxReplicas int `json:"max_replicas"`
+}
+
+type AgentResources struct {
+	CPU     string `json:"cpu"`
+	Memory  string `json:"memory"`
+	GPU     int    `json:"gpu,omitempty"`
+	GPUType string `json:"gpu_type,omitempty"`
 }
 
 type TrafficRequest struct {

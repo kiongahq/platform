@@ -26,7 +26,7 @@ func TestSeedEngineeringBlogIsPublic(t *testing.T) {
 
 func TestDraftIsAdminOnlyUntilPublished(t *testing.T) {
 	server := testServer()
-	body := `{"title":"Testing platform upgrades safely","summary":"A detailed summary of safe platform upgrade practices.","content":"# Safe upgrades\n\nThis article has enough substantial content to pass validation and remain a useful draft for later publication. It includes rollout and rollback concerns.","author":"Nexus Engineering","tags":["Operations"],"status":"draft"}`
+	body := `{"title":"Testing platform upgrades safely","summary":"A detailed summary of safe platform upgrade practices.","content":"# Safe upgrades\n\nThis article has enough substantial content to pass validation and remain a useful draft for later publication. It includes rollout and rollback concerns.","author":"Kionga Engineering","tags":["Operations"],"status":"draft"}`
 	create := httptest.NewRecorder()
 	server.ServeHTTP(create, httptest.NewRequest(http.MethodPost, "/api/v1/admin/blogs", strings.NewReader(body)))
 	if create.Code != http.StatusCreated {

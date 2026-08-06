@@ -7,13 +7,17 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ml-ai-ops/platform/pkg/api"
+	kvalidation "k8s.io/apimachinery/pkg/util/validation"
 )
 
 var (
 	resourceQuantity = regexp.MustCompile(`^[1-9][0-9]*(m|Mi|Gi)?$`)
 	functionName     = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
+	agentGraphModule = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*$`)
+	agentVersion     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`)
 )
 
 // ValidateFunctionRequest applies the portable subset of the OpenFaaS and
@@ -31,9 +35,9 @@ func ValidateFunctionRequest(req api.DeployFunctionRequest) error {
 	if req.Memory != "" && !resourceQuantity.MatchString(req.Memory) {
 		return errors.New("memory must be a quantity such as 512Mi or 2Gi")
 	}
-	mode := req.Annotations["com.nexus.invocation"]
+	mode := req.Annotations["io.kionga.invocation"]
 	if mode != "" && mode != "sync" && mode != "async" {
-		return errors.New("com.nexus.invocation must be sync or async")
+		return errors.New("io.kionga.invocation must be sync or async")
 	}
 	if schedule := strings.TrimSpace(req.Annotations["schedule"]); schedule != "" {
 		if !strings.Contains(req.Annotations["topic"], "cron-function") {
@@ -46,6 +50,166 @@ func ValidateFunctionRequest(req api.DeployFunctionRequest) error {
 		}
 	}
 	return nil
+}
+
+// NormalizeAgentRequest applies safe workload defaults shared by the file and
+// PostgreSQL stores. Replicas remains a compatibility input; autoscaling is
+// the canonical contract returned to clients and reconciled on Kubernetes.
+func NormalizeAgentRequest(req *api.DeployAgentRequest) error {
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
+	req.Name = strings.TrimSpace(req.Name)
+	req.Version = strings.TrimSpace(req.Version)
+	req.Image = strings.TrimSpace(req.Image)
+	req.GraphModule = strings.TrimSpace(req.GraphModule)
+	req.LLMBackend = strings.TrimSpace(req.LLMBackend)
+	if req.ProjectID == "" || req.Name == "" || req.Version == "" || req.Image == "" || req.GraphModule == "" {
+		return errors.New("project_id, name, version, image and graph_module are required")
+	}
+	if !functionName.MatchString(req.Name) {
+		return errors.New("agent name must be a lowercase DNS label")
+	}
+	if !agentVersion.MatchString(req.Version) {
+		return errors.New("agent version must contain only letters, numbers, dot, underscore, plus, or hyphen")
+	}
+	if len(req.Image) > 512 || strings.IndexFunc(req.Image, func(char rune) bool { return unicode.IsSpace(char) || unicode.IsControl(char) }) >= 0 {
+		return errors.New("agent image must be a non-whitespace OCI image reference")
+	}
+	if !agentGraphModule.MatchString(req.GraphModule) {
+		return errors.New("agent graph_module must use package.module:attribute")
+	}
+	if req.Replicas < 1 {
+		req.Replicas = 1
+	}
+	if req.Autoscaling.MinReplicas < 1 {
+		req.Autoscaling.MinReplicas = req.Replicas
+	}
+	if req.Autoscaling.MaxReplicas < 1 {
+		req.Autoscaling.MaxReplicas = req.Autoscaling.MinReplicas
+	}
+	if req.Autoscaling.MaxReplicas < req.Autoscaling.MinReplicas || req.Autoscaling.MaxReplicas > 100 {
+		return errors.New("agent max_replicas must be between min_replicas and 100")
+	}
+	req.Replicas = req.Autoscaling.MinReplicas
+	req.Resources.CPU = strings.TrimSpace(req.Resources.CPU)
+	req.Resources.Memory = strings.TrimSpace(req.Resources.Memory)
+	if req.Resources.CPU == "" {
+		req.Resources.CPU = "500m"
+	}
+	if req.Resources.Memory == "" {
+		req.Resources.Memory = "1Gi"
+	}
+	if !resourceQuantity.MatchString(req.Resources.CPU) {
+		return errors.New("agent CPU must be a quantity such as 500m or 2")
+	}
+	if !resourceQuantity.MatchString(req.Resources.Memory) {
+		return errors.New("agent memory must be a quantity such as 512Mi or 2Gi")
+	}
+	if req.Resources.GPU < 0 {
+		return errors.New("agent GPU count cannot be negative")
+	}
+	if req.Resources.GPU > 0 && strings.TrimSpace(req.Resources.GPUType) == "" {
+		req.Resources.GPUType = "nvidia.com/gpu"
+	}
+	req.Resources.GPUType = strings.TrimSpace(req.Resources.GPUType)
+	if req.Resources.GPU > 0 {
+		if err := validateAgentGPUType(req.Resources.GPUType); err != nil {
+			return err
+		}
+	}
+	if req.Resources.GPU == 0 {
+		req.Resources.GPUType = ""
+	}
+	if req.LLMBackend == "" {
+		req.LLMBackend = "mock"
+	}
+	switch req.LLMBackend {
+	case "mock", "openai", "anthropic", "openai-compatible", "self-hosted":
+	default:
+		return errors.New("agent llm_backend must be mock, openai, anthropic, openai-compatible, or self-hosted")
+	}
+	seenTools := make(map[string]bool, len(req.Tools))
+	tools := make([]string, 0, len(req.Tools))
+	for _, value := range req.Tools {
+		name := strings.TrimSpace(value)
+		if name == "" {
+			return errors.New("agent tool names must not be empty")
+		}
+		if seenTools[name] {
+			return errors.New("agent tool names must be unique")
+		}
+		seenTools[name] = true
+		tools = append(tools, name)
+	}
+	req.Tools = tools
+	return nil
+}
+
+func validateAgentGPUType(value string) error {
+	switch value {
+	case "cpu", "memory", "ephemeral-storage", "storage":
+		return errors.New("agent gpu_type must not collide with a native Kubernetes resource")
+	}
+	prefix, _, qualified := strings.Cut(value, "/")
+	if !qualified || prefix == "" || len(kvalidation.IsQualifiedName(value)) > 0 {
+		return errors.New("agent gpu_type must be a domain-qualified Kubernetes extended resource name")
+	}
+	if prefix == "kubernetes.io" || strings.HasSuffix(prefix, ".kubernetes.io") ||
+		prefix == "k8s.io" || strings.HasSuffix(prefix, ".k8s.io") {
+		return errors.New("agent gpu_type must not use a Kubernetes-reserved domain")
+	}
+	return nil
+}
+
+// NormalizeAgentRecord upgrades records written before autoscaling and
+// per-replica resources became part of the public agent contract. Corrupt
+// legacy resource values are replaced with conservative, deployable defaults
+// so a subsequent update cannot turn cpu or memory into a GPU resource key.
+func NormalizeAgentRecord(agent *api.Agent) {
+	if agent.Replicas < 1 {
+		agent.Replicas = 1
+	}
+	if agent.Replicas > 100 {
+		agent.Replicas = 100
+	}
+	if agent.Autoscaling.MinReplicas < 1 {
+		agent.Autoscaling.MinReplicas = agent.Replicas
+	}
+	if agent.Autoscaling.MinReplicas > 100 {
+		agent.Autoscaling.MinReplicas = 100
+	}
+	if agent.Autoscaling.MaxReplicas < agent.Autoscaling.MinReplicas {
+		agent.Autoscaling.MaxReplicas = agent.Autoscaling.MinReplicas
+	}
+	if agent.Autoscaling.MaxReplicas > 100 {
+		agent.Autoscaling.MaxReplicas = 100
+	}
+	agent.Replicas = agent.Autoscaling.MinReplicas
+
+	agent.Resources.CPU = strings.TrimSpace(agent.Resources.CPU)
+	if !resourceQuantity.MatchString(agent.Resources.CPU) {
+		agent.Resources.CPU = "500m"
+	}
+	agent.Resources.Memory = strings.TrimSpace(agent.Resources.Memory)
+	if !resourceQuantity.MatchString(agent.Resources.Memory) {
+		agent.Resources.Memory = "1Gi"
+	}
+	if agent.Resources.GPU < 0 {
+		agent.Resources.GPU = 0
+	}
+	if agent.Resources.GPU == 0 {
+		agent.Resources.GPUType = ""
+	} else {
+		agent.Resources.GPUType = strings.TrimSpace(agent.Resources.GPUType)
+		if validateAgentGPUType(agent.Resources.GPUType) != nil {
+			agent.Resources.GPUType = "nvidia.com/gpu"
+		}
+	}
+	if strings.TrimSpace(agent.LLMBackend) == "" {
+		agent.LLMBackend = "mock"
+	}
+	if agent.Tools == nil {
+		agent.Tools = []string{}
+	}
 }
 
 func validateGitRepository(req api.SetProjectRepositoryRequest) (api.GitRepository, error) {
@@ -131,7 +295,9 @@ func pipelineDefinitionFrom(values []api.PipelineDefinition, definitionID string
 	return api.PipelineDefinition{}, ErrNotFound
 }
 
-func validatePipelineDefinition(req api.UpsertPipelineDefinitionRequest) (api.UpsertPipelineDefinitionRequest, error) {
+// ValidatePipelineDefinition normalizes and validates the portable pipeline
+// contract before either persistence or resource-authorization checks.
+func ValidatePipelineDefinition(req api.UpsertPipelineDefinitionRequest) (api.UpsertPipelineDefinitionRequest, error) {
 	req.Name, req.Version = strings.TrimSpace(req.Name), strings.TrimSpace(req.Version)
 	if req.ProjectID == "" || req.Name == "" || req.Version == "" || len(req.Jobs) == 0 {
 		return req, errors.New("project_id, name, version and at least one job are required")
@@ -159,8 +325,19 @@ func validatePipelineDefinition(req api.UpsertPipelineDefinitionRequest) (api.Up
 		if job.Kind == "container" && strings.TrimSpace(job.Image) == "" {
 			return req, errors.New("container jobs require image")
 		}
+		if job.Kind == "container" {
+			if job.Resources.CPU == "" {
+				job.Resources.CPU = "500m"
+			}
+			if job.Resources.Memory == "" {
+				job.Resources.Memory = "1Gi"
+			}
+		}
 		if req.ExecutionMode == "functions" && job.Kind != "function" {
 			return req, errors.New("functions execution mode only accepts function jobs")
+		}
+		if req.ExecutionMode == "prefect" && job.Kind != "container" {
+			return req, errors.New("prefect execution mode only accepts container jobs")
 		}
 		if job.Resources.CPU != "" && !resourceQuantity.MatchString(job.Resources.CPU) {
 			return req, errors.New("job CPU must be a Kubernetes quantity such as 500m or 2")
@@ -168,8 +345,8 @@ func validatePipelineDefinition(req api.UpsertPipelineDefinitionRequest) (api.Up
 		if job.Resources.Memory != "" && !resourceQuantity.MatchString(job.Resources.Memory) {
 			return req, errors.New("job memory must be a quantity such as 512Mi or 2Gi")
 		}
-		if job.Retries < 0 || job.Resources.GPU < 0 {
-			return req, errors.New("job retries and GPU count cannot be negative")
+		if job.Retries < 0 || job.Retries > 10 || job.Resources.GPU < 0 {
+			return req, errors.New("job retries must be between 0 and 10 and GPU count cannot be negative")
 		}
 	}
 	for _, job := range req.Jobs {
@@ -210,7 +387,7 @@ func validatePipelineDefinition(req api.UpsertPipelineDefinitionRequest) (api.Up
 }
 
 func (s *Store) UpsertPipelineDefinition(definitionID string, req api.UpsertPipelineDefinitionRequest, actor string) (api.PipelineDefinition, error) {
-	req, err := validatePipelineDefinition(req)
+	req, err := ValidatePipelineDefinition(req)
 	if err != nil {
 		return api.PipelineDefinition{}, err
 	}
@@ -317,7 +494,7 @@ func (p *Postgres) PipelineDefinition(definitionID string) (api.PipelineDefiniti
 	return get[api.PipelineDefinition](p, "pipeline_definition", definitionID)
 }
 func (p *Postgres) UpsertPipelineDefinition(definitionID string, req api.UpsertPipelineDefinitionRequest, actor string) (api.PipelineDefinition, error) {
-	req, err := validatePipelineDefinition(req)
+	req, err := ValidatePipelineDefinition(req)
 	if err != nil {
 		return api.PipelineDefinition{}, err
 	}

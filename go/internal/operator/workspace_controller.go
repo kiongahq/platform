@@ -39,7 +39,7 @@ type WorkspaceReconciler struct {
 }
 
 func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	var workspace mlaiopsv1.NexusWorkspace
+	var workspace mlaiopsv1.KiongaWorkspace
 	if err := r.Get(ctx, request.NamespacedName, &workspace); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -141,7 +141,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
-func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.NexusWorkspace, authSecret string) []corev1.Container {
+func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.KiongaWorkspace, authSecret string) []corev1.Container {
 	services := make([]string, 0, 2)
 	for _, service := range []string{"workbench", "ide"} {
 		if slices.Contains(workspace.Spec.Services, service) {
@@ -172,7 +172,7 @@ func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.NexusWorkspace, aut
 		environment := []corev1.EnvVar{
 			{Name: "MLAIOPS_URL", Value: r.GatewayURL}, {Name: "MLAIOPS_FEATURE_GATEWAY_URL", Value: r.FeatureURL}, {Name: "MLAIOPS_STORAGE_PROXY_URL", Value: r.StorageURL},
 			{Name: "MLFLOW_TRACKING_URI", Value: r.MLflowURL}, {Name: "PREFECT_API_URL", Value: r.PrefectURL}, {Name: "LANGFUSE_HOST", Value: r.LangfuseURL}, {Name: "KAFKA_REST_URL", Value: r.KafkaRESTURL},
-			{Name: "NEXUS_SUBJECT", Value: workspace.Spec.Subject}, {Name: "NEXUS_WORKSPACE", Value: "/workspace"},
+			{Name: "KIONGA_SUBJECT", Value: workspace.Spec.Subject}, {Name: "KIONGA_WORKSPACE", Value: "/workspace"},
 		}
 		credentialName := "PASSWORD"
 		if service == "workbench" {
@@ -201,7 +201,7 @@ func workspacePorts(services []string) []corev1.ServicePort {
 	return result
 }
 
-func (r *WorkspaceReconciler) fail(ctx context.Context, workspace *mlaiopsv1.NexusWorkspace, reason string, reconcileErr error) (ctrl.Result, error) {
+func (r *WorkspaceReconciler) fail(ctx context.Context, workspace *mlaiopsv1.KiongaWorkspace, reason string, reconcileErr error) (ctrl.Result, error) {
 	workspace.Status.Phase = "Failed"
 	apimeta.SetStatusCondition(&workspace.Status.Conditions, metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: reconcileErr.Error()})
 	_ = r.Status().Update(ctx, workspace)
@@ -209,7 +209,7 @@ func (r *WorkspaceReconciler) fail(ctx context.Context, workspace *mlaiopsv1.Nex
 }
 
 func (r *WorkspaceReconciler) SetupWithManager(manager ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(manager).For(&mlaiopsv1.NexusWorkspace{}).Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&corev1.PersistentVolumeClaim{}).Owns(&corev1.Secret{}).Complete(r)
+	return ctrl.NewControllerManagedBy(manager).For(&mlaiopsv1.KiongaWorkspace{}).Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&corev1.PersistentVolumeClaim{}).Owns(&corev1.Secret{}).Complete(r)
 }
 
 func ptrBool(value bool) *bool    { return &value }

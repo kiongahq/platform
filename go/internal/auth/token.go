@@ -9,7 +9,7 @@ import (
 
 type APITokenResolver func(string) (api.APIToken, error)
 
-// APITokenMiddleware resolves Nexus personal API keys before OIDC/local role
+// APITokenMiddleware resolves Kionga personal API keys before OIDC/local role
 // middleware. Token principals remain scope-limited and are not expanded by
 // the user's interactive-session grants.
 func APITokenMiddleware(resolve APITokenResolver, next http.Handler) http.Handler {

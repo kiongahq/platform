@@ -4,13 +4,13 @@ The workbench is a JupyterLab service that runs **inside the platform network**,
 every service is one hostname away and all credentials are already in the
 environment. It also provides the **terminal** for shell-based dev work.
 
-- **URL:** <http://localhost:8888>
+- **URL:** [http://localhost:8888](http://localhost:8888)
 - **Token:** `mlaiops-local` (override with `JUPYTER_TOKEN`)
 - **Build:** `deploy/jupyter/Dockerfile` (Python 3.11)
 - **Persistence:** your work lives in the `jupyter-data` volume across restarts
 - **Object store mount:** `/workspace/object-store/<bucket>`
 - **AI chat:** Jupyter AI chat panel in the left sidebar
-- **Coding agents:** `codex`, `claude`, and the `nexus` scaffolder in terminals
+- **Coding agents:** `codex`, `claude`, and the `kionga` scaffolder in terminals
 
 Each MinIO/S3 bucket is mounted as a directory, so notebook code can use normal
 filesystem APIs:
@@ -35,17 +35,17 @@ S3FS; these permissions must not be copied to other platform services.
   without training-serving skew.
 - **Every connection, preconfigured via environment:**
 
-    | Env var | Points to |
-    | --- | --- |
-    | `MLAIOPS_URL` | the gateway (control plane) |
-    | `MLFLOW_TRACKING_URI` | MLflow |
-    | `MLFLOW_S3_ENDPOINT_URL` + `AWS_*` | MinIO |
-    | `MLAIOPS_FEATURE_GATEWAY_URL` | the feature gateway |
-    | `KAFKA_REST_URL` | Kafka REST proxy |
-    | `PREFECT_API_URL` | Prefect |
-    | `DATABASE_URL` | Postgres (+pgvector) |
-    | `REDIS_URL` | Redis |
-    | `LANGFUSE_HOST` + keys | Langfuse |
+  | Environment variable | Points to |
+  | --- | --- |
+  | `MLAIOPS_URL` | Gateway (control plane) |
+  | `MLFLOW_TRACKING_URI` | MLflow |
+  | `MLFLOW_S3_ENDPOINT_URL` + `AWS_*` | MinIO |
+  | `MLAIOPS_FEATURE_GATEWAY_URL` | Feature gateway |
+  | `KAFKA_REST_URL` | Kafka REST proxy |
+  | `PREFECT_API_URL` | Prefect |
+  | `DATABASE_URL` | PostgreSQL + pgvector |
+  | `REDIS_URL` | Redis |
+  | `LANGFUSE_HOST` + keys | Langfuse |
 
 ## The terminal
 
@@ -56,16 +56,16 @@ S3FS; these permissions must not be copied to other platform services.
 python -m realtime.produce --demo fraud --count 5
 python -m realtime.produce --demo callcenter --count 2
 curl -s "$MLAIOPS_URL/api/v1/models" | python -m json.tool
-nexus agents
-nexus scaffold fraud-api --template api --prompt "Create a fraud scoring API"
+kionga agents
+kionga scaffold fraud-api --template fullstack-ai --prompt "Create a fraud scoring API"
 ```
 
 Use `--agent codex` or `--agent claude` to let the selected coding agent
 complete the generated starter:
 
 ```bash
-nexus scaffold support-agent \
-  --template agent \
+kionga scaffold support-agent \
+  --template production-agent \
   --agent codex \
   --prompt "Build a tested support agent with retrieval and escalation"
 ```
@@ -73,13 +73,19 @@ nexus scaffold support-agent \
 The command confines the agent to the newly generated project directory.
 Provider credentials come from `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
 
+The five canonical project templates are discoverable through the control plane.
+For heavyweight ML, create a `distributed-training` project with a GPU profile and
+run its returned scaffold command. For agents, `production-agent` produces a
+runnable graph/runtime and offline test/evaluation path rather than an empty stub.
+See [Project templates](project-templates.md).
+
 ## Natural-language coding
 
 Open the **Jupyter AI** chat panel from the left sidebar, select the OpenAI or
 Anthropic provider, and describe the analysis or code you need. The chat can
 reference notebook cells and generate code without leaving JupyterLab. For
 repository-wide edits, open a terminal and run `codex`, `claude`, or
-`nexus scaffold`.
+`kionga scaffold`.
 
 ## The seeded quickstart
 
@@ -127,4 +133,6 @@ from the predict console.
 ## Public deployments
 
 In the public overlay the workbench port is **closed** — reach it over an SSH
-tunnel to the VM rather than exposing 8888 to the internet.
+tunnel to the VM rather than exposing 8888 to the internet. For multi-user
+Kubernetes deployments, each authorized subject receives an isolated
+`KiongaWorkspace` instead of this shared Compose volume.

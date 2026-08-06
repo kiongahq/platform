@@ -1,6 +1,6 @@
 # Architecture
 
-Nexus is a set of small, single-purpose services on one Compose network. A Go
+Kionga is a set of small, single-purpose services on one Compose network. A Go
 **control plane** owns state and orchestration; Python **workloads** do the ML and
 agent execution; a shared **data plane** (Postgres, Redis, Kafka, MinIO) holds
 durable state and carries events.
@@ -12,6 +12,7 @@ flowchart TB
     subgraph you["You"]
         browser["Browser console<br/>:8080"]
         nb["Jupyter workbench<br/>:8888"]
+        ide["Browser IDE<br/>:13337 optional"]
         cli["CLI / SDK"]
     end
 
@@ -19,6 +20,7 @@ flowchart TB
         gw["gateway<br/>API + embedded console :8080"]
         op["operator<br/>Kubernetes reconcilers"]
         mc["metrics-collector :9090"]
+        iw["integration-worker<br/>Kafka → CRDs"]
     end
 
     subgraph exec["Execution & serving (Go + Python)"]
@@ -26,6 +28,7 @@ flowchart TB
         runner["pipeline-runner"]
         sm["serving-manager :8085"]
         serve["mlflow-serve<br/>containers"]
+        fn["OpenFaaS<br/>external functions"]
     end
 
     subgraph ai["AI & observability"]
@@ -50,9 +53,11 @@ flowchart TB
 
     browser --> gw
     nb --> gw
+    ide --> gw
     cli --> gw
     gw --> prefect --> runner --> mlflow
     gw --> sm --> serve
+    gw -. when configured .-> fn
     gw --> ar --> tp --> kafka
     gw --> sp --> minio
     gw --> fg --> redis
@@ -65,6 +70,7 @@ flowchart TB
     mc --> gw
     gw --> pg
     gw --> kafka
+    gw --> kafka --> iw --> op
     op -. scale path .-> gw
 ```
 
@@ -91,16 +97,40 @@ register model, deploy agent…) writes its resource, an immutable **audit** rec
 and **Kafka outbox** entries in a single transaction. State persists to PostgreSQL
 when `DATABASE_URL` is set; otherwise a local JSON file is used.
 
+The project-template catalog is a backend contract shared by the console, SDK, and
+workspace generator. Creation resolves a canonical template/version, supported
+framework and accelerator, requested resource profile, capabilities, and scaffold
+command. This records workload intent without allocating resources or bypassing an
+administrator's grants.
+
+Agent deployment follows the same boundary: the gateway validates quantities and
+replica bounds, then reserves every agent owned by a normal user at maximum replicas
+against the aggregate CPU/RAM/GPU and workload grant. The calculation includes each
+possible trace sidecar rather than assuming the HPA remains at its minimum.
+
 The gateway is also a **proxy and orchestrator**: it drives Prefect for pipelines,
 the serving manager for model endpoints, the agent runtime for agent turns, the
 storage proxy for object browsing, the feature gateway for lookups, and Langfuse for
 prompts. It fails closed — if a downstream engine rejects a request, the control
 plane reflects that honestly (e.g. a run is marked failed).
 
+For live agent traffic, Compose supplies the explicit shared `AGENT_RUNTIME_URL`.
+On Kubernetes, the gateway and operator share the immutable-ID-to-DNS mapping: the
+operator creates one Deployment/Service and the gateway selects that Service in
+`MLAIOPS_AGENT_NAMESPACE`. Agent list calls use bounded health probes, while invoke
+performs a separate readiness gate and returns `503` instead of sending work to an
+unavailable pod.
+
 Supporting Go services: the **operator** (Kubernetes reconcilers for the scale
 path), the **metrics-collector** (Prometheus exposition of platform metrics), the
 **feature-gateway**, the **storage-proxy**, the **trace-proxy**, and the
-**serving-manager**.
+**serving-manager**. The **integration-worker** consumes durable lifecycle commands
+and creates or updates CRDs, including per-user `KiongaWorkspace` resources.
+It commits Kafka offsets manually only after a complete batch reconciles; failed
+dispatch/commit retries terminate the worker so redelivery starts from the last
+durable commit. Agent reconciliation applies requested resources and probes, reports
+readiness from available pods, and owns a CPU-target HPA only for elastic min/max
+replica ranges. Kubernetes must expose resource metrics for that HPA.
 
 ### Data plane
 
@@ -116,6 +146,9 @@ path), the **metrics-collector** (Prometheus exposition of platform metrics), th
 
 - **Prefect** runs pipelines; the **pipeline-runner** serves platform flows as
   Prefect deployments and executes real training runs, logging to MLflow.
+- The gateway validates pipeline dependencies and cycles. The console then uses
+  open-source Dagre to lay out that persisted graph; presentation coordinates never
+  enter the execution contract.
 - The **serving-manager** launches an `mlflow models serve` container per deployed
   model version over the Docker API and records the live endpoint URL.
 - The **agent-runtime** serves LangGraph agents over HTTP, with Postgres
@@ -124,6 +157,12 @@ path), the **metrics-collector** (Prometheus exposition of platform metrics), th
   the configured provider, and it publishes every call to a Kafka traces topic.
 - The **realtime-processor** consumes Kafka topics, enriches events with online
   features, scores them with a model or agent, and publishes results.
+- Reusable function DAGs invoke project-owned OCI workloads through OpenFaaS when
+  its external gateway is configured; definitions remain persisted and validated
+  even when that execution engine is absent.
+- Heavy distributed-training projects use rank-aware PyTorch DDP/checkpoint
+  starters and explicit accelerator intent; multi-node GPU placement is handled by
+  the Kubernetes scheduler on the scale path.
 
 ## Request lifecycle examples
 
@@ -167,8 +206,9 @@ cards live without hammering the API.
 
 ## Deployment topology
 
-- **Local:** `deploy/compose.yaml` — all services, ports published to localhost,
-  auth optional (RBAC role from `MLAIOPS_LOCAL_ROLE`, default `admin`).
+- **Local:** `deploy/compose.yaml` — bundled services, ports published to localhost,
+  local console login required; API RBAC role comes from `MLAIOPS_LOCAL_ROLE`
+  (default `admin`).
 - **Public:** `deploy/compose.yaml` **+** `deploy/compose.public.yaml` — the same
   services, but internal ports are closed and a **Caddy** TLS edge + **Dex** OIDC
   provider are added in front. Auth is on; RBAC roles come from OIDC claims.
