@@ -47,8 +47,14 @@ build:
 
 verify: test lint build
 	node --check go/cmd/gateway/web/app.js
+	node --check go/cmd/gateway/web/workspace.js
 	python -m compileall -q python/mlaiops_sdk
 	! rg -i '\b(mlrun|nuclio|v3io|iguazio)\b' go config
+
+.PHONY: test-ui
+test-ui:
+	npm ci --ignore-scripts
+	npm run test:ui
 
 local: local-up
 

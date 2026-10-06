@@ -10,8 +10,12 @@ in either interface appears immediately in the other.
 make ide-up
 ```
 
-Open <http://localhost:13337> and use `IDE_PASSWORD` (the local default is
-`mlaiops-local`). Stop it without deleting projects:
+Sign in to the console, then choose **IDE workspace**. It opens through the
+authenticated gateway at `/workspace.html?tool=ide`; no separate password or
+published IDE port is needed in Compose. The link explains when the IDE is
+offline. Select a project first to open its shared folder. The workspace toolbar
+switches between Jupyter and the IDE and takes you back to the console.
+Stop it without deleting projects:
 
 ```bash
 make ide-down

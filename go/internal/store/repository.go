@@ -3,6 +3,8 @@ package store
 import "github.com/ml-ai-ops/platform/pkg/api"
 
 type Repository interface {
+	HubAccount(string) (HubAccount, error)
+	SaveHubAccount(string, HubAccount) error
 	UserAccess() []api.UserAccess
 	AccessFor(string) (api.UserAccess, error)
 	UpsertUserAccess(string, api.UpsertUserAccessRequest, string) (api.UserAccess, error)
@@ -50,6 +52,7 @@ type Repository interface {
 	SetAgentTraffic(string, int, string) (api.Agent, error)
 	RegisterTool(api.RegisterToolRequest, string) (api.Tool, error)
 	CreateConnection(api.CreateConnectionRequest, string) (api.Connection, error)
+	ActivateConnection(string, string) (api.Connection, error)
 	UpdateConnectionStatus(string, string, string, string) (api.Connection, error)
 	AgentSessions(string) []api.AgentSession
 	AgentTraces(string) []api.AgentTrace

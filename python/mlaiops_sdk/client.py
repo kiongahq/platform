@@ -162,6 +162,19 @@ class MLAIOpsClient:
     def list_models(self) -> list[Model]:
         return [Model.model_validate(item) for item in self._page("/api/v1/models")]
 
+    def search_huggingface_models(self, search: str = "", *, task: str = "") -> list[dict]:
+        return self._request("GET", "/api/v1/models/huggingface",
+                             params={"search": search, "task": task})["items"]
+
+    def import_huggingface_model(
+        self, project_id: str, repo_id: str, *, revision: str = "main"
+    ) -> Model:
+        """Register immutable provenance; weights are downloaded separately in the workspace."""
+        return Model.model_validate(self._request(
+            "POST", "/api/v1/models/huggingface/import",
+            json={"project_id": project_id, "repo_id": repo_id, "revision": revision},
+        ))
+
     def register_model(
         self,
         project_id: str,

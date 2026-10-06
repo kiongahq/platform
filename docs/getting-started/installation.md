@@ -86,7 +86,8 @@ failures. OpenFaaS is skipped until an external gateway is configured.
 | --- | --- | --- |
 | Landing page | <http://localhost:8080> | none |
 | Console + API | <http://localhost:8080/console.html> | `admin` / `mlaiops-local` locally; OIDC when hosted |
-| Jupyter workbench | <http://localhost:8888> | token `mlaiops-local` |
+| Jupyter workbench | <http://localhost:8080/workspace.html?tool=workbench> | Kionga session |
+| Browser IDE | <http://localhost:8080/workspace.html?tool=ide> | Kionga session; start with `make ide-up` |
 | MLflow | <http://localhost:15000> | none |
 | Prefect | <http://localhost:4200> | none |
 | Langfuse | <http://localhost:3000> | `admin@local.dev` / `mlaiops-local-admin` |

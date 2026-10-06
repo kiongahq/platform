@@ -6,6 +6,18 @@ on:
   pull_request:
 
 jobs:
+  console:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run test:ui
+      - run: node --check go/cmd/gateway/web/workspace.js
+
   go:
     runs-on: ubuntu-latest
     services:

@@ -321,6 +321,7 @@ type Component struct {
 }
 
 type Model struct {
+	Source           *ModelSource       `json:"source,omitempty"`
 	ID               string             `json:"id"`
 	ProjectID        string             `json:"project_id"`
 	Name             string             `json:"name"`
@@ -338,12 +339,22 @@ type Model struct {
 }
 
 type RegisterModelRequest struct {
+	Source       *ModelSource       `json:"source,omitempty"`
 	ProjectID    string             `json:"project_id"`
 	Name         string             `json:"name"`
 	Version      string             `json:"version"`
 	ArtifactURI  string             `json:"artifact_uri"`
 	ServingImage string             `json:"serving_image,omitempty"`
 	Metrics      map[string]float64 `json:"metrics"`
+}
+
+type ModelSource struct {
+	Provider   string `json:"provider"`
+	Repository string `json:"repository"`
+	Revision   string `json:"revision"`
+	Task       string `json:"task,omitempty"`
+	Library    string `json:"library,omitempty"`
+	License    string `json:"license,omitempty"`
 }
 
 type PromoteModelRequest struct {
@@ -423,15 +434,16 @@ type RegisterToolRequest struct {
 }
 
 type Connection struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	Type      string     `json:"type"`
-	Endpoint  string     `json:"endpoint"`
-	SecretRef string     `json:"secret_ref"`
-	Status    string     `json:"status"`
-	CreatedAt time.Time  `json:"created_at"`
-	CheckedAt *time.Time `json:"checked_at,omitempty"`
-	Message   string     `json:"message,omitempty"`
+	ActivatedAt *time.Time `json:"activated_at,omitempty"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Type        string     `json:"type"`
+	Endpoint    string     `json:"endpoint"`
+	SecretRef   string     `json:"secret_ref"`
+	Status      string     `json:"status"`
+	CreatedAt   time.Time  `json:"created_at"`
+	CheckedAt   *time.Time `json:"checked_at,omitempty"`
+	Message     string     `json:"message,omitempty"`
 }
 
 type CreateConnectionRequest struct {

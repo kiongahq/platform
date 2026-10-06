@@ -43,7 +43,7 @@ COPY python/features /opt/platform/python/features
 COPY python/realtime /opt/platform/python/realtime
 COPY python/pipelines /opt/platform/python/pipelines
 COPY python/agents /opt/platform/python/agents
-RUN pip install --no-cache-dir "/opt/platform/python[agents]"
+RUN pip install --no-cache-dir "/opt/platform/python[agents,huggingface]"
 RUN pip install --no-cache-dir "jupyter-ai==3.0.1"
 
 COPY deploy/jupyter/quickstart.ipynb /opt/seed/quickstart.ipynb

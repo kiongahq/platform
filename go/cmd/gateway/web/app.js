@@ -1,8 +1,14 @@
 const api = async (path, options = {}) => {
-  const response = await fetch(path, {headers: {"Accept": "application/json", "Content-Type": "application/json"}, ...options});
+  const response = await fetch(path, {signal: AbortSignal.timeout(20000), ...options, headers: {"Accept": "application/json", "Content-Type": "application/json", ...options.headers}});
   const contentType = response.headers.get("content-type") || "";
   const body = contentType.includes("application/json") ? await response.json() : {message: await response.text()};
-  if (!response.ok) throw new Error(body.message || body.error || "Something went wrong");
+  if (response.status === 401) {
+    if (eventSource) eventSource.close();
+    const returnTo = encodeURIComponent(location.pathname + location.search);
+    location.assign(`/auth/login?return_to=${returnTo}`);
+    throw new Error("Your session has expired. Please sign in again.");
+  }
+  if (!response.ok) throw new Error(body.message || body.error || "Unable to complete this request. Please retry.");
   return body;
 };
 
@@ -46,9 +52,9 @@ function showMetadata(kind, title, item, actions = "") {
 // The gateway's /api/v1/me is the single source of truth: buttons the caller's
 // role cannot use are disabled here, and the API enforces the same table.
 let me = {subject: "", email: "", roles: [], services: [], mode: "local", permissions: {}, entitlements: null};
-const can = key => me.permissions[key] !== false;
+const can = key => me.permissions[key] === true;
 const isAdmin = () => me.roles.includes("admin") || me.roles.includes("operator");
-const hasService = service => isAdmin() || !me.roles.includes("user") || me.services.includes(service);
+const hasService = service => isAdmin() || (me.roles.length > 0 && !me.roles.includes("user")) || (me.services || []).includes(service);
 
 function applyPermissions() {
   document.querySelectorAll("[data-perm]").forEach(button => {
@@ -71,27 +77,101 @@ function applyPermissions() {
 }
 
 async function loadMe() {
-  try { me = {...me, ...await api("/api/v1/me")}; }
-  catch { me.permissions = {}; } // gateway still enforces; keep controls visible
+  me = {...me, ...await api("/api/v1/me")};
   applyPermissions();
 }
 
 let activeView = "overview";
 const viewLoaders = {};
 
-function showView(id) {
+let selectedProject = new URLSearchParams(location.search).get("project") || "";
+let projectOptions = [];
+let navigationRequest = 0;
+function scoped(items) { return selectedProject ? items.filter(item => item.project_id === selectedProject || item.id === selectedProject) : items; }
+function feedback(message, error = false) {
+  const node = document.querySelector("#view-feedback");
+  node.hidden = !message;
+  node.classList.toggle("error", error);
+  document.querySelector("#view-feedback-message").textContent = message;
+  document.querySelector("#retry-view").hidden = !error;
+}
+async function loadCurrentView() {
+  const request = ++navigationRequest;
+  const id = activeView;
+  const view = document.getElementById(id);
+  view?.setAttribute("aria-busy", "true");
+  feedback("Loading…");
+  try {
+    await viewLoaders[id]?.();
+    if (request === navigationRequest) feedback("");
+    return true;
+  } catch (error) {
+    if (request === navigationRequest) feedback(error.message, true);
+    return false;
+  } finally { view?.setAttribute("aria-busy", "false"); }
+}
+function routeURL(id, resource = "") {
+  const url = new URL(location.href);
+  url.searchParams.set("view", id);
+  if (selectedProject) url.searchParams.set("project", selectedProject); else url.searchParams.delete("project");
+  if (resource) url.searchParams.set("resource", resource); else url.searchParams.delete("resource");
+  return url;
+}
+async function showView(id, options = {}) {
+  if (!viewLoaders[id]) id = "profile";
   if (!["access", "profile", "settings"].includes(id) && !hasService(id)) { toast("This service has not been assigned to you."); return; }
   if (["access","blogs"].includes(id) && !isAdmin()) { toast("Administrator access is required."); return; }
   activeView = id;
+  document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close());
+  if (options.history !== false) history.pushState({}, "", routeURL(id));
   document.querySelectorAll(".view").forEach(node => node.classList.toggle("active", node.id === id));
   document.querySelectorAll(".nav-item").forEach(node => node.classList.toggle("active", node.dataset.view === id));
   const labels = {overview:"Good morning, builder.", projects:"Build with a clear starting point.", pipelines:"Every run, made legible.", functions:"Small jobs, composed into serious systems.", models:"Promote with confidence.", agents:"Understand every agent turn.", features:"One source of truth for features.", storage:"Artifacts and live endpoints.", realtime:"Score events as they happen.", catalog:"Reuse what your team knows.", platform:"Connect the production pieces.", profile:"Know exactly what you can use.", settings:"Your account, tools, and preferences.", blogs:"Write what the engineering team learns.", access:"Provision only what people need."};
   document.querySelector("#page-title").textContent = labels[id] || "Workspace";
-  if (viewLoaders[id]) viewLoaders[id]().catch(error => toast(error.message));
+  document.querySelectorAll(".nav-item").forEach(node => node.setAttribute("aria-current", node.dataset.view === id ? "page" : "false"));
+  const title = document.querySelector("#page-title");
+  title.setAttribute("tabindex", "-1"); title.focus({preventScroll:true});
+  if (await loadCurrentView()) {
+    const resource = options.resource;
+    if (resource) {
+      const attr = {projects:"data-project-detail",pipelines:"data-run-id",models:"data-model-detail",agents:"data-agent-detail",features:"data-feature-detail"}[id];
+      const node = attr && document.querySelector(`#${id} [${attr}="${CSS.escape(resource)}"]`);
+      if (node) node.click(); else feedback("This item is no longer available in the selected project.", true);
+    }
+  }
+}
+
+async function loadProjectOptions() {
+  projectOptions = (await api("/api/v1/project-options")).items;
+  if (selectedProject && !projectOptions.some(item => item.id === selectedProject)) selectedProject = "";
+  const options = projectOptions.map(item => `<option value="${escapeHTML(item.id)}">${escapeHTML(item.name)}</option>`).join("");
+  document.querySelector("#project-context").innerHTML = `<option value="">All assigned projects</option>${options}`;
+  document.querySelector("#project-context").value = selectedProject;
+  for (const id of ["submit-project","function-project","definition-project","agent-project"]) {
+    const select = document.getElementById(id), previous = select.value;
+    select.innerHTML = options;
+    if (selectedProject || projectOptions.some(item => item.id === previous)) select.value = selectedProject || previous;
+  }
+}
+
+async function loadWorkspaces() {
+  const data = await api("/api/v1/workspaces");
+  for (const item of data.items) {
+    const ids = item.id === "workbench" ? ["workbench-link","settings-jupyter"] : ["ide-link","settings-ide"];
+    for (const id of ids) {
+      const link = document.getElementById(id);
+      link.href = item.available ? `/workspace.html?tool=${item.id}${selectedProject ? `&project=${encodeURIComponent(selectedProject)}` : ""}` : "/console.html?view=profile";
+      link.dataset.available = String(item.available);
+      link.dataset.message = item.message;
+      link.title = `${item.name}: ${item.message}`;
+      link.setAttribute("aria-disabled", String(!item.available));
+    }
+  }
+  document.querySelector("#workspace-status").textContent = data.items.filter(item => hasService(item.id)).map(item => `${item.name}: ${item.message}`).join(" · ");
 }
 
 async function loadDashboard() {
-  const data = await api("/api/v1/dashboard");
+  const data = await api(`/api/v1/dashboard${selectedProject ? `?project_id=${encodeURIComponent(selectedProject)}` : ""}`);
   document.querySelector("#stat-projects").textContent = data.projects;
   document.querySelector("#stat-runs").textContent = data.active_runs;
   document.querySelector("#stat-health").textContent = `${data.healthy_components}/${data.total_components}`;
@@ -102,22 +182,19 @@ async function loadDashboard() {
 
 let projectCache = [];
 async function loadProjects() {
-  const projects = await api("/api/v1/projects");
+  const projects = scoped(await api("/api/v1/projects"));
   projectCache = projects;
   document.querySelector("#project-grid").innerHTML = projects.length ? projects.map(project => `<article class="card interactive-card" role="button" tabindex="0" data-project-detail="${escapeHTML(project.id)}"><span class="kind">${escapeHTML(project.template)}${project.template_version ? ` · v${escapeHTML(project.template_version)}` : ""}</span><h3>${escapeHTML(project.name)}</h3><p>${escapeHTML(project.description || "No description yet.")}</p><div class="tags">${project.framework ? `<span class="tag">${escapeHTML(project.framework)}</span>` : ""}${project.accelerator ? `<span class="tag">${escapeHTML(project.accelerator)}</span>` : ""}${project.requested_profile ? `<span class="tag">${escapeHTML(project.requested_profile)} profile</span>` : ""}</div>${project.repository ? `<div class="repository-badge"><span>⌘</span><b>${escapeHTML(project.repository.provider)}</b><small>${escapeHTML(project.repository.default_branch)}</small></div>` : `<div class="repository-badge unbound"><span>＋</span><b>Connect Git</b></div>`}<footer><span class="tag">${escapeHTML(project.namespace)}</span>${status(project.status)}</footer></article>`).join("") : `<p class="empty">No projects yet — create one to begin.</p>`;
-  const select = document.querySelector("#submit-project");
-  select.innerHTML = projects.map(project => `<option value="${escapeHTML(project.id)}">${escapeHTML(project.name)}</option>`).join("");
-  document.querySelector("#function-project").innerHTML = select.innerHTML;
-  document.querySelector("#definition-project").innerHTML = select.innerHTML;
-  document.querySelector("#agent-project").innerHTML = select.innerHTML;
+  await loadProjectOptions();
   return projects;
 }
 
 let pipelineDefinitionCache = [];
 const pipelineGraph = (jobs, options = {}) => window.KiongaPipelineGraph.render(jobs, options);
 async function loadRuns() {
-  const [runs, definitions] = await Promise.all([api("/api/v1/pipelines/runs"), api("/api/v1/pipelines/definitions")]);
-  pipelineDefinitionCache = definitions.items || [];
+  const [allRuns, definitions] = await Promise.all([api("/api/v1/pipelines/runs"), api("/api/v1/pipelines/definitions")]);
+  const runs = scoped(allRuns);
+  pipelineDefinitionCache = scoped(definitions.items || []);
   document.querySelector("#pipeline-definition-grid").innerHTML = pipelineDefinitionCache.length ? pipelineDefinitionCache.map(definition => `<article class="panel pipeline-definition-card" role="button" tabindex="0" data-definition-detail="${escapeHTML(definition.id)}"><div><span class="kind">${escapeHTML(definition.execution_mode)} · v${escapeHTML(definition.version)}</span><h3>${escapeHTML(definition.name)}</h3><p>${definition.jobs.length} jobs · ${escapeHTML(definition.project_id)}</p></div><button data-run-definition="${escapeHTML(definition.id)}" data-project-id="${escapeHTML(definition.project_id)}">Run</button><div class="definition-graph">${pipelineGraph(definition.jobs, {compact:true, ariaLabel:`${definition.name} dependency graph`})}</div></article>`).join("") : `<article class="panel empty-state"><b>No reusable flows yet</b><span>Define a flow from container jobs or deployed functions.</span></article>`;
   document.querySelector("#submit-definition").innerHTML = `<option value="">Built-in training pipeline</option>${pipelineDefinitionCache.map(definition => `<option value="${escapeHTML(definition.id)}" data-project="${escapeHTML(definition.project_id)}">${escapeHTML(definition.name)} · v${escapeHTML(definition.version)} · ${escapeHTML(definition.execution_mode)}</option>`).join("")}`;
   document.querySelector("#run-table").innerHTML = runs.length ? runs.map(run => `<tr class="clickable" data-run-id="${escapeHTML(run.id)}"><td><b>${escapeHTML(run.name)}</b><br><small>${escapeHTML(run.id)}</small></td><td>${escapeHTML(run.project_id)}</td><td>${status(run.status)}</td><td><div class="bar"><i style="width:${Number(run.progress)}%"></i></div></td><td>${when(run.created_at)}</td></tr>`).join("") : `<tr><td colspan="5" class="empty">No runs yet — submit one.</td></tr>`;
@@ -174,8 +251,9 @@ function metricChart(models, metric) {
 
 let cachedModels = [];
 async function loadModels() {
+  if (typeof refreshHubProjects === "function") refreshHubProjects();
   const data = await api("/api/v1/models");
-  data.items = data.items || [];
+  data.items = scoped(data.items || []);
   cachedModels = data.items;
   const metricNames = [...new Set(data.items.flatMap(model => Object.keys(model.metrics || {})))];
   const select = document.querySelector("#metric-select");
@@ -184,7 +262,9 @@ async function loadModels() {
   metricChart(data.items, chosen);
   document.querySelector("#model-grid").innerHTML = data.items.length ? data.items.map(model => {
     const live = model.endpoint_url && model.endpoint_url.startsWith("http");
-    const actions = can("models_write")
+    const actions = model.artifact_uri?.startsWith("hf://")
+      ? `<button data-hf-download="${escapeHTML(model.id)}">Download / notebook</button><span class="tag">Evaluate before serving</span>`
+      : can("models_write")
       ? `<button data-model-action="promote" data-model-id="${escapeHTML(model.id)}">Promote</button><button data-model-action="deploy" data-model-id="${escapeHTML(model.id)}">Deploy</button><button data-model-action="rollback" data-model-id="${escapeHTML(model.id)}">Rollback</button>${live ? `<button class="primary" data-model-test="${escapeHTML(model.id)}">Test</button>` : ""}`
       : `<span class="tag">read-only</span>`;
     return `<article class="card model-card interactive-card" role="button" tabindex="0" data-model-detail="${escapeHTML(model.id)}"><span class="kind">${escapeHTML(model.stage)} · v${escapeHTML(model.version)}</span><h3>${escapeHTML(model.name)}</h3><p>${escapeHTML(model.artifact_uri)}</p><div class="metric-row"><span>Quality gate <b class="${model.gate_status === "passed" ? "good" : "bad"}">${escapeHTML(model.gate_status || "pending")}</b></span><span>Deployment <b>${escapeHTML(model.deployment_status || "not deployed")}</b></span></div><div class="tags">${Object.entries(model.metrics || {}).map(([key,value]) => `<span class="tag">${escapeHTML(key)} ${Number(value).toFixed(3)}</span>`).join("")}${live ? `<span class="tag live">● live</span>` : ""}</div><footer>${actions}</footer></article>`;
@@ -193,9 +273,10 @@ async function loadModels() {
 
 let agentCache = [];
 async function loadAgents() {
-  const [data, prompts] = await Promise.all([api("/api/v1/agents"), api("/api/v1/prompts")]);
+  const [data, prompts] = await Promise.all([api("/api/v1/agents"), hasService("catalog") ? api("/api/v1/prompts").catch(() => ({items:[], unavailable:true})) : Promise.resolve({items:[]})]);
+  data.items = scoped(data.items || []);
   agentCache = data.items || [];
-  const sessionGroups = await Promise.all(data.items.map(agent => api(`/api/v1/agents/${encodeURIComponent(agent.id)}/sessions`)));
+  const sessionGroups = await Promise.all(data.items.map(agent => api(`/api/v1/agents/${encodeURIComponent(agent.id)}/sessions`).catch(() => ({items:[]}))));
   const sessions = sessionGroups.flatMap(group => group.items);
   const tokens = sessions.reduce((sum, item) => sum + item.input_tokens + item.output_tokens, 0);
   const cost = sessions.reduce((sum, item) => sum + item.cost_usd, 0);
@@ -209,7 +290,8 @@ async function loadAgents() {
     return `<article class="card interactive-card" role="button" tabindex="0" data-agent-detail="${escapeHTML(agent.id)}"><span class="kind">${escapeHTML(agent.llm_backend)} · v${escapeHTML(agent.version)}</span><h3>${escapeHTML(agent.name)}</h3><p>${escapeHTML(agent.graph_module)}</p><div class="tags"><span class="tag">${escapeHTML(resources.cpu || "500m")} CPU</span><span class="tag">${escapeHTML(resources.memory || "1Gi")} RAM</span><span class="tag">${scaling.min_replicas}–${scaling.max_replicas} replicas</span>${resources.gpu ? `<span class="tag">${resources.gpu} × ${escapeHTML(resources.gpu_type)}</span>` : ""}${(agent.tools || []).map(tool => `<span class="tag">${escapeHTML(tool)}</span>`).join("")}</div><footer>${status(agent.status)}<span class="tag">${agent.canary_weight}% canary</span>${actions}</footer></article>`;
   }).join("") : `<p class="empty">No agents deployed yet.</p>`;
   document.querySelector("#session-table").innerHTML = sessions.length ? sessions.map(session => `<tr><td>${escapeHTML(session.id)}</td><td>${escapeHTML(session.agent_id)}</td><td>${escapeHTML(session.current_node)}</td><td>${status(session.status)}</td><td>${session.turns}</td><td>${(session.input_tokens + session.output_tokens).toLocaleString()}</td><td>$${session.cost_usd.toFixed(4)}</td></tr>`).join("") : `<tr><td colspan="7" class="empty">No sessions yet — chat with an agent.</td></tr>`;
-  document.querySelector("#prompt-list").innerHTML = prompts.configured
+  document.querySelector("#prompt-list").closest("article").hidden = !hasService("catalog");
+  document.querySelector("#prompt-list").innerHTML = prompts.unavailable ? `<p class="empty">Prompts are temporarily unavailable. Refresh to retry.</p>` : prompts.configured
     ? (prompts.items.length ? prompts.items.map(prompt => `<div class="prompt-row"><b>${escapeHTML(prompt.name)}</b><span class="tag">v${escapeHTML(prompt.version ?? "?")}</span>${(prompt.labels || []).map(label => `<span class="tag">${escapeHTML(label)}</span>`).join("")}</div>`).join("") : `<p class="empty">Langfuse is connected — no prompts stored yet.</p>`)
     : `<p class="empty">Langfuse not configured. Prompts appear here once connected.</p>`;
 }
@@ -248,7 +330,11 @@ async function loadStorage() {
   } catch (error) {
     browser.innerHTML = `<p class="empty">Object store unavailable: ${escapeHTML(error.message)}</p>`;
   }
-  const [models, functions] = await Promise.all([api("/api/v1/models"), api("/api/v1/functions")]);
+  const [models, functions] = await Promise.all([hasService("models") ? api("/api/v1/models").catch(() => ({items:[]})) : {items:[]}, hasService("functions") ? api("/api/v1/functions").catch(() => ({items:[],configured:false})) : {items:[],configured:false}]);
+  models.items = scoped(models.items || []);
+  functions.items = scoped(functions.items || []);
+  document.querySelector("#endpoint-list").closest("article").hidden = !hasService("models");
+  document.querySelector("#function-list").closest("article").hidden = !hasService("functions");
   const live = models.items.filter(model => model.endpoint_url && model.endpoint_url.startsWith("http"));
   document.querySelector("#endpoint-list").innerHTML = live.length ? live.map(model => `<article class="endpoint-item"><div><h4>${escapeHTML(model.name)} v${escapeHTML(model.version)}</h4><div class="endpoint-meta">${status(model.deployment_status)}<span class="tag">${escapeHTML(model.stage)}</span></div></div>${can("models_write") ? `<button data-model-test="${escapeHTML(model.id)}">Test</button>` : ""}<code>${escapeHTML(model.endpoint_url)}</code></article>`).join("") : `<p class="empty">No live endpoints — deploy a gated model.</p>`;
   document.querySelector("#function-list").innerHTML = functions.configured
@@ -265,8 +351,8 @@ function functionTrigger(fn) {
   return "HTTP / webhook";
 }
 async function loadFunctions() {
-  const [data] = await Promise.all([api("/api/v1/functions"), projectCache.length ? Promise.resolve(projectCache) : loadProjects()]);
-  functionCache = data.items || [];
+  const [data] = await Promise.all([api("/api/v1/functions"), loadProjectOptions()]);
+  functionCache = scoped(data.items || []);
   const serving = functionCache.filter(item => item.status === "deployed").length;
   const replicas = functionCache.reduce((total, item) => total + Number(item.replicas || 0), 0);
   document.querySelector("#function-summary").innerHTML = `<article><span>Runtime</span><strong>${data.configured ? "Connected" : "Not configured"}</strong></article><article><span>Functions</span><strong>${functionCache.length}</strong></article><article><span>Serving</span><strong>${serving}</strong></article><article><span>Replicas</span><strong>${replicas}</strong></article>`;
@@ -300,12 +386,14 @@ async function loadCatalog(kind = "") {
 
 let componentCache = [];
 async function loadComponents() {
-  const [items, readiness, connections] = await Promise.all([api("/api/v1/components"), api("/api/v1/onboarding/readiness"), api("/api/v1/connections")]);
+  const [items, readiness, connections] = await Promise.all([api("/api/v1/components"), hasService("overview") ? api("/api/v1/onboarding/readiness").catch(() => ({percent:0,items:[]})) : {percent:0,items:[]}, api("/api/v1/connections")]);
+  document.querySelector("#readiness-list").closest(".panel").hidden = !hasService("overview");
   componentCache = items;
   document.querySelector("#component-grid").innerHTML = items.map((item, index) => `<article class="component interactive-card" role="button" tabindex="0" data-component-detail="${index}"><div><span class="category">${escapeHTML(item.category)}</span><h3>${escapeHTML(item.name)}</h3></div>${status(item.status)}<p>${escapeHTML(item.description)}</p></article>`).join("");
   document.querySelector("#readiness-percent").textContent = `${readiness.percent}%`;
   document.querySelector("#readiness-list").innerHTML = readiness.items.map(item => `<li class="${item.status === "ready" ? "done" : ""}"><span>${item.status === "ready" ? "✓" : "○"}</span><div><b>${escapeHTML(item.label)}</b><small>${escapeHTML(item.description)}</small></div></li>`).join("");
-  document.querySelector("#connection-grid").innerHTML = connections.items.length ? connections.items.map(item => `<article class="card connection-card"><span class="kind">${escapeHTML(item.type)}</span><h3>${escapeHTML(item.name)}</h3><p>${escapeHTML(item.endpoint)}</p><footer>${status(item.status)}${can("connections_write") ? `<button data-connection-test="${escapeHTML(item.id)}">Test</button>` : ""}</footer>${item.message ? `<small>${escapeHTML(item.message)}</small>` : ""}</article>`).join("") : `<div class="empty-state"><b>No services connected</b><span>Add Kubernetes, MLflow, storage and Kafka to complete onboarding.</span></div>`;
+  const active = Object.fromEntries(["prefect","openfaas"].map(type => [type, connections.items.filter(item => item.type === type && item.activated_at).sort((a,b) => new Date(b.activated_at)-new Date(a.activated_at))[0]?.id]));
+  document.querySelector("#connection-grid").innerHTML = connections.items.length ? connections.items.map(item => `<article class="card connection-card"><span class="kind">${escapeHTML(item.type)} · ${active[item.type] === item.id ? "Active runtime" : ["prefect","openfaas"].includes(item.type) ? "Available runtime" : "Availability monitor"}</span><h3>${escapeHTML(item.name)}</h3><p>${escapeHTML(item.endpoint)}</p><footer>${status(item.status)}${can("connections_write") ? `<button data-connection-test="${escapeHTML(item.id)}">Test</button>${["prefect","openfaas"].includes(item.type) && active[item.type] !== item.id ? `<button data-connection-activate="${escapeHTML(item.id)}">Use for new operations</button>` : ""}` : ""}</footer>${item.message ? `<small>${escapeHTML(item.message)}</small>` : ""}</article>`).join("") : `<div class="empty-state"><b>No services connected</b><span>Add a service to check availability and configure execution.</span></div>`;
 }
 
 const accessServices = ["overview","projects","pipelines","functions","models","agents","features","storage","realtime","catalog","platform","git","workbench","ide"];
@@ -380,7 +468,7 @@ async function loadMyAccess() {
         <div><strong>${grant.storage.size_gb}</strong><span>GB storage</span></div>
       </div>
     </article>` : `
-    <article class="panel access-allocation"><p class="eyebrow">COMPUTE ALLOCATION</p><h3>Administrative access</h3><p>Administrators are not constrained by user workspace quotas.</p></article>`;
+    <article class="panel access-allocation"><p class="eyebrow">COMPUTE ALLOCATION</p><h3>${isAdmin() ? "Administrative access" : "No capacity assigned yet"}</h3><p>${isAdmin() ? "Administrators are not constrained by user workspace quotas." : "Request access below. Your administrator can assign services, project access, and workspace capacity."}</p></article>`;
   const latestRequest = (requests.items || [])[0];
   document.querySelector("#request-access").disabled = latestRequest?.status === "pending";
   document.querySelector("#request-access").textContent = latestRequest?.status === "pending" ? "Request pending" : "Request access";
@@ -416,6 +504,7 @@ function writePreferences() {
   if (!prefs.live && eventSource) { eventSource.close(); eventSource = null; }
 }
 async function loadSettings() {
+  if (typeof loadHuggingFaceAccount === "function") void loadHuggingFaceAccount();
   const data = await api("/api/v1/settings/tokens");
   const prefs = readPreferences();
   document.querySelector("#setting-compact").checked = Boolean(prefs.compact);
@@ -425,8 +514,7 @@ async function loadSettings() {
   document.querySelector("#settings-profile").innerHTML = `<dl class="settings-definition"><div><dt>Name</dt><dd>${escapeHTML(me.email || me.subject)}</dd></div><div><dt>Subject</dt><dd><code>${escapeHTML(me.subject)}</code></dd></div><div><dt>Role</dt><dd>${me.roles.map(role => `<span class="tag">${escapeHTML(role)}</span>`).join(" ")}</dd></div><div><dt>Authentication</dt><dd>${escapeHTML(me.mode)}</dd></div></dl>`;
   document.querySelector("#settings-auth-mode").textContent = `${me.mode.toUpperCase()} session`;
   document.querySelector("#settings-session-identity").textContent = me.email || me.subject;
-  document.querySelector("#settings-jupyter").href = `http://${location.hostname}:8888`;
-  document.querySelector("#settings-ide").href = `http://${location.hostname}:13337`;
+  await loadWorkspaces();
   document.querySelector("#settings-jupyter").hidden = !hasService("workbench");
   document.querySelector("#settings-ide").hidden = !hasService("ide");
   const items = data.items || [];
@@ -460,18 +548,17 @@ function connectEvents() {
   eventSource = source;
   const indicator = document.querySelector("#live-indicator");
   source.onmessage = event => {
-    indicator.textContent = "●  Local Cluster  live";
+    indicator.textContent = "Updates connected";
     if (event.data === lastDigest) return;
     lastDigest = event.data;
-    loadDashboard().catch(() => {});
-    if (viewLoaders[activeView] && activeView !== "overview") viewLoaders[activeView]().catch(() => {});
+    if (!document.querySelector("dialog[open]") && !document.querySelector(".view.active :focus")) loadCurrentView();
     if (openRunID && document.querySelector("#run-dialog").open) showRun(openRunID, {open:false}).catch(() => {});
   };
-  source.onerror = () => { indicator.textContent = "○  Local Cluster  reconnecting"; };
+  source.onerror = () => { indicator.textContent = "Updates reconnecting · refresh is available"; api("/api/v1/me").catch(() => {}); };
 }
 
 // ---- application navigation ------------------------------------------------
-const openSubmitDialog = async () => { await Promise.all([loadProjects(), loadRuns()]); document.querySelector("#submit-dialog").showModal(); };
+const openSubmitDialog = async () => { await Promise.all([loadProjectOptions(), loadRuns()]); document.querySelector("#submit-dialog").showModal(); };
 const shell = document.querySelector(".shell");
 const sidebarToggle = document.querySelector("#sidebar-toggle");
 const isMobile = () => window.matchMedia("(max-width: 650px)").matches;
@@ -509,18 +596,29 @@ async function showAbout() {
   document.querySelector("#about-dialog").showModal();
 }
 
-document.querySelector("#workbench-link").href = `http://${location.hostname}:8888`;
-document.querySelector("#ide-link").href = `http://${location.hostname}:13337`;
+for (const id of ["workbench-link","ide-link","settings-jupyter","settings-ide"]) {
+  document.getElementById(id).addEventListener("click", event => {
+    if (event.currentTarget.dataset.available !== "true") { event.preventDefault(); feedback(event.currentTarget.dataset.message || "Checking workspace availability…",true); loadWorkspaces().catch(error => feedback(error.message,true)); }
+  });
+}
+document.querySelector("#project-context").addEventListener("change", event => { selectedProject=event.target.value; showView(activeView); loadWorkspaces().catch(error=>feedback(error.message,true)); });
+document.querySelector("#retry-view").addEventListener("click", () => initialized ? loadCurrentView() : initializeConsole());
+window.addEventListener("popstate", () => {
+  const query=new URLSearchParams(location.search);
+  selectedProject=query.get("project") || "";
+  document.querySelector("#project-context").value=selectedProject;
+  showView(query.get("view") || "overview", {history:false,resource:query.get("resource")});
+});
 document.querySelector("#account-button").addEventListener("click", () => showView("settings"));
 document.querySelector("#service-grants").innerHTML = accessServices.map(service => `<label class="inline-check"><input type="checkbox" name="services" value="${service}"> ${service}</label>`).join("");
 document.querySelector("#request-service-grants").innerHTML = accessServices.map(service => `<label class="inline-check"><input type="checkbox" name="services" value="${service}"> ${service}</label>`).join("");
 document.querySelector("#resource-profile").addEventListener("change", event => setResourceProfile(event.target.value));
 sidebarToggle.addEventListener("click", toggleSidebar);
-document.querySelector("#refresh-view").addEventListener("click", () => (viewLoaders[activeView] || loadDashboard)().then(() => toast("View refreshed.")).catch(error => toast(error.message)));
+document.querySelector("#refresh-view").addEventListener("click", () => loadCurrentView());
 document.querySelector("#open-help").addEventListener("click", () => showAbout().catch(error => toast(error.message)));
 document.querySelectorAll(".brand, .app-brand").forEach(link => link.addEventListener("click", event => {
   event.preventDefault();
-  showView(hasService("overview") ? "overview" : (me.services[0] || "access"));
+  showView(hasService("overview") ? "overview" : "profile");
 }));
 
 // ---- interactions -----------------------------------------------------------
@@ -531,7 +629,7 @@ document.querySelectorAll(".nav-item").forEach(button => button.addEventListener
     sidebarToggle.setAttribute("aria-expanded", "false");
   }
 }));
-document.querySelectorAll("[data-view-target]").forEach(button => button.addEventListener("click", () => showView(button.dataset.viewTarget)));
+document.querySelectorAll("[data-view-target]:not(.app-brand)").forEach(button => button.addEventListener("click", () => showView(button.dataset.viewTarget)));
 document.addEventListener("keydown", event => {
   if ((event.key === "Enter" || event.key === " ") && event.target.matches("[role='button']")) {
     event.preventDefault();
@@ -703,10 +801,12 @@ document.querySelector("#new-project").addEventListener("click", async () => {
 });
 function closeDialog(node) {
   const modal = node.closest("dialog");
+  if (["metadata-dialog","run-dialog"].includes(modal.id)) history.replaceState({}, "", routeURL(activeView));
   modal.querySelectorAll(".form-error").forEach(error => { error.textContent = ""; });
   modal.close();
 }
 document.querySelectorAll("dialog .close, dialog [data-dialog-close]").forEach(button => button.addEventListener("click", () => closeDialog(button)));
+document.querySelectorAll("#metadata-dialog, #run-dialog").forEach(modal => modal.addEventListener("cancel", () => history.replaceState({}, "", routeURL(activeView))));
 document.querySelectorAll("dialog").forEach(modal => modal.addEventListener("click", event => {
   if (event.target === modal) closeDialog(modal);
 }));
@@ -719,7 +819,7 @@ document.querySelector("#project-form").addEventListener("submit", async event =
     if (!event.target.elements.template.value) throw new Error("Choose a project template.");
     await api("/api/v1/projects", {method:"POST", body:JSON.stringify(Object.fromEntries(form))});
     event.target.reset(); selectedProjectTemplate = ""; dialog.close(); toast("Project saved. Open its details and copy the scaffold command to generate the workspace.");
-    await Promise.all([loadDashboard(), loadProjects()]); showView("projects");
+    await loadProjectOptions(); showView("projects");
   } catch (failure) { error.textContent = failure.message; }
 });
 
@@ -759,7 +859,7 @@ document.querySelector("#pipeline-definition-form").elements.jobs.addEventListen
 });
 
 document.querySelector("#new-pipeline-definition").addEventListener("click", async () => {
-  await Promise.all([loadProjects(), loadFunctions()]);
+  await Promise.all([loadProjectOptions(), loadFunctions()]);
   document.querySelector("#pipeline-definition-error").textContent = "";
   updatePipelineDefinitionPreview();
   document.querySelector("#pipeline-definition-dialog").showModal();
@@ -776,7 +876,7 @@ document.querySelector("#pipeline-definition-form").addEventListener("submit", a
 });
 
 document.querySelector("#deploy-function").addEventListener("click", async () => {
-  await loadProjects(); const form = document.querySelector("#deploy-function-form"); form.reset();
+  await loadProjectOptions(); const form = document.querySelector("#deploy-function-form"); form.reset();
   form.elements.cpu.value = "500m"; form.elements.memory.value = "512Mi"; form.elements.env_vars.value = "{}";
   updateFunctionTrigger("http");
   document.querySelector("#deploy-function-error").textContent = ""; document.querySelector("#deploy-function-dialog").showModal();
@@ -817,10 +917,10 @@ document.querySelector("#deploy-agent").addEventListener("click", async () => {
   if (!modal.open) modal.showModal();
   try {
     const [, tools] = await Promise.all([
-      loadProjects(),
+      loadProjectOptions(),
       api("/api/v1/tools").catch(() => ({items: [], unavailable: true})),
     ]);
-    if (!projectCache.length) throw new Error("Create a project before deploying an agent.");
+    if (!projectOptions.length) throw new Error("Ask your administrator to assign a project before deploying an agent.");
     const options = tools.items || [];
     document.querySelector("#agent-tool-options").innerHTML = options.length
       ? options.map(tool => `<label class="check-card"><input type="checkbox" name="agent_tools" value="${escapeHTML(tool.name)}"><span><b>${escapeHTML(tool.name)}</b><small>v${escapeHTML(tool.version)} · ${escapeHTML(tool.description || "Registered platform tool")}</small></span></label>`).join("")
@@ -969,8 +1069,9 @@ document.querySelector("#connection-form").addEventListener("submit", async even
   event.preventDefault(); const error = document.querySelector("#connection-error"); error.textContent = "";
   try {
     const connection = await api("/api/v1/connections", {method:"POST", body:JSON.stringify(Object.fromEntries(new FormData(event.target)))});
-    await api(`/api/v1/connections/${encodeURIComponent(connection.id)}/test`, {method:"POST", body:"{}"});
-    event.target.reset(); document.querySelector("#connection-dialog").close(); toast("Connection saved and checked."); await Promise.all([loadDashboard(), loadComponents()]);
+    const checked = await api(`/api/v1/connections/${encodeURIComponent(connection.id)}/test`, {method:"POST", body:"{}"});
+    event.target.reset(); document.querySelector("#connection-dialog").close(); await loadComponents();
+    feedback(checked.status === "healthy" ? "Connection verified. Choose Use for new operations to activate a runtime." : `Connection saved, but its check failed: ${checked.message}`, checked.status !== "healthy");
   } catch (failure) { error.textContent = failure.message; }
 });
 
@@ -1088,6 +1189,15 @@ document.querySelector("#function-form").addEventListener("submit", async event 
 });
 
 async function handleDynamicClick(event) {
+  const handoff = event.target.closest("[data-project-view]");
+  if (handoff) { selectedProject=handoff.dataset.projectId;document.querySelector("#project-context").value=selectedProject;await showView(handoff.dataset.projectView);await loadWorkspaces();return; }
+  const activate=event.target.closest("[data-connection-activate]");
+  if (activate) { await api(`/api/v1/connections/${encodeURIComponent(activate.dataset.connectionActivate)}/activate`,{method:"POST",body:"{}"});await loadComponents();toast("Runtime activated for new operations.");return; }
+  const resourceNode=event.target.closest("[data-project-detail],[data-model-detail],[data-agent-detail],[data-feature-detail],tr[data-run-id]");
+  if (resourceNode && !event.target.closest("button,a,input,select")) {
+    const resource=resourceNode.dataset.projectDetail || resourceNode.dataset.modelDetail || resourceNode.dataset.agentDetail || resourceNode.dataset.featureDetail || resourceNode.dataset.runId;
+    history.replaceState({},"",routeURL(activeView,resource));
+  }
   const blogOpen = event.target.closest("[data-blog-open]");
   if (blogOpen) { window.open(`/blog.html?slug=${encodeURIComponent(blogOpen.dataset.blogOpen)}`, "_blank", "noopener"); return; }
   const blogEdit = event.target.closest("[data-blog-edit]");
@@ -1220,7 +1330,7 @@ async function handleDynamicClick(event) {
   const runRow = event.target.closest("[data-run-id]");
   if (runRow && !runRow.dataset.runAction) { await showRun(runRow.dataset.runId); return; }
   const runAction = event.target.closest("[data-run-action]");
-  if (runAction) { await api(`/api/v1/pipelines/runs/${encodeURIComponent(runAction.dataset.runId)}/${runAction.dataset.runAction}`, {method:"POST", body:"{}"}); document.querySelector("#run-dialog").close(); toast(`Run ${runAction.dataset.runAction} requested.`); await Promise.all([loadRuns(),loadDashboard()]); return; }
+  if (runAction) { await api(`/api/v1/pipelines/runs/${encodeURIComponent(runAction.dataset.runId)}/${runAction.dataset.runAction}`, {method:"POST", body:"{}"}); document.querySelector("#run-dialog").close(); toast(`Run ${runAction.dataset.runAction} requested.`); await loadRuns(); return; }
   const modelAction = event.target.closest("[data-model-action]");
   if (modelAction) {
     const action = modelAction.dataset.modelAction; const id = encodeURIComponent(modelAction.dataset.modelId);
@@ -1239,7 +1349,7 @@ async function handleDynamicClick(event) {
   if (configure) {
     const presets = {
       "API Gateway": {type:"kubernetes", endpoint:`${location.origin}/api/v1/health`},
-      "Pipeline Engine": {type:"prefect", endpoint:"http://prefect-server:4200/api/health"},
+      "Pipeline Engine": {type:"prefect", endpoint:"http://prefect-server:4200/api"},
       "Experiment Tracker": {type:"mlflow", endpoint:"http://mlflow:5000/health"},
       "Feature Store": {type:"redis", endpoint:"http://feature-gateway:8083/healthz"},
       "Object Store": {type:"s3", endpoint:"http://minio:9000/minio/health/live"},
@@ -1254,7 +1364,7 @@ async function handleDynamicClick(event) {
     form.elements.type.value = preset.type;
     form.elements.name.value = name.toLowerCase().replaceAll(" ", "-");
     form.elements.endpoint.value = preset.endpoint;
-    form.elements.secret_ref.value = `${form.elements.name.value}-credentials`;
+    form.elements.secret_ref.value = "none";
     document.querySelector("#metadata-dialog").close();
     document.querySelector("#connection-dialog").showModal();
     return;
@@ -1269,7 +1379,8 @@ async function handleDynamicClick(event) {
       const scaffoldAction = item.scaffold_command ? `<button class="primary" data-copy-project-scaffold="${escapeHTML(item.id)}">Copy scaffold command</button>` : "";
       const scaffoldHelp = item.scaffold_command ? `<div class="scaffold-handoff"><small>Run this command locally to generate the starter workspace.</small><code>${escapeHTML(item.scaffold_command)}</code></div>` : "";
       const actions = `<div class="sheet-actions">${scaffoldAction}${repositoryAction}${item.repository ? `<a class="button-like" href="${escapeHTML(item.repository.url.startsWith("git@") ? "#" : item.repository.url.replace(/\.git$/, ""))}" ${item.repository.url.startsWith("git@") ? "aria-disabled=\"true\"" : "target=\"_blank\" rel=\"noreferrer\""}>Open repository ↗</a>` : ""}</div>${scaffoldHelp}${clone}`;
-      showMetadata("Project", item.name, {...item, created_at:dateTime(item.created_at)}, actions);
+      const handoffs = `<div class="project-handoffs">${["pipelines","functions","models","agents"].filter(hasService).map(view => `<button data-project-view="${view}" data-project-id="${escapeHTML(item.id)}">Open ${view}</button>`).join("")}${["workbench","ide"].filter(hasService).map(tool=>`<a class="button-like" target="_blank" rel="noopener" href="/workspace.html?tool=${tool}&project=${encodeURIComponent(item.id)}">Open ${tool === "ide" ? "IDE" : "Jupyter"} ↗</a>`).join("")}</div>`;
+      showMetadata("Project", item.name, {...item, created_at:dateTime(item.created_at)}, handoffs + actions);
     }
     return;
   }
@@ -1328,15 +1439,22 @@ async function handleDynamicClick(event) {
   }
 }
 document.addEventListener("click", event => {
-  handleDynamicClick(event).catch(failure => toast(failure.message));
+  handleDynamicClick(event).catch(failure => { feedback(failure.message, true); toast(failure.message); });
 });
 
 applyPreferences();
-loadMe().then(async () => {
-  const initial = ["overview","projects","pipelines"].filter(hasService);
-  await Promise.all(initial.map(service => viewLoaders[service]()));
-  const preferred = readPreferences().startView;
-  const first = preferred && (["profile","settings"].includes(preferred) || hasService(preferred)) ? preferred : (initial[0] || (isAdmin() ? "access" : me.services[0]));
-  if (first) showView(first);
+let initialized = false;
+async function initializeConsole() {
+  try {
+  await loadMe();
+  await Promise.allSettled([loadProjectOptions(), loadWorkspaces()]);
+  const query = new URLSearchParams(location.search);
+  const preferred = query.get("view") || readPreferences().startView;
+  const first = preferred && viewLoaders[preferred] && (["profile","settings"].includes(preferred) || hasService(preferred)) && (!["access","blogs"].includes(preferred) || isAdmin()) ? preferred : (hasService("overview") ? "overview" : "profile");
+  history.replaceState({}, "", routeURL(first,query.get("resource") || ""));
+  await showView(first,{history:false,resource:query.get("resource")});
   if (hasService("overview") && readPreferences().live !== false) connectEvents();
-}).catch(error => toast(error.message));
+  initialized = true;
+  } catch(error) { feedback(error.message,true); }
+}
+initializeConsole();

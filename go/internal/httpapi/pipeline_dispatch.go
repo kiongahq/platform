@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/integrations"
 	"github.com/ml-ai-ops/platform/pkg/api"
 )
 
@@ -22,14 +20,14 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 			failed, _ := s.store.UpdateRunStep(run.ID, api.UpdateRunStepRequest{Step: "load-definition", Status: "failed", Message: err.Error()}, "system")
 			return failed
 		}
-		if openfaas() == nil {
+		if s.openfaas() == nil {
 			failed, _ := s.store.UpdateRunStep(run.ID, api.UpdateRunStepRequest{Step: definition.Jobs[0].Name, Status: "failed", Message: "OPENFAAS_URL is not configured"}, "system")
 			return failed
 		}
 		go s.executeFunctionPipeline(context.Background(), run, definition)
 		return run
 	}
-	if prefectURL := os.Getenv("PREFECT_API_URL"); prefectURL != "" {
+	if s.prefectConfigured() {
 		parameters := map[string]any{"run_id": run.ID, "project_id": run.ProjectID, "parameters": run.Parameters}
 		// A caller-provided run name is a label, never a deployment selector.
 		// Name-only runs always use the bundled training flow; definition-backed
@@ -44,7 +42,7 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 			parameters["definition"] = definition
 			flowName = "pipeline-definition"
 		}
-		prefect := integrations.NewPrefect(prefectURL, "")
+		prefect := s.prefectClient()
 		engineID, err := prefect.CreateFlowRun(ctx, flowName, "mlaiops", run.Name, parameters)
 		if err != nil {
 			failed, _ := s.store.UpdateRunStep(run.ID, api.UpdateRunStepRequest{Step: "submit-to-engine", Status: "failed", Message: err.Error()}, "system")
@@ -58,7 +56,7 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 }
 
 func (s *Server) executeFunctionPipeline(ctx context.Context, run api.PipelineRun, definition api.PipelineDefinition) {
-	client := openfaas()
+	client := s.openfaas()
 	if client == nil {
 		return
 	}

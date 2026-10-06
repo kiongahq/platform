@@ -106,9 +106,16 @@ The gateway resolves a principal in this order:
    bearer JWT (RS256, JWKS from `OIDC_JWKS_URL`) and extracts roles.
 2. **Internal service token** — a bearer equal to `MLAIOPS_INTERNAL_TOKEN`
    (constant-time compared) yields the `service` role.
-3. **Local development principal** — otherwise API requests act as
-   `MLAIOPS_LOCAL_ROLE` (default `admin`). The browser console still requires
-   the local username/password session.
+3. **Local development session** — without OIDC, sign in with the configured
+   local username/password. The session identifies that username with
+   `MLAIOPS_LOCAL_ROLE` (default `admin`). Both console and non-public API routes
+   require authentication; anonymous requests no longer become administrators.
+   Logout invalidates the session for API calls as well.
+
+Personal API keys are resolved before browser authentication and retain their
+scoped permissions. Create a key in Settings for local SDK/CLI use. API keys
+and internal service credentials cannot open interactive developer workspaces.
+Workspace requests require a browser identity and the matching service grant.
 
 ### Roles from OIDC claims
 

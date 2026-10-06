@@ -54,7 +54,7 @@ Every port is overridable via the `*_PORT` variable. Defaults:
 
 | Variable | Values | Purpose |
 | --- | --- | --- |
-| `MLAIOPS_LOCAL_ROLE` | `admin` \| `operator` \| `user` \| `engineer` \| `viewer` | Role applied to requests when OIDC is off (`user` also requires a provisioned `local-dev` profile) |
+| `MLAIOPS_LOCAL_ROLE` | `admin` \| `operator` \| `user` \| `engineer` \| `viewer` | Role for the authenticated local login; `user` requires a grant keyed by `MLAIOPS_LOCAL_USERNAME` |
 | `MLAIOPS_LOCAL_USERNAME` / `MLAIOPS_LOCAL_PASSWORD` | `admin` / `mlaiops-local` | Local console login; change outside throwaway development |
 | `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | provider client | Browser authorization-code flow |
 | `OIDC_AUTH_URL` / `OIDC_TOKEN_URL` / `OIDC_REDIRECT_URL` | provider URLs | Browser login endpoints and callback |
@@ -177,8 +177,11 @@ Used by the agent runtime and trace proxy.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `IDE_PORT` | `13337` | code-server host port |
-| `IDE_PASSWORD` | `mlaiops-local` | Local code-server password |
+| `KIONGA_IDE_UPSTREAM` | `http://ide:8080` in Compose | Internal address, accessed through the authenticated gateway |
+| `KIONGA_JUPYTER_UPSTREAM` | `http://jupyter:8888` in Compose | Internal Jupyter address, using base URL `/workspaces/workbench/` |
+| `KIONGA_JUPYTER_TOKEN` | `JUPYTER_TOKEN` in Compose | Upstream credential injected by the gateway, never returned to the browser |
+| `KIONGA_WORKSPACE_NAMESPACE` | `default` in Kubernetes manifests | Discover the subject's KiongaWorkspace and generated credential in this namespace |
+| `KIONGA_IDE_AUTH_MODE` | `password`; `none` inside Compose | Compose authenticates through the gateway and does not publish the IDE port; Kubernetes retains its generated password |
 | `KIONGA_CUSTOM_AGENT_COMMAND` | *(unset)* | Optional non-interactive coding-agent command used by the scaffolder |
 
 `KIONGA_SUBJECT` is injected into reconciled Kubernetes workspaces for identity

@@ -38,6 +38,15 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", server.health)
 	mux.HandleFunc("GET /api/v1/me", server.me)
+	mux.HandleFunc("GET /api/v1/settings/huggingface", server.huggingFaceAccount)
+	mux.HandleFunc("PUT /api/v1/settings/huggingface", server.huggingFaceAccount)
+	mux.HandleFunc("DELETE /api/v1/settings/huggingface", server.huggingFaceAccount)
+	mux.HandleFunc("GET /api/v1/models/huggingface", server.huggingFaceModels)
+	mux.HandleFunc("POST /api/v1/models/huggingface/import", server.importHuggingFaceModel)
+	mux.HandleFunc("GET /api/v1/project-options", server.projectOptions)
+	mux.HandleFunc("GET /api/v1/workspaces", server.workspaces)
+	mux.HandleFunc("POST /api/v1/workspaces/{kind}/launch", server.launchWorkspace)
+	mux.HandleFunc("/workspaces/{kind}/{path...}", server.workspaceProxy)
 	mux.HandleFunc("GET /api/v1/admin/users", server.userAccess)
 	mux.HandleFunc("GET /api/v1/admin/resource-profiles", server.resourceProfiles)
 	mux.HandleFunc("PUT /api/v1/admin/users/{subject}", server.upsertUserAccess)
@@ -109,6 +118,7 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/v1/connections", server.connections)
 	mux.HandleFunc("POST /api/v1/connections", server.createConnection)
 	mux.HandleFunc("POST /api/v1/connections/{id}/test", server.testConnection)
+	mux.HandleFunc("POST /api/v1/connections/{id}/activate", server.activateConnection)
 	mux.HandleFunc("GET /api/v1/audit", server.audit)
 	mux.HandleFunc("GET /api/openapi.json", server.openapi)
 	mux.Handle("/", http.FileServer(http.FS(static)))
@@ -327,6 +337,14 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	value := principal(r)
 	projects := filterProjects(s.store.Projects(), value)
 	runs := filterRuns(s.store.Runs(), allowedProjectIDs(s.store, value))
+	if projectID := r.URL.Query().Get("project_id"); projectID != "" {
+		if !projectAllowed(s.store, value, projectID) {
+			writeError(w, 403, "forbidden", "Project is not assigned to you")
+			return
+		}
+		projects = slices.DeleteFunc(projects, func(p api.Project) bool { return p.ID != projectID })
+		runs = filterRuns(runs, map[string]bool{projectID: true})
+	}
 	components := platform.Components(s.store.Connections())
 	active, healthy := 0, 0
 	for _, run := range runs {
@@ -528,10 +546,10 @@ func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := s.store.CancelRun(r.PathValue("id"), actor(r))
-	if err == nil && item.EngineRunID != "" && os.Getenv("PREFECT_API_URL") != "" {
+	if err == nil && item.EngineRunID != "" && s.prefectConfigured() {
 		// Best effort: the control-plane cancellation is authoritative; the
 		// engine cancellation stops the actual execution.
-		prefect := integrations.NewPrefect(os.Getenv("PREFECT_API_URL"), "")
+		prefect := s.prefectClient()
 		if cancelErr := prefect.CancelFlowRun(r.Context(), item.EngineRunID); cancelErr != nil {
 			log.Printf("prefect cancel failed for run %s (%s): %v", item.ID, item.EngineRunID, cancelErr)
 		}
@@ -838,18 +856,31 @@ func (s *Server) reportRealtime(w http.ResponseWriter, r *http.Request) {
 
 // openfaas builds the serverless client from the environment; nil when the
 // integration is not configured.
-func openfaas() *integrations.OpenFaaS {
+func (s *Server) openfaas() *integrations.OpenFaaS {
 	base := os.Getenv("OPENFAAS_URL")
+	password := os.Getenv("OPENFAAS_PASSWORD")
+	if connection := s.activeConnection("openfaas"); connection != nil {
+		base = connection.Endpoint
+		var err error
+		password, err = connectionToken(*connection)
+		if err != nil {
+			return nil
+		}
+	}
 	if base == "" {
 		return nil
 	}
-	client := integrations.NewOpenFaaS(base, os.Getenv("OPENFAAS_USER"), os.Getenv("OPENFAAS_PASSWORD"))
+	user := os.Getenv("OPENFAAS_USER")
+	if user == "" {
+		user = "admin"
+	}
+	client := integrations.NewOpenFaaS(base, user, password)
 	return &client
 }
 
 func (s *Server) functions(w http.ResponseWriter, r *http.Request) {
 	persisted := filterFunctions(s.store.Functions(), allowedProjectIDs(s.store, principal(r)))
-	client := openfaas()
+	client := s.openfaas()
 	if client == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"configured": false, "items": persisted, "total": len(persisted)})
 		return
@@ -880,7 +911,7 @@ func (s *Server) functions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deployFunction(w http.ResponseWriter, r *http.Request) {
-	client := openfaas()
+	client := s.openfaas()
 	if client == nil {
 		writeError(w, http.StatusConflict, "not_configured", "OPENFAAS_URL is not configured")
 		return
@@ -933,7 +964,7 @@ func (s *Server) deleteFunction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "function not found")
 		return
 	}
-	client := openfaas()
+	client := s.openfaas()
 	if client == nil {
 		writeError(w, http.StatusConflict, "not_configured", "OPENFAAS_URL is not configured")
 		return
@@ -950,7 +981,7 @@ func (s *Server) deleteFunction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) invokeFunction(w http.ResponseWriter, r *http.Request) {
-	client := openfaas()
+	client := s.openfaas()
 	if client == nil {
 		writeError(w, http.StatusConflict, "not_configured", "OPENFAAS_URL is not configured")
 		return
@@ -975,7 +1006,7 @@ func (s *Server) invokeFunction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) invokeFunctionAsync(w http.ResponseWriter, r *http.Request) {
-	client := openfaas()
+	client := s.openfaas()
 	if client == nil {
 		writeError(w, http.StatusConflict, "not_configured", "OPENFAAS_URL is not configured")
 		return
@@ -1430,29 +1461,9 @@ func (s *Server) testConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "connection not found")
 		return
 	}
-	target, err := url.Parse(connection.Endpoint)
-	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
-		item, updateErr := s.store.UpdateConnectionStatus(connection.ID, "unhealthy", "Endpoint must be an HTTP or HTTPS URL", actor(r))
-		if updateErr != nil {
-			writeMutation(w, item, updateErr, http.StatusUnprocessableEntity)
-			return
-		}
-		writeJSON(w, http.StatusOK, item)
-		return
-	}
-	client := &http.Client{Timeout: 4 * time.Second}
-	request, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, target.String(), nil)
-	response, checkErr := client.Do(request)
 	status, message := "healthy", "Connection succeeded"
-	if checkErr != nil {
+	if checkErr := checkConnection(r, *connection); checkErr != nil {
 		status, message = "unhealthy", checkErr.Error()
-	} else {
-		_ = response.Body.Close()
-		if response.StatusCode >= 500 {
-			status, message = "unhealthy", response.Status
-		} else {
-			message = response.Status
-		}
 	}
 	item, updateErr := s.store.UpdateConnectionStatus(connection.ID, status, message, actor(r))
 	writeMutation(w, item, updateErr, http.StatusOK)

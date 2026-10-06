@@ -76,6 +76,11 @@ development account `admin` / `mlaiops-local`. If port 8080 is occupied, start w
 
 The SDK and CLI use the same API:
 
+Create an API key in **Settings → API keys** and export it as `MLAIOPS_TOKEN`
+before using the SDK or CLI. Local API requests now require authentication too.
+Open Jupyter or the IDE from the console to reuse your signed-in session. Select
+a project first to keep its context across pipelines, models, agents, and tools.
+
 ```python
 from mlaiops_sdk import MLAIOpsClient
 
@@ -133,6 +138,11 @@ Python SDK / CLI / UI
 ```
 
 ## Documentation
+
+**Pretrained models:** connect a personal account in Settings, then use the
+Hugging Face Hub panel under Models to register a pinned revision and generate
+workspace download code. See the [Hugging Face guide](docs/guides/huggingface.md)
+for encrypted credential setup, SDK usage, gated models, and deployment boundaries.
 
 Full documentation lives in [`docs/`](docs/index.md) and builds into a browsable site
 with MkDocs Material — architecture, every service and module, installation,

@@ -14,6 +14,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* /root/.npm
 
 COPY deploy/workspace/kionga.py /usr/local/bin/kionga
+COPY deploy/workspace/directories.py /usr/local/lib/kionga_workspace_directories.py
 COPY deploy/ide/entrypoint.sh /usr/local/bin/ide-workspace
 RUN chmod 0755 /usr/local/bin/kionga /usr/local/bin/ide-workspace \
  && mkdir -p /workspace \

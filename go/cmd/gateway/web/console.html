@@ -10,12 +10,12 @@
   <div class="app-bar">
     <button class="icon-button" id="sidebar-toggle" aria-label="Collapse navigation" aria-expanded="true" title="Collapse navigation">☰</button>
     <a class="app-brand" href="#" data-view-target="overview"><span class="brand-mark">K</span><b>Kionga</b></a>
-    <span class="workspace-label">ML Operations</span>
+    <label class="project-context-label" for="project-context">Project <select id="project-context" aria-label="Current project"><option value="">All assigned projects</option></select></label>
     <span class="app-spacer"></span>
     <button class="app-action" id="refresh-view">Refresh</button>
     <button class="app-action" id="open-help">Help</button>
     <button class="account-button" id="account-button" type="button" aria-label="Open profile settings"><span class="account-avatar" id="account-avatar">U</span><span class="account-copy"><b id="menu-user">User</b><small>Profile &amp; settings</small></span><span>⌄</span></button>
-    <span class="menu-status" id="live-indicator">●&nbsp; Local Cluster&nbsp;&nbsp; live</span>
+    <span class="menu-status" id="live-indicator" role="status">Updates disconnected</span>
   </div>
   <div class="shell">
     <aside>
@@ -39,16 +39,17 @@
       </nav>
       <div class="sidebar-footer">
         <div class="cluster user-chip"><i id="user-dot"></i><span><b id="user-name">…</b><small id="user-role">resolving identity</small></span></div>
-        <div class="cluster"><i></i><span><b>Local workspace</b><small>Gateway connected</small></span></div>
+        <div class="cluster"><span><b>Developer workspaces</b><small id="workspace-status">Checking availability…</small></span></div>
         <a href="/">Kionga home</a>
         <a href="/api-docs.html" target="_blank">API reference ↗</a>
-        <a href="#" id="workbench-link" target="_blank">Jupyter workbench ↗</a>
-        <a href="#" id="ide-link" target="_blank">IDE workspace ↗</a>
+        <a href="/workspaces/workbench/" id="workbench-link" target="_blank" rel="noopener" aria-disabled="true">Jupyter workbench ↗</a>
+        <a href="/workspaces/ide/" id="ide-link" target="_blank" rel="noopener" aria-disabled="true">IDE workspace ↗</a>
         <a class="sidebar-logout logout-action" href="/auth/logout" hidden>Log out <span>↗</span></a>
       </div>
     </aside>
 
     <main>
+      <div id="view-feedback" class="view-feedback" role="status" aria-live="polite" hidden><span id="view-feedback-message"></span><button id="retry-view" type="button" hidden>Retry</button></div>
       <header>
         <div><p class="eyebrow">ML WORKSPACE</p><h1 id="page-title">Good morning, builder.</h1></div>
         <button class="primary" id="new-project" data-perm="projects_write">＋ New project</button>
@@ -99,6 +100,14 @@
       </section>
 
       <section id="models" class="view">
+        <article class="panel hub-panel">
+          <div class="panel-heading"><div><p class="eyebrow">HUGGING FACE HUB</p><h3>Start with a ready model</h3><p>Search the Hub, pin a revision, and download it in your workspace.</p></div><button type="button" id="hf-settings">Connect account</button></div>
+          <form id="hf-search-form" class="hub-controls"><label>Model or organization<input id="hf-search" maxlength="200" placeholder="e.g. sentence-transformers"></label><label>Task<select id="hf-task"><option value="">All tasks</option><option>text-generation</option><option>sentence-similarity</option><option>text-classification</option><option>image-classification</option><option>automatic-speech-recognition</option><option>text-to-image</option></select></label><button type="submit">Search Hub</button></form>
+          <p id="hf-search-status" role="status">Public models work without an account. Connect in Settings for private and gated repositories.</p>
+          <div class="hub-controls"><label>Destination project<select id="hf-project"></select></label><label>Revision<input id="hf-revision" value="main" maxlength="200" placeholder="branch, tag, or commit"></label></div>
+          <div id="hf-results" class="card-grid"></div>
+          <div id="hf-next" hidden><h4>Registered · ready to download</h4><p>Weights have not been downloaded or deployed. Run this code in Jupyter or your IDE. For private/gated models, first run <code>from mlaiops_sdk.huggingface import connect; connect()</code> in that workspace. Review the model license, storage needs, and repository code before using it.</p><pre id="hf-code" tabindex="0"></pre><div class="form-actions"><button type="button" id="hf-copy">Copy code</button><button type="button" id="hf-notebook">Download notebook</button><a id="hf-workspace" class="button-like" hidden>Open Jupyter</a></div></div>
+        </article>
         <div class="section-heading"><div><p class="eyebrow">MODEL LIFECYCLE</p><h2>Registry and deployments</h2><p>Evaluation gates, promotion, live serving, canary traffic and rollback.</p></div></div>
         <div class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">EXPERIMENT PORTAL</p><h3>Model quality by version</h3></div><select id="metric-select"></select></div><canvas id="metric-chart" height="160"></canvas></div>
         <div id="model-grid" class="card-grid"></div>
@@ -150,6 +159,7 @@ python -m realtime.produce --demo recommendations --count 2</pre></article>
       <section id="settings" class="view">
         <div class="section-heading"><div><p class="eyebrow">ACCOUNT &amp; PLATFORM</p><h2>Settings</h2><p>Manage your identity, API access, console behavior, and workspace entry points.</p></div></div>
         <div class="settings-layout">
+          <article class="panel settings-card"><div class="settings-card-heading"><div><h3>Hugging Face account</h3><p>A personal connection for browsing and registering public, private, and gated models.</p></div></div><p id="hf-account-status" role="status">Loading account…</p><form id="hf-account-form"><label>Read or fine-grained token<input id="hf-token" type="password" autocomplete="off" placeholder="hf_…" maxlength="1024" required></label><p><a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener noreferrer">Create a Hugging Face token ↗</a>. Use the minimum repository read permissions. The token is encrypted on the gateway and never displayed again.</p><div class="form-actions"><button type="submit">Connect account</button><button type="button" id="hf-disconnect" hidden>Disconnect</button></div></form><p>Workspace downloads use a separate local Hub login or <code>HF_TOKEN</code>. Disconnecting here does not revoke that token on Hugging Face or log out a workspace.</p></article>
           <article class="panel settings-card profile-settings-card"><div class="settings-card-heading"><span class="settings-icon">♙</span><div><h3>Profile</h3><p>Your verified platform identity.</p></div></div><div id="settings-profile"></div></article>
           <article class="panel settings-card api-token-card"><div class="settings-card-heading"><span class="settings-icon">⌁</span><div><h3>Personal API keys</h3><p>Authenticate the CLI, SDKs, scripts, and local development tools.</p></div><button class="primary" id="create-api-token">＋ Create key</button></div><div class="security-note"><b>Keys are shown once.</b> Store them in your OS keychain or secret manager—never in source control.</div><div id="api-token-list" class="settings-list"></div></article>
           <article class="panel settings-card"><div class="settings-card-heading"><span class="settings-icon">◫</span><div><h3>Console preferences</h3><p>Customize how this browser opens and presents Kionga.</p></div></div><div class="setting-rows"><label class="setting-row"><span><b>Compact interface</b><small>Reduce spacing in tables and navigation.</small></span><input type="checkbox" id="setting-compact"></label><label class="setting-row"><span><b>Reduce motion</b><small>Disable decorative transitions and movement.</small></span><input type="checkbox" id="setting-motion"></label><label class="setting-row"><span><b>Live updates</b><small>Refresh active views when platform events arrive.</small></span><input type="checkbox" id="setting-live" checked></label><label class="setting-row"><span><b>Opening view</b><small>Choose the first page after signing in.</small></span><select id="setting-start-view"><option value="overview">Overview</option><option value="projects">Projects</option><option value="pipelines">Pipelines</option><option value="profile">My access</option><option value="settings">Settings</option></select></label></div></article>
@@ -199,11 +209,13 @@ python -m realtime.produce --demo recommendations --count 2</pre></article>
 
   <dialog id="connection-dialog">
     <form id="connection-form">
-      <p class="eyebrow">CONNECT SERVICE</p><h2>Add infrastructure</h2><p>Kionga stores only a Kubernetes Secret reference, never raw credentials.</p>
-      <label>Service<select name="type"><option value="kubernetes">Kubernetes</option><option value="mlflow">MLflow</option><option value="s3">S3 / MinIO</option><option value="kafka">Kafka REST</option><option value="langfuse">Langfuse</option><option value="prefect">Prefect</option><option value="redis">Redis / Feast</option></select></label>
+      <p class="eyebrow">CONNECT SERVICE</p><h2>Add infrastructure</h2><p>Test availability first. Prefect and OpenFaaS can then be activated for new operations. Other connections monitor services configured in your deployment.</p>
+      <label>Service<select name="type"><option value="kubernetes">Kubernetes</option><option value="mlflow">MLflow</option><option value="s3">S3 / MinIO</option><option value="kafka">Kafka REST</option><option value="langfuse">Langfuse</option><option value="prefect">Prefect</option><option value="openfaas">OpenFaaS</option><option value="redis">Redis / Feast</option></select></label>
       <label>Connection name<input name="name" required placeholder="e.g. production-mlflow"></label>
-      <label>Health endpoint<input name="endpoint" required type="url" placeholder="https://mlflow.example.com/health"></label>
-      <label>Kubernetes Secret<input name="secret_ref" required placeholder="mlflow-credentials"></label>
+      <label>Service address<input name="endpoint" required type="url" placeholder="https://prefect.example.com/api"></label>
+      <p class="hint">For Prefect, use its API base address; for OpenFaaS, its gateway address. For monitored services, use a health endpoint.</p>
+      <label>Credential reference<input name="secret_ref" required value="none" placeholder="none or env:PREFECT_API_KEY"></label>
+      <p class="hint">Use none for a service without authentication, or env:VARIABLE to reference a secret set on the gateway. For OpenFaaS, the variable contains its gateway password. Never paste a secret here.</p>
       <p class="form-error" id="connection-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save and test</button></div>
     </form>
   </dialog>
@@ -348,5 +360,6 @@ mlaiops projects list</pre><div class="form-actions"><button class="primary" typ
   <script src="https://cdn.jsdelivr.net/npm/@dagrejs/dagre@2.0.0/dist/dagre.min.js" integrity="sha384-AzQ70cQk8D+zQhLIF5sw1ZNJprV/OYEvT65aRyn0VxZJxNdcsyLtfMheBEDhEfRM" crossorigin="anonymous"></script>
   <script src="/pipeline-graph.js"></script>
   <script src="/app.js"></script>
+  <script src="/huggingface.js"></script>
 </body>
 </html>

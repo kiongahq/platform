@@ -7,6 +7,13 @@ func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 		"openapi": "3.0.3",
 		"info":    map[string]any{"title": "Kionga API", "version": "0.1.0"},
 		"paths": map[string]any{
+			"/api/v1/settings/huggingface":          map[string]any{"get": map[string]any{"summary": "Personal Hub connection status (never returns credentials)"}, "put": map[string]any{"summary": "Verify and encrypt a personal Hugging Face read token"}, "delete": map[string]any{"summary": "Forget the personal Hub token; does not revoke it upstream"}},
+			"/api/v1/models/huggingface":            map[string]any{"get": map[string]any{"summary": "Search Hub models using the caller's personal connection"}},
+			"/api/v1/models/huggingface/import":     map[string]any{"post": map[string]any{"summary": "Register a commit-pinned Hub reference in an assigned project (no weight download)"}},
+			"/api/v1/project-options":               map[string]any{"get": map[string]any{"summary": "Minimal metadata for assigned projects, independent of service grants"}},
+			"/api/v1/workspaces":                    map[string]any{"get": map[string]any{"summary": "Authorized workspace availability and launch links"}},
+			"/api/v1/workspaces/{kind}/launch":      map[string]any{"post": map[string]any{"summary": "Prepare an assigned project folder and open Jupyter or IDE"}},
+			"/api/v1/connections/{id}/activate":     map[string]any{"post": map[string]any{"summary": "Verify and persist the Prefect or OpenFaaS runtime for new operations"}},
 			"/api/v1/health":                        map[string]any{"get": map[string]any{"summary": "Gateway health"}},
 			"/api/v1/me":                            map[string]any{"get": map[string]any{"summary": "Caller identity, roles and effective permissions"}},
 			"/api/v1/admin/users":                   map[string]any{"get": map[string]any{"summary": "List user access profiles (admin only)"}},

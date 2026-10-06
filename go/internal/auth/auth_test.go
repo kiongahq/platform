@@ -71,7 +71,7 @@ func TestAllowedMatrix(t *testing.T) {
 		{RoleService, http.MethodPost, "/api/v1/pipelines/runs/run-1/steps", true},
 		{RoleService, http.MethodPost, "/api/v1/features/customer_profile/materialized", true},
 		{RoleService, http.MethodPost, "/api/v1/realtime/fraud", true},
-		{RoleService, http.MethodPost, "/api/v1/models", false},
+		{RoleService, http.MethodPost, "/api/v1/models", true},
 		{RoleService, http.MethodPost, "/api/v1/connections", false},
 		{RoleService, http.MethodGet, "/api/v1/agents", true},
 	}

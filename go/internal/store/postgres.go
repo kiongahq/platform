@@ -449,15 +449,19 @@ func (p *Postgres) RegisterModel(req api.RegisterModelRequest, actor string) (ap
 		return api.Model{}, errors.New("name, version and artifact_uri are required")
 	}
 	for _, model := range p.Models() {
-		if model.Name == req.Name && model.Version == req.Version {
+		if model.ProjectID == req.ProjectID && model.Name == req.Name && model.Version == req.Version {
 			return api.Model{}, ErrConflict
 		}
 	}
 	gate := "passed"
+	if strings.HasPrefix(req.ArtifactURI, "hf://") {
+		gate = "needs_evaluation"
+	}
 	if accuracy, ok := req.Metrics["accuracy"]; ok && accuracy < .8 {
 		gate = "failed"
 	}
 	model := api.Model{ID: id("mdl"), ProjectID: req.ProjectID, Name: req.Name, Version: req.Version, Stage: "candidate", ArtifactURI: req.ArtifactURI, ServingImage: servingImage, Metrics: req.Metrics, GateStatus: gate, DeploymentStatus: "not_deployed", CreatedAt: time.Now().UTC()}
+	model.Source = req.Source
 	return model, p.write("model", model.ID, model, "model.registered", actor, nil)
 }
 
@@ -469,7 +473,7 @@ func (p *Postgres) PromoteModel(modelID, stage, actor string) (api.Model, error)
 	if err != nil {
 		return model, err
 	}
-	if stage == "production" && model.GateStatus == "failed" {
+	if stage == "production" && model.GateStatus != "passed" {
 		return model, errors.New("model evaluation gates have not passed")
 	}
 	model.PreviousStage = model.Stage

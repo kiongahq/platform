@@ -1,11 +1,13 @@
 # Jupyter workbench
 
 The workbench is a JupyterLab service that runs **inside the platform network**, so
-every service is one hostname away and all credentials are already in the
-environment. It also provides the **terminal** for shell-based dev work.
+every service is one hostname away. It also provides the **terminal** for
+shell-based dev work. Create a personal key in Settings and set `MLAIOPS_TOKEN`
+in your terminal or notebook environment to call the platform API as yourself.
 
-- **URL:** [http://localhost:8888](http://localhost:8888)
-- **Token:** `mlaiops-local` (override with `JUPYTER_TOKEN`)
+- **URL:** [Open Jupyter through Kionga](http://localhost:8080/workspace.html?tool=workbench)
+- **Login:** your Kionga session; the gateway keeps the notebook token server-side
+- **Direct local diagnostics:** `http://127.0.0.1:8888/workspaces/workbench/`, with `JUPYTER_TOKEN`; the port is bound to loopback
 - **Build:** `deploy/jupyter/Dockerfile` (Python 3.11)
 - **Persistence:** your work lives in the `jupyter-data` volume across restarts
 - **Object store mount:** `/workspace/object-store/<bucket>`

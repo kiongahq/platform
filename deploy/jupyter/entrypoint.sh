@@ -2,7 +2,12 @@
 set -e
 
 mkdir -p /home/dev/.codex /home/dev/.claude
-chown -R dev:dev /home/dev/.codex /home/dev/.claude
+if [ "$(id -u)" = 0 ]; then
+  chown -R dev:dev /home/dev/.codex /home/dev/.claude
+  set -- runuser -u dev --
+else
+  set --
+fi
 
 mount_root="${S3_MOUNT_ROOT:-/workspace/object-store}"
 mount_buckets="${S3_MOUNT_BUCKETS:-mlaiops-models mlaiops-artifacts mlaiops-features mlaiops-traces mlaiops-agents mlaiops-pipeline-logs}"
@@ -41,9 +46,11 @@ if [ ! -f /workspace/quickstart.ipynb ]; then
   cp /opt/seed/quickstart.ipynb /workspace/quickstart.ipynb
 fi
 
-exec runuser -u dev -- jupyter lab \
+exec "$@" jupyter lab \
   --ip=0.0.0.0 \
   --port=8888 \
   --no-browser \
   --ServerApp.root_dir=/workspace \
+  --ServerApp.base_url=/workspaces/workbench/ \
+  --ServerApp.trust_xheaders=True \
   --IdentityProvider.token="${JUPYTER_TOKEN:-mlaiops-local}"

@@ -184,7 +184,7 @@ func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.KiongaWorkspace, au
 			Name: service, Image: image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: port}},
 			Env:       environment,
 			Resources: resources, VolumeMounts: []corev1.VolumeMount{{Name: "workspace", MountPath: "/workspace"}},
-			SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptrBool(false), RunAsNonRoot: ptrBool(true)},
+			SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptrBool(false), RunAsNonRoot: ptrBool(true), RunAsUser: ptrInt64(1000), RunAsGroup: ptrInt64(1000)},
 		})
 	}
 	return result

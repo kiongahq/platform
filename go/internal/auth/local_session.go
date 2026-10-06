@@ -4,6 +4,8 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,15 +26,42 @@ func NewLocalSessionManager(username, password string) *LocalSessionManager {
 func (s *LocalSessionManager) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/auth/login":
+			http.Redirect(w, r, "/login.html?return_to="+url.QueryEscape(safeReturnTo(r.URL.Query().Get("return_to"))), http.StatusFound)
+			return
 		case r.URL.Path == "/auth/local/login" && r.Method == http.MethodPost:
 			s.login(w, r)
 			return
 		case r.URL.Path == "/auth/logout":
 			s.logout(w, r)
 			return
+		case strings.HasPrefix(r.URL.Path, "/api/") && !publicPath(r.Method, r.URL.Path):
+			if _, ok := PrincipalFrom(r.Context()); !ok {
+				if service, matched := servicePrincipal(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")); matched {
+					r = r.WithContext(WithPrincipal(r.Context(), service))
+				} else if !s.authenticated(r) {
+					deny(w, http.StatusUnauthorized, "Sign in to continue.")
+					return
+				} else {
+					role := os.Getenv("MLAIOPS_LOCAL_ROLE")
+					if role == "" {
+						role = RoleAdmin
+					}
+					r = r.WithContext(WithPrincipal(r.Context(), Principal{Subject: s.username, Roles: []string{role}}))
+				}
+			}
 		case localConsolePath(r.URL.Path) && !s.authenticated(r):
 			http.Redirect(w, r, "/login.html?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
 			return
+		}
+		if s.authenticated(r) {
+			if _, ok := PrincipalFrom(r.Context()); !ok {
+				role := os.Getenv("MLAIOPS_LOCAL_ROLE")
+				if role == "" {
+					role = RoleAdmin
+				}
+				r = r.WithContext(WithPrincipal(r.Context(), Principal{Subject: s.username, Roles: []string{role}}))
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -42,7 +71,7 @@ func (s *LocalSessionManager) login(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil ||
 		subtle.ConstantTimeCompare([]byte(r.FormValue("username")), []byte(s.username)) != 1 ||
 		subtle.ConstantTimeCompare([]byte(r.FormValue("password")), []byte(s.password)) != 1 {
-		http.Redirect(w, r, "/login.html?error=invalid", http.StatusFound)
+		http.Redirect(w, r, "/login.html?error=invalid&return_to="+url.QueryEscape(safeReturnTo(r.FormValue("return_to"))), http.StatusFound)
 		return
 	}
 	token, err := randomToken(32)
@@ -86,5 +115,5 @@ func (s *LocalSessionManager) authenticated(r *http.Request) bool {
 }
 
 func localConsolePath(path string) bool {
-	return path == "/console.html" || path == "/app.js" || path == "/styles.css"
+	return path == "/console.html" || path == "/workspace.html" || path == "/app.js" || path == "/styles.css" || strings.HasPrefix(path, "/workspaces/")
 }

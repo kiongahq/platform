@@ -100,3 +100,10 @@ but do not make an untrusted image safe.
 On the scale path, serving integrates with KServe/Knative and the operator reconciles a
 `KiongaModelPromotion`. Locally and on a single VM, mlflow-serve containers provide
 the same control-plane lifecycle without Kubernetes.
+
+## Pretrained Hugging Face models
+
+Use the [Hugging Face workflow](huggingface.md) to connect a personal Hub account,
+search repositories, register immutable revisions, and download weights in your
+workspace. Imported references require evaluation and a compatible serving
+artifact before production deployment.

@@ -161,7 +161,7 @@ type AccessResolver func(string) (roles, services, projectIDs []string, disabled
 func RBACWithResolver(next http.Handler, resolve AccessResolver) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if !strings.HasPrefix(path, "/api/") || path == "/api/v1/health" || path == "/api/openapi.json" {
+		if (!strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/workspaces/")) || path == "/api/v1/health" || path == "/api/openapi.json" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -318,6 +318,15 @@ func Allowed(principal Principal, method, path string) bool {
 	if principal.Disabled {
 		return false
 	}
+	if strings.HasPrefix(path, "/workspaces/") || (strings.HasPrefix(path, "/api/v1/workspaces/") && strings.HasSuffix(path, "/launch")) {
+		if principal.Credential == "api_token" || hasRole(principal, RoleService) || hasRole(principal, RoleViewer) {
+			return false
+		}
+		if hasRole(principal, RoleUser) {
+			return principal.Provisioned && hasService(principal.Services, serviceForPath(path))
+		}
+		return hasRole(principal, RoleAdmin) || hasRole(principal, RoleOperator) || hasRole(principal, RoleEngineer)
+	}
 	if strings.HasPrefix(path, "/api/v1/admin/") {
 		return hasRole(principal, RoleAdmin) || hasRole(principal, RoleOperator)
 	}
@@ -336,14 +345,14 @@ func Allowed(principal Principal, method, path string) bool {
 		case RoleAdmin, RoleOperator:
 			return true
 		case RoleUser:
-			if path == "/api/v1/me" {
+			if path == "/api/v1/me" || path == "/api/v1/workspaces" || path == "/api/v1/project-options" {
 				return true
 			}
 			if !read && machineReportingPath(path) {
 				return false
 			}
 			return principal.Provisioned && hasService(principal.Services, serviceForPath(path)) &&
-				(read || hasAnyPrefix(path, userWrite))
+				(read || hasAnyPrefix(path, userWrite) || strings.HasPrefix(path, "/workspaces/"))
 		case RoleViewer:
 			if read {
 				return true
@@ -353,6 +362,12 @@ func Allowed(principal Principal, method, path string) bool {
 				return true
 			}
 		case RoleService:
+			if strings.HasPrefix(path, "/workspaces/") {
+				return false
+			}
+			if method == http.MethodPost && (path == "/api/v1/models" || (strings.HasPrefix(path, "/api/v1/agents/") && strings.HasSuffix(path, "/invoke"))) {
+				return true
+			}
 			if read || hasAnyPrefix(path, serviceWrite) {
 				return true
 			}
@@ -391,6 +406,14 @@ func hasService(services []string, expected string) bool {
 
 func serviceForPath(path string) string {
 	switch {
+	case strings.HasPrefix(path, "/workspaces/workbench/"):
+		return "workbench"
+	case strings.HasPrefix(path, "/workspaces/ide/"):
+		return "ide"
+	case strings.HasPrefix(path, "/api/v1/workspaces/workbench/"):
+		return "workbench"
+	case strings.HasPrefix(path, "/api/v1/workspaces/ide/"):
+		return "ide"
 	case path == "/api/v1/dashboard", path == "/api/v1/onboarding/readiness", path == "/api/v1/events":
 		return "overview"
 	case strings.HasPrefix(path, "/api/v1/project-templates"):

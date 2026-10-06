@@ -87,6 +87,7 @@ class Function(BaseModel):
 
 
 class Model(BaseModel):
+    source: dict[str, str] | None = None
     id: str
     project_id: str
     name: str

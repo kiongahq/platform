@@ -18,6 +18,7 @@ var ErrNotFound = errors.New("resource not found")
 var ErrConflict = errors.New("resource already exists")
 
 type state struct {
+	HubAccounts    map[string]HubAccount    `json:"hub_accounts,omitempty"`
 	UserAccess     []api.UserAccess         `json:"user_access"`
 	AccessRequests []api.AccessRequest      `json:"access_requests"`
 	APITokens      []api.APIToken           `json:"api_tokens"`
@@ -393,15 +394,19 @@ func (s *Store) RegisterModel(req api.RegisterModelRequest, actor string) (api.M
 		return api.Model{}, errors.New("name, version and artifact_uri are required")
 	}
 	for _, v := range s.data.Models {
-		if v.Name == req.Name && v.Version == req.Version {
+		if v.ProjectID == req.ProjectID && v.Name == req.Name && v.Version == req.Version {
 			return api.Model{}, ErrConflict
 		}
 	}
 	gate := "passed"
+	if strings.HasPrefix(req.ArtifactURI, "hf://") {
+		gate = "needs_evaluation"
+	}
 	if accuracy, ok := req.Metrics["accuracy"]; ok && accuracy < .8 {
 		gate = "failed"
 	}
 	m := api.Model{ID: id("mdl"), ProjectID: req.ProjectID, Name: req.Name, Version: req.Version, Stage: "candidate", ArtifactURI: req.ArtifactURI, ServingImage: servingImage, Metrics: req.Metrics, GateStatus: gate, DeploymentStatus: "not_deployed", CreatedAt: time.Now().UTC()}
+	m.Source = req.Source
 	s.data.Models = append([]api.Model{m}, s.data.Models...)
 	s.record("model.registered", "model", m.ID, actor, nil)
 	return m, s.persist()
@@ -433,7 +438,7 @@ func (s *Store) PromoteModel(modelID, stage, actor string) (api.Model, error) {
 	defer s.mu.Unlock()
 	for i := range s.data.Models {
 		if s.data.Models[i].ID == modelID {
-			if stage == "production" && s.data.Models[i].GateStatus == "failed" {
+			if stage == "production" && s.data.Models[i].GateStatus != "passed" {
 				return api.Model{}, errors.New("model evaluation gates have not passed")
 			}
 			s.data.Models[i].PreviousStage = s.data.Models[i].Stage

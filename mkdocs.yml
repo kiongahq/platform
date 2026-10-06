@@ -96,12 +96,14 @@ nav:
   - Guides:
       - Connecting all services: connecting-services.md
       - Jupyter workbench: guides/workbench.md
+      - Console navigation & service switching: guides/console-navigation.md
       - AI coding & IDE workspace: guides/coding-workspace.md
       - Project templates: guides/project-templates.md
       - Engineering blog: guides/engineering-blog.md
       - Pipelines: guides/pipelines.md
       - Distributed workspaces, functions & Git: guides/distributed-workspaces.md
       - Models & serving: guides/models-serving.md
+      - Hugging Face models: guides/huggingface.md
       - Agents: guides/agents.md
       - Feature store: guides/features.md
       - Real-time processing: guides/realtime.md
