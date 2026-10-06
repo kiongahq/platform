@@ -128,7 +128,7 @@ func publicPath(method, path string) bool {
 		return true
 	}
 	switch path {
-	case "/", "/index.html", "/landing.css", "/landing.js", "/api/v1/health",
+	case "/", "/index.html", "/landing.css", "/landing.js", "/api/v1/health", "/api/v1/ready",
 		"/api/openapi.json", "/api-docs.html", "/api-docs.css", "/api-docs.js",
 		"/blogs.html", "/blog.html", "/blog.css", "/blog.js":
 		return true
@@ -161,7 +161,7 @@ type AccessResolver func(string) (roles, services, projectIDs []string, disabled
 func RBACWithResolver(next http.Handler, resolve AccessResolver) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if (!strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/workspaces/")) || path == "/api/v1/health" || path == "/api/openapi.json" {
+		if (!strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/workspaces/")) || path == "/api/v1/health" || path == "/api/v1/ready" || path == "/api/openapi.json" {
 			next.ServeHTTP(w, r)
 			return
 		}

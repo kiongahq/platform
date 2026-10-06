@@ -14,6 +14,7 @@ import (
 	"github.com/ml-ai-ops/platform/internal/auth"
 	"github.com/ml-ai-ops/platform/internal/httpapi"
 	"github.com/ml-ai-ops/platform/internal/integrations"
+	"github.com/ml-ai-ops/platform/internal/runtimeconfig"
 	"github.com/ml-ai-ops/platform/internal/store"
 )
 
@@ -21,6 +22,12 @@ import (
 var web embed.FS
 
 func main() {
+	if err := runtimeconfig.Load(); err != nil {
+		log.Fatal(err)
+	}
+	if err := runtimeconfig.ValidateGateway(); err != nil {
+		log.Fatal(err)
+	}
 	static, err := fs.Sub(web, "web")
 	if err != nil {
 		log.Fatal(err)
@@ -39,6 +46,20 @@ func main() {
 			log.Fatalf("open PostgreSQL repository: %v", err)
 		}
 		defer postgres.Close()
+		go func() {
+			ticker := time.NewTicker(time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := postgres.PurgeExpiredWorkspaceEdgeSessions(ctx); err != nil {
+						log.Printf("workspace session cleanup failed: %v", err)
+					}
+				}
+			}
+		}()
 		repository = postgres
 		if kafkaURL := os.Getenv("KAFKA_REST_URL"); kafkaURL != "" {
 			worker := store.NewOutboxWorker(postgres, integrations.NewKafkaREST(kafkaURL, os.Getenv("KAFKA_REST_TOKEN")), time.Second)
@@ -60,10 +81,14 @@ func main() {
 			log.Fatal("OIDC_JWKS_URL is required when OIDC_ISSUER is configured")
 		}
 		verifier := auth.New(auth.Config{Issuer: issuer, Audience: os.Getenv("OIDC_AUDIENCE"), JWKSURL: jwksURL, Tenant: os.Getenv("MLAIOPS_TENANT")})
+		var revokeWorkspaceSessions func(context.Context, string) error
+		if postgres != nil {
+			revokeWorkspaceSessions = postgres.RevokeWorkspaceEdgeSessionsForSubject
+		}
 		session, sessionErr := auth.NewSessionManager(auth.SessionConfig{
 			ClientID: os.Getenv("OIDC_CLIENT_ID"), ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
 			AuthURL: os.Getenv("OIDC_AUTH_URL"), TokenURL: os.Getenv("OIDC_TOKEN_URL"),
-			RedirectURL: os.Getenv("OIDC_REDIRECT_URL"), Secure: true,
+			RedirectURL: os.Getenv("OIDC_REDIRECT_URL"), Secure: true, OnLogout: revokeWorkspaceSessions,
 		}, verifier)
 		if sessionErr != nil {
 			log.Fatalf("configure OIDC browser login: %v", sessionErr)
@@ -83,6 +108,18 @@ func main() {
 		log.Printf("WARNING: OIDC authentication disabled; local development mode only")
 	}
 	handler = auth.APITokenMiddleware(repository.ResolveAPIToken, handler)
+	if metricsPort := os.Getenv("METRICS_PORT"); metricsPort != "" {
+		metricsServer := &http.Server{Addr: ":" + metricsPort, Handler: httpapi.MetricsHandler(), ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("gateway metrics listener failed: %v", err)
+			}
+		}()
+		defer metricsServer.Close()
+	}
+	if os.Getenv("KIONGA_ENVIRONMENT") == "production" && os.Getenv("KIONGA_WORKSPACE_BASE_DOMAIN") != "" {
+		handler = httpapi.WorkspaceHostRouter(handler, repository)
+	}
 	server := &http.Server{Addr: ":" + port, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second}
 	go func() {
 		<-ctx.Done()

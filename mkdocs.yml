@@ -118,4 +118,7 @@ nav:
   - Operations:
       - Local operations: operations/local.md
       - Public hosting: hosting.md
+      - Managed Kubernetes: operations/managed-kubernetes.md
+      - Public VM: operations/public-vm.md
+      - Production operations: operations/production-operations.md
       - Troubleshooting: operations/troubleshooting.md

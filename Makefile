@@ -80,10 +80,10 @@ ide-down:
 	docker compose -f deploy/compose.yaml --profile ide stop ide
 
 public-up:
-	bash deploy/public-up.sh
+	bash deploy/public-up.sh "$(DEPLOYMENT)"
 
 public-down:
-	docker compose -f deploy/compose.yaml -f deploy/compose.public.yaml down
+	python3 deploy/vm/up.py "$(DEPLOYMENT)" --stop
 
 kind-up:
 	bash scripts/kind-up.sh

@@ -139,6 +139,14 @@ Python SDK / CLI / UI
 
 ## Documentation
 
+**Public deployments:** use the [managed Kubernetes guide](docs/operations/managed-kubernetes.md)
+for the replicated control plane, or the [VM guide](docs/operations/public-vm.md)
+for a gateway-only pilot. Both use non-secret configuration and mounted secret
+files instead of production `.env` files. Review the
+[operational acceptance checklist](docs/operations/production-operations.md) before launch.
+The Kubernetes path supports isolated workspace subdomains and includes
+`scripts/verify-production.py` for staged cluster, TLS, RBAC and workspace checks.
+
 **Agent frameworks:** use LangGraph, opt-in Agno/NOOA adapters, or a custom
 request/result adapter. See the [agent framework guide](docs/guides/agent-frameworks.md)
 for examples, runtime images, session handling, and NOOA isolation requirements.

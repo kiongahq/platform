@@ -214,7 +214,8 @@ func hardenedSecurityContext() *corev1.SecurityContext {
 	allow := false
 	readOnly := true
 	nonRoot := true
-	return &corev1.SecurityContext{AllowPrivilegeEscalation: &allow, ReadOnlyRootFilesystem: &readOnly, RunAsNonRoot: &nonRoot}
+	uid := int64(65532)
+	return &corev1.SecurityContext{AllowPrivilegeEscalation: &allow, ReadOnlyRootFilesystem: &readOnly, RunAsNonRoot: &nonRoot, RunAsUser: &uid, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
 }
 
 func intstrFromInt(value int) intstr.IntOrString { return intstr.FromInt(value) }

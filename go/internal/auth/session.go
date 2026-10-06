@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -25,6 +26,7 @@ type SessionConfig struct {
 	TokenURL     string
 	RedirectURL  string
 	Secure       bool
+	OnLogout     func(context.Context, string) error
 }
 
 type SessionManager struct {
@@ -110,6 +112,16 @@ func (s *SessionManager) callback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *SessionManager) logout(w http.ResponseWriter, r *http.Request) {
+	if s.config.OnLogout != nil {
+		if cookie, err := r.Cookie(SessionCookieName); err == nil {
+			if principal, verifyErr := s.verifier.Verify(r.Context(), cookie.Value); verifyErr == nil {
+				if err := s.config.OnLogout(r.Context(), principal.Subject); err != nil {
+					deny(w, http.StatusServiceUnavailable, "could not revoke workspace sessions")
+					return
+				}
+			}
+		}
+	}
 	s.clearCookie(w, SessionCookieName)
 	http.Redirect(w, r, "/", http.StatusFound)
 }

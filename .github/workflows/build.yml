@@ -51,9 +51,9 @@ jobs:
           # Python and other images — their own Dockerfiles and contexts.
           - { name: agent-runtime, dockerfile: python/agent_runtime/Dockerfile, context: . }
           - { name: pipeline-runner, dockerfile: python/pipelines/Dockerfile, context: . }
-          - { name: mlflow, dockerfile: deploy/mlflow/Dockerfile, context: deploy/mlflow }
           - { name: jupyter, dockerfile: deploy/jupyter/Dockerfile, context: . }
           - { name: ide, dockerfile: deploy/ide/Dockerfile, context: . }
+          - { name: mlflow, dockerfile: deploy/mlflow/Dockerfile, context: deploy/mlflow }
     steps:
       - uses: actions/checkout@v4
 
@@ -79,6 +79,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
@@ -86,7 +87,8 @@ jobs:
           build-args: ${{ matrix.build_args }}
           platforms: linux/amd64
           push: true
-          provenance: false
+          provenance: mode=min
+          sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.name }}
@@ -96,6 +98,7 @@ jobs:
         run: |
           {
             echo "### ${{ matrix.name }} published"
+            echo "Immutable digest: ${{ steps.build.outputs.digest }}"
             echo '```'
             echo "${{ steps.meta.outputs.tags }}"
             echo '```'

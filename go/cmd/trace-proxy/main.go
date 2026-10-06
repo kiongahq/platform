@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/ml-ai-ops/platform/internal/runtimeconfig"
 	"log"
 	"net/http"
 	"net/url"
@@ -11,6 +12,9 @@ import (
 )
 
 func main() {
+	if err := runtimeconfig.Load(); err != nil {
+		log.Fatal(err)
+	}
 	raw := env("LLM_UPSTREAM_URL", "http://localhost:8000")
 	upstream, err := url.Parse(raw)
 	if err != nil {

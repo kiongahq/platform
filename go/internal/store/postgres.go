@@ -64,6 +64,18 @@ func (p *Postgres) Close()                         { p.pool.Close() }
 func (p *Postgres) Ping(ctx context.Context) error { return p.pool.Ping(ctx) }
 
 func (p *Postgres) Migrate(ctx context.Context) error {
+	connection, err := p.pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer connection.Release()
+	// Every gateway replica may start together. Hold a session-level advisory
+	// lock until all embedded migrations have completed.
+	const migrationLock int64 = 7033064489216845271
+	if _, err := connection.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationLock); err != nil {
+		return err
+	}
+	defer connection.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, migrationLock)
 	entries, err := migrations.ReadDir("migrations")
 	if err != nil {
 		return err
@@ -76,7 +88,7 @@ func (p *Postgres) Migrate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if _, err := p.pool.Exec(ctx, string(raw)); err != nil {
+		if _, err := connection.Exec(ctx, string(raw)); err != nil {
 			return fmt.Errorf("migration %s: %w", entry.Name(), err)
 		}
 	}

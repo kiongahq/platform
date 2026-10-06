@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ml-ai-ops/platform/internal/auth"
+	"github.com/ml-ai-ops/platform/internal/store"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -29,7 +30,10 @@ import (
 type workspaceDestination struct {
 	*url.URL
 	token string
+	name  string
 }
+
+type edgeContextKey struct{}
 
 var ideSessions = struct {
 	sync.Mutex
@@ -91,6 +95,9 @@ func ideSession(ctx context.Context, target *workspaceDestination) (string, erro
 }
 
 func workspaceTarget(kind string, r *http.Request) (*workspaceDestination, error) {
+	if os.Getenv("KIONGA_ENVIRONMENT") == "production" && os.Getenv("KIONGA_TRUSTED_WORKSPACE_PROXY") != "true" && os.Getenv("KIONGA_WORKSPACE_BASE_DOMAIN") == "" {
+		return nil, fmt.Errorf("Public same-origin workspaces are disabled. Configure isolated workspace access with your administrator")
+	}
 	key := map[string]string{"workbench": "KIONGA_JUPYTER_UPSTREAM", "ide": "KIONGA_IDE_UPSTREAM"}[kind]
 	if key == "" {
 		return nil, fmt.Errorf("Unknown workspace")
@@ -177,7 +184,7 @@ func discoverWorkspace(ctx context.Context, client dynamic.Interface, namespace,
 		port = "8080"
 	}
 	target, _ := url.Parse("http://" + match.GetName() + "." + namespace + ".svc:" + port)
-	return &workspaceDestination{URL: target, token: string(token)}, nil
+	return &workspaceDestination{URL: target, token: string(token), name: match.GetName()}, nil
 }
 
 func (s *Server) projectOptions(w http.ResponseWriter, r *http.Request) {
@@ -247,8 +254,13 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			e.Available = true
-			e.URL = "/workspaces/" + kind + "/"
-			e.Message = "Ready · uses your Kionga session"
+			if os.Getenv("KIONGA_ENVIRONMENT") == "production" && os.Getenv("KIONGA_WORKSPACE_BASE_DOMAIN") != "" {
+				e.URL = "/workspace.html?tool=" + kind
+				e.Message = "Ready · isolated workspace"
+			} else {
+				e.URL = "/workspaces/" + kind + "/"
+				e.Message = "Ready · uses your Kionga session"
+			}
 		}(i, kind)
 	}
 	wg.Wait()
@@ -257,6 +269,10 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
+	if os.Getenv("KIONGA_ENVIRONMENT") == "production" && os.Getenv("KIONGA_TRUSTED_WORKSPACE_PROXY") != "true" && r.Context().Value(edgeContextKey{}) != true {
+		writeError(w, 404, "not_found", "Workspace access uses an isolated host")
+		return
+	}
 	if _, ok := auth.PrincipalFrom(r.Context()); !ok {
 		writeError(w, 401, "unauthenticated", "Sign in to open your workspace")
 		return
@@ -277,6 +293,10 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request) {
 	target, err := workspaceTarget(kind, r)
 	if err != nil {
 		writeError(w, 503, "workspace_unavailable", err.Error())
+		return
+	}
+	if expected, ok := r.Context().Value(edgeWorkspaceNameKey{}).(string); ok && target.name != expected {
+		writeError(w, 403, "forbidden", "Workspace host does not match the assigned workspace")
 		return
 	}
 	ideCookie := ""
@@ -307,6 +327,9 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request) {
 	},
 		ModifyResponse: func(response *http.Response) error {
 			response.Header.Del("Set-Cookie")
+			if r.Context().Value(edgeContextKey{}) == true {
+				rewriteWorkspaceFramePolicy(response.Header, os.Getenv("MLAIOPS_ALLOWED_ORIGIN"))
+			}
 			if kind == "ide" {
 				if path := response.Header.Get("Location"); strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//") {
 					response.Header.Set("Location", "/workspaces/ide"+path)
@@ -322,8 +345,35 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
+func rewriteWorkspaceFramePolicy(header http.Header, origin string) {
+	// Preserve all upstream CSP directives except frame-ancestors. The
+	// internal service's SAMEORIGIN policy would block the isolated iframe.
+	header.Del("X-Frame-Options")
+	policies := header.Values("Content-Security-Policy")
+	header.Del("Content-Security-Policy")
+	for _, policy := range policies {
+		parts := strings.Split(policy, ";")
+		kept := make([]string, 0, len(parts)+1)
+		for _, part := range parts {
+			if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(part)), "frame-ancestors") && strings.TrimSpace(part) != "" {
+				kept = append(kept, strings.TrimSpace(part))
+			}
+		}
+		kept = append(kept, "frame-ancestors "+origin)
+		header.Add("Content-Security-Policy", strings.Join(kept, "; "))
+	}
+	if len(policies) == 0 {
+		header.Set("Content-Security-Policy", "frame-ancestors "+origin)
+	}
+	header.Set("Referrer-Policy", "no-referrer")
+}
+
 func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
+	if !auth.Allowed(principal(r), r.Method, "/api/v1/workspaces/"+kind+"/launch") {
+		writeError(w, 403, "forbidden", "This workspace has not been assigned to you")
+		return
+	}
 	target, err := workspaceTarget(kind, r)
 	if err != nil {
 		writeError(w, 503, "workspace_unavailable", err.Error())
@@ -372,7 +422,7 @@ func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			destination += "?folder=" + url.QueryEscape("/workspace/projects/"+project.Namespace)
-			writeJSON(w, 200, map[string]string{"url": destination})
+			s.writeWorkspaceLaunch(w, r, target, kind, destination)
 			return
 		}
 		// Jupyter and the IDE share /workspace. The contents API creates the
@@ -415,6 +465,32 @@ func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		destination += "/tree/projects/" + url.PathEscape(project.Namespace)
+	}
+	s.writeWorkspaceLaunch(w, r, target, kind, destination)
+}
+
+func (s *Server) writeWorkspaceLaunch(w http.ResponseWriter, r *http.Request, target *workspaceDestination, kind, destination string) {
+	if os.Getenv("KIONGA_ENVIRONMENT") == "production" && os.Getenv("KIONGA_WORKSPACE_BASE_DOMAIN") != "" {
+		issuer, ok := s.store.(interface {
+			IssueWorkspaceTicket(context.Context, store.WorkspaceEdgeIdentity) (string, error)
+		})
+		if !ok || target.name == "" {
+			writeError(w, 503, "workspace_unavailable", "Isolated workspace access is not configured")
+			return
+		}
+		ticket, err := issuer.IssueWorkspaceTicket(r.Context(), store.WorkspaceEdgeIdentity{Subject: principal(r).Subject, WorkspaceName: target.name, Kind: kind})
+		if err != nil {
+			writeError(w, 503, "workspace_unavailable", "Could not create workspace handoff")
+			return
+		}
+		host := kind + "-" + workspaceSlug(target.name) + "." + os.Getenv("KIONGA_WORKSPACE_BASE_DOMAIN")
+		if _, _, valid := parseWorkspaceHost(host, os.Getenv("KIONGA_WORKSPACE_BASE_DOMAIN")); !valid {
+			writeError(w, 503, "workspace_unavailable", "Workspace name cannot be routed on the isolated domain")
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, 200, map[string]string{"url": "https://" + host + "/_kionga/redeem", "ticket": ticket, "next": destination})
+		return
 	}
 	writeJSON(w, 200, map[string]string{"url": destination})
 }

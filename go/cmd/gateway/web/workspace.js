@@ -22,7 +22,21 @@ async function launch() {
     if (!state?.available) throw new Error(state?.message || "Workspace is unavailable.");
     document.querySelector("#workspace-project").textContent=projects.items.find(item=>item.id===project)?.name || "Shared workspace";
     const result=await workspaceAPI(`/api/v1/workspaces/${tool.value}/launch`,{method:"POST",body:JSON.stringify({project_id:project})});
-    frame.src=result.url;frame.hidden=false;message.hidden=true;
+    frame.hidden=false;
+    if (result.ticket) {
+      const origin = new URL(result.url).origin;
+      if (origin === location.origin || !origin.startsWith("https://")) throw new Error("Workspace isolation is misconfigured.");
+      frame.name = "kionga-isolated-workspace";
+      const form = document.createElement("form");
+      form.method = "POST"; form.action = result.url; form.target = frame.name; form.hidden = true;
+      for (const [name, value] of Object.entries({ticket: result.ticket, next: result.next})) {
+        const input = document.createElement("input"); input.type = "hidden"; input.name = name; input.value = value; form.append(input);
+      }
+      document.body.append(form); form.submit(); form.remove();
+    } else {
+      frame.src=result.url;
+    }
+    message.hidden=true;
     document.querySelector("#workspace-status").textContent="Shared files · signed in with Kionga";
     query.set("tool",tool.value);history.replaceState({},"",`${location.pathname}?${query}`);
   } catch(error) { message.textContent=error.message;retry.hidden=false; }

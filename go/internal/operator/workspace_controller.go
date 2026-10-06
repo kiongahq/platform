@@ -97,7 +97,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		deployment.Spec.Replicas = &replicas
 		deployment.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"mlaiops.io/workspace": workspace.Name}}
 		deployment.Spec.Template.ObjectMeta.Labels = labels
-		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{FSGroup: ptrInt64(1000), RunAsNonRoot: ptrBool(true)}
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{FSGroup: ptrInt64(1000), RunAsNonRoot: ptrBool(true), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
 		deployment.Spec.Template.Spec.Containers = containers
 		deployment.Spec.Template.Spec.Volumes = []corev1.Volume{{Name: "workspace", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvc.Name}}}}
 		return controllerutil.SetControllerReference(&workspace, deployment, r.Scheme())
@@ -184,7 +184,7 @@ func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.KiongaWorkspace, au
 			Name: service, Image: image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: port}},
 			Env:       environment,
 			Resources: resources, VolumeMounts: []corev1.VolumeMount{{Name: "workspace", MountPath: "/workspace"}},
-			SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptrBool(false), RunAsNonRoot: ptrBool(true), RunAsUser: ptrInt64(1000), RunAsGroup: ptrInt64(1000)},
+			SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptrBool(false), RunAsNonRoot: ptrBool(true), RunAsUser: ptrInt64(1000), RunAsGroup: ptrInt64(1000), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
 		})
 	}
 	return result

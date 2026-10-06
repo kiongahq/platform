@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/ml-ai-ops/platform/internal/runtimeconfig"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +12,9 @@ import (
 )
 
 func main() {
+	if err := runtimeconfig.Load(); err != nil {
+		log.Fatal(err)
+	}
 	config := storage.Config{Endpoint: os.Getenv("S3_ENDPOINT"), Region: env("S3_REGION", "us-east-1"), AccessKey: os.Getenv("S3_ACCESS_KEY"), SecretKey: os.Getenv("S3_SECRET_KEY")}
 	browser := storage.NewBrowser(config)
 	mux := http.NewServeMux()

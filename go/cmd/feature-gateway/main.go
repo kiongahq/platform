@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/ml-ai-ops/platform/internal/runtimeconfig"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +12,9 @@ import (
 )
 
 func main() {
+	if err := runtimeconfig.Load(); err != nil {
+		log.Fatal(err)
+	}
 	// Serving mode, most real first:
 	//   FEAST_URL  -> delegate to a running Feast feature server
 	//   REDIS_URL  -> direct Redis lookups on the platform key convention

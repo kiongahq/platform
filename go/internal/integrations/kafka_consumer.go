@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -31,10 +32,15 @@ type KafkaConsumer struct {
 	group    string
 	instance string
 	client   *http.Client
+	token    string
 }
 
-func NewKafkaConsumer(restURL, group, instance string) *KafkaConsumer {
-	return &KafkaConsumer{restURL: strings.TrimRight(restURL, "/"), group: group, instance: instance, client: &http.Client{Timeout: 35 * time.Second}}
+func NewKafkaConsumer(restURL, group, instance string, token ...string) *KafkaConsumer {
+	value := ""
+	if len(token) > 0 {
+		value = token[0]
+	}
+	return &KafkaConsumer{restURL: strings.TrimRight(restURL, "/"), group: group, instance: instance, token: value, client: &http.Client{Timeout: 35 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
 func (c *KafkaConsumer) Connect(ctx context.Context, topics []string) error {
@@ -118,6 +124,13 @@ func (c *KafkaConsumer) Close(ctx context.Context) error {
 }
 
 func (c *KafkaConsumer) request(ctx context.Context, method, endpoint string, input, output any) error {
+	if c.token != "" {
+		base, _ := url.Parse(c.restURL)
+		destination, err := url.Parse(endpoint)
+		if err != nil || base == nil || destination.Host != base.Host || destination.Scheme != base.Scheme {
+			return fmt.Errorf("Kafka consumer endpoint must retain the configured origin")
+		}
+	}
 	var body *bytes.Reader
 	if input == nil {
 		body = bytes.NewReader(nil)
@@ -134,6 +147,9 @@ func (c *KafkaConsumer) request(ctx context.Context, method, endpoint string, in
 	}
 	request.Header.Set("Content-Type", "application/vnd.kafka.v2+json")
 	request.Header.Set("Accept", "application/vnd.kafka.json.v2+json")
+	if c.token != "" {
+		request.Header.Set("Authorization", "Bearer "+c.token)
+	}
 	response, err := c.client.Do(request)
 	if err != nil {
 		return err

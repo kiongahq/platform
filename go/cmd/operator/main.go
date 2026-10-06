@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"github.com/ml-ai-ops/platform/internal/runtimeconfig"
 	"log"
 	"os"
 
@@ -10,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -20,6 +22,9 @@ import (
 )
 
 func main() {
+	if err := runtimeconfig.Load(); err != nil {
+		log.Fatal(err)
+	}
 	var metricsAddress, probeAddress string
 	var leaderElection bool
 	flag.StringVar(&metricsAddress, "metrics-bind-address", ":8080", "Metrics endpoint address")
@@ -32,7 +37,15 @@ func main() {
 	must(appsv1.AddToScheme(scheme))
 	must(corev1.AddToScheme(scheme))
 	must(mlaiopsv1.AddToScheme(scheme))
+	cacheOptions := cache.Options{}
+	if target := os.Getenv("MLAIOPS_TARGET_NAMESPACE"); target != "" {
+		cacheOptions.DefaultNamespaces = map[string]cache.Config{target: {}, os.Getenv("MLAIOPS_CONTROL_NAMESPACE"): {}}
+		if os.Getenv("MLAIOPS_CONTROL_NAMESPACE") == "" {
+			log.Fatal("MLAIOPS_CONTROL_NAMESPACE is required with namespace-scoped operator")
+		}
+	}
 	manager, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Cache:  cacheOptions,
 		Scheme: scheme, LeaderElection: leaderElection, LeaderElectionID: "mlaiops-operator.mlaiops.io",
 		HealthProbeBindAddress: probeAddress, Metrics: metricsserver.Options{BindAddress: metricsAddress},
 	})

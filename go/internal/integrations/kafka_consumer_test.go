@@ -70,6 +70,20 @@ func TestKafkaConsumerUsesManualCommitAndCommitsNextOffsets(t *testing.T) {
 	}
 }
 
+func TestKafkaConsumerTokenCannotLeaveConfiguredOrigin(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-secret" {
+			t.Error("missing credential")
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"base_uri": "https://different.invalid/consumer"})
+	}))
+	defer server.Close()
+	consumer := NewKafkaConsumer(server.URL, "lifecycle", "worker", "test-secret")
+	if err := consumer.Connect(context.Background(), []string{"commands"}); err == nil {
+		t.Fatal("cross-origin consumer credential forwarding allowed")
+	}
+}
+
 func TestKafkaConsumerEmptyBatchDoesNotCommit(t *testing.T) {
 	consumer := NewKafkaConsumer("http://unused.example", "lifecycle", "worker")
 	consumer.baseURI = "http://unused.example/instances/worker"

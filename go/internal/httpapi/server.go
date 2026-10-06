@@ -37,6 +37,7 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	server := &Server{store: data, static: static, realtime: map[string]map[string]any{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", server.health)
+	mux.HandleFunc("GET /api/v1/ready", server.ready)
 	mux.HandleFunc("GET /api/v1/me", server.me)
 	mux.HandleFunc("GET /api/v1/settings/huggingface", server.huggingFaceAccount)
 	mux.HandleFunc("PUT /api/v1/settings/huggingface", server.huggingFaceAccount)
@@ -1545,6 +1546,9 @@ func logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
+		category := requestCategory(r.URL.Path)
+		requestCount.WithLabelValues(r.Method, category).Inc()
+		requestDuration.WithLabelValues(category).Observe(time.Since(start).Seconds())
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			log.Printf("method=%s path=%s duration=%s", r.Method, r.URL.Path, time.Since(start))
 		}
