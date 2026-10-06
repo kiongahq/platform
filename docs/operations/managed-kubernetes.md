@@ -8,6 +8,11 @@ The operator uses leader election and namespace-scoped caches and permissions.
 The integration worker uses Kafka consumer groups and reports polling readiness.
 These mechanisms support availability; they do not replace redundant dependencies.
 
+Provider-specific setup and storage overlays: [EKS](providers/aws-eks.md),
+[GKE](providers/gcp-gke.md), and [AKS](providers/azure-aks.md). AWS EKS is the
+initial staging target, but no live cloud deployment is implied by these guides.
+Run `scripts/cloud-preflight.py` for the selected provider before Helm.
+
 ## 1. Prepare the infrastructure
 
 Provide a supported managed Kubernetes cluster (chart minimum 1.29; use a version
@@ -155,6 +160,13 @@ bash scripts/deploy-kubernetes.sh CONTEXT kionga-system /path/to/production.yaml
 kubectl --context CONTEXT -n kionga-system get pods,services,ingress,hpa,pdb
 kubectl --context CONTEXT -n kionga-system get externalsecrets
 ```
+
+The deployment script also accepts provider overlays between the base values file
+and `--apply`, preserving Helm's left-to-right values precedence. Use the
+provider guide's exact command to select its storage class; review all settings
+in the base values first. Preflight and Helm rendering are necessary, not
+sufficient: test actual volume provisioning, network-policy enforcement, cloud
+identity permissions and ingress TLS in the staging cluster.
 
 With staged admin and normal-user OIDC tokens in protected files, and a project
 the user cannot access, run the read-only verifier:

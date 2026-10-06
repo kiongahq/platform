@@ -119,6 +119,9 @@ nav:
       - Local operations: operations/local.md
       - Public hosting: hosting.md
       - Managed Kubernetes: operations/managed-kubernetes.md
+      - Amazon EKS: operations/providers/aws-eks.md
+      - Google GKE: operations/providers/gcp-gke.md
+      - Azure AKS: operations/providers/azure-aks.md
       - Public VM: operations/public-vm.md
       - Production operations: operations/production-operations.md
       - Troubleshooting: operations/troubleshooting.md
