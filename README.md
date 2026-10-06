@@ -70,9 +70,11 @@ Normal starts reuse local images and build any that are missing. After changing
 Dockerized source or dependencies, run `make local-rebuild` once to rebuild the
 affected images and start the stack.
 
-Open <http://localhost:8080>, choose **Open console**, and sign in with the local
-development account `admin` / `mlaiops-local`. If port 8080 is occupied, start with
-`GATEWAY_PORT=18080 make local-up` and use that port instead.
+Open the console URL printed by `make local-up` and sign in with the local
+development account `admin` / `mlaiops-local`. It defaults to
+<http://localhost:8080>; if that port is occupied, the script chooses an available
+port in 18080–18084 and prints the actual URL. Set `GATEWAY_PORT` to choose one
+explicitly.
 
 The SDK and CLI use the same API:
 

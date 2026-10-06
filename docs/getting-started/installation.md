@@ -33,7 +33,8 @@ make local-up
 1. Verifies that Docker and Compose v2 are available and the daemon is running.
 2. Downloads missing upstream images with conservative concurrency and retries
    transient registry/CDN failures such as `EOF`.
-3. Builds and starts every service defined in `deploy/compose.yaml`.
+3. Reuses cached images or builds missing images, then starts every service in
+   `deploy/compose.yaml`.
 4. Waits for the control-plane health endpoint.
 5. Creates the Kafka topics (`scripts/local-topics.sh`).
 
@@ -59,13 +60,20 @@ When it finishes, open the landing page:
 The operational console is at <http://localhost:8080/console.html>.
 Sign in with `admin` / `mlaiops-local`.
 
-If port 8080 is already used, choose another host port without changing the
-container network:
+If port 8080 is already used, `make local-up` selects a free port in 18080–18084
+and prints the URL. To choose a port yourself without changing the container network:
 
 ```bash
 GATEWAY_PORT=18080 make local-up
 export GATEWAY=http://localhost:18080
 ```
+
+Bucket creation uses the `boto3` already included in the local MLflow image;
+it does not pull a separate MinIO client image. A registry error that says a
+repository or tag does not exist fails immediately rather than consuming all
+retry attempts. On macOS, if iCloud has evicted `.dockerignore` or `Dockerfile`,
+download those files in Finder before a cold build; the startup preflight will
+report the affected file.
 
 ### Verify it works
 

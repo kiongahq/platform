@@ -77,7 +77,9 @@ agent and workspace reconcilers.
 ## Changing ports
 
 Every published port has a `*_PORT` override. Put them in `.env` (or export them),
-then `make local-up`. Example — move the console off 8080:
+then `make local-up`. If 8080 is occupied and no gateway override is set, the
+script chooses a free port in 18080–18084 and prints it. Example — explicitly
+move the console off 8080:
 
 ```bash
 echo "GATEWAY_PORT=8090" >> .env
