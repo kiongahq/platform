@@ -113,7 +113,7 @@ packaging. See the [template catalog](../guides/project-templates.md).
 
 ## `agent_runtime` — the agent service
 
-The FastAPI service that serves LangGraph agents (see
+The FastAPI service that serves LangGraph agents and framework-neutral adapters (see
 [AI services](../services/ai-observability.md#agent-runtime)).
 
 | Module | Role |

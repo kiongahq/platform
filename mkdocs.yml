@@ -104,6 +104,7 @@ nav:
       - Distributed workspaces, functions & Git: guides/distributed-workspaces.md
       - Models & serving: guides/models-serving.md
       - Hugging Face models: guides/huggingface.md
+      - Agent frameworks: guides/agent-frameworks.md
       - Agents: guides/agents.md
       - Feature store: guides/features.md
       - Real-time processing: guides/realtime.md

@@ -1133,7 +1133,7 @@ document.querySelector("#chat-form").addEventListener("submit", async event => {
   try {
     const reply = await api(`/api/v1/agents/${encodeURIComponent(chatState.agentId)}/invoke`, {method:"POST", body:JSON.stringify({message, session_id: chatState.sessionId, user_id: "console"})});
     chatState.sessionId = reply.session_id;
-    log.lastElementChild.outerHTML = `<div class="chat-turn agent"><span>Agent · ${reply.input_tokens + reply.output_tokens} tokens · ${reply.duration_ms}ms</span><p>${escapeHTML(reply.reply)}</p></div>`;
+    log.lastElementChild.outerHTML = `<div class="chat-turn agent"><span>Agent · ${reply.usage_available === false ? "Usage unavailable" : `${reply.input_tokens + reply.output_tokens} tokens`} · ${reply.duration_ms}ms</span><p>${escapeHTML(reply.reply)}</p></div>`;
   } catch (failure) {
     log.lastElementChild.outerHTML = `<div class="chat-turn agent failed"><span>Agent</span><p>${escapeHTML(failure.message)}</p></div>`;
   }
@@ -1443,6 +1443,16 @@ document.addEventListener("click", event => {
 });
 
 applyPreferences();
+document.querySelector('#agent-framework-preset').addEventListener('change', event => {
+  const kind = event.target.value;
+  if (!kind) return;
+  document.querySelector('#deploy-agent-form [name=graph_module]').value = kind === 'langgraph' ? 'agents.customer_support.graph:build' : `agents.framework_examples:build_${kind}`;
+  document.querySelector('#agent-framework-help').textContent = kind === 'nooa'
+    ? 'NOOA requires a separate Python 3.12–3.13 image, NOOA_MODEL, provider credentials, and OS-level sandboxing. The example is disabled until KIONGA_ALLOW_CODE_EXECUTION=1. This flag is not a sandbox.'
+    : kind === 'agno' ? 'Build with the Agno extra; configure AGNO_MODEL and OPENAI_API_KEY in the deployment. The factory owns its provider configuration; the LangGraph LLM selector does not configure Agno.'
+    : kind === 'custom' ? 'Replace the example with your adapter. The factory owns provider configuration and durable session storage.'
+    : 'LangGraph uses the platform model and checkpointer settings.';
+});
 let initialized = false;
 async function initializeConsole() {
   try {

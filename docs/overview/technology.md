@@ -38,6 +38,9 @@ reflect the images and dependency pins in the repository.
 | Technology | Pin | Role |
 | --- | --- | --- |
 | **LangGraph** | `langgraph>=0.2` | Agent graphs (StateGraph, reason → tools → respond) |
+| **Agno (optional)** | SDK `agno` extra | `arun` adapter with session/user context and run usage |
+| **NVIDIA OO-Agents / NOOA (optional)** | SDK `nooa` extra; separate Python 3.12–3.13 image | Typed async method adapter; requires operator-provided isolation for generated code |
+| **Custom agent frameworks** | SDK `CallableAdapter` | Stable request/result contract without control-plane schema changes |
 | **LangGraph Postgres checkpoint** | `langgraph-checkpoint-postgres>=2.0` | Durable session state (AsyncPostgresSaver) |
 | **LangChain** | `langchain-core / -openai / -anthropic >=0.3 / >=0.2` | LLM abstractions and tool conversion |
 | **Langfuse** | `langfuse>=2.0` (`langfuse/langfuse:2`) | LLM/agent observability (Postgres-backed v2) |

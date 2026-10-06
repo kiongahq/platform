@@ -68,6 +68,16 @@ test('startup retry reloads identity before loading a permitted page',async t=>{
  assert.equal(app.w.document.querySelector('#view-feedback').hidden,true);
 });
 
+test('agent presets choose adapter entrypoints and disclose NOOA isolation requirements',async t=>{
+ const app=consoleApp(['agents'],'agents');t.after(()=>app.dom.window.close());await tick();
+ const select=app.w.document.querySelector('#agent-framework-preset');
+ select.value='agno';select.dispatchEvent(new app.w.Event('change'));
+ assert.equal(app.w.document.querySelector('#deploy-agent-form [name=graph_module]').value,'agents.framework_examples:build_agno');
+ select.value='nooa';select.dispatchEvent(new app.w.Event('change'));
+ assert.equal(app.w.document.querySelector('#deploy-agent-form [name=graph_module]').value,'agents.framework_examples:build_nooa');
+ assert.match(app.w.document.querySelector('#agent-framework-help').textContent,/not a sandbox/);
+});
+
 test('navigation preserves project in URL and back/forward restores the view',async t=>{
  const app=consoleApp(['projects','pipelines'],'projects');t.after(()=>app.dom.window.close());await tick();
  const select=app.w.document.querySelector('#project-context');select.value='p1';select.dispatchEvent(new app.w.Event('change'));await tick();

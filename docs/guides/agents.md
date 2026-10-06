@@ -1,17 +1,20 @@
 # Agents
 
-Agents are **LangGraph** graphs served by the agent runtime. Compose deliberately
+Agents run through **LangGraph, Agno, NOOA, or a custom adapter** in the agent
+runtime. See [framework integration](agent-frameworks.md) for factories, images,
+provider configuration, and limitations. Compose deliberately
 uses one shared runtime; Kubernetes reconciles an isolated Deployment and Service
-per control-plane agent ID. Agents answer via a real LLM, keep session state in
-Postgres, retrieve features and long-term memory, call tools, and emit full traces
-with measured token/cost accounting.
+per control-plane agent ID. LangGraph has built-in checkpoint and callback
+integration. Other frameworks own their persistence and detailed tracing; the
+common runtime reports turn summaries and usage when supplied by the framework.
 
 Shell examples assume `export MLAIOPS_URL=http://localhost:8080`; change it when
 the gateway port or host differs.
 
 ## Anatomy of an agent
 
-An agent is a deployed record pointing at a **graph module** (`module:function`),
+An agent is a deployed record pointing at an **entrypoint** (`module:function`),
+stored in the backwards-compatible `graph_module` field,
 with an LLM backend, a tool list, per-replica CPU/memory/GPU requests, minimum and
 maximum replicas, a canary weight, and status. The default agent is
 `agents.customer_support.graph:build` — a `StateGraph` with a reason → tools →

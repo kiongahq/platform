@@ -1264,6 +1264,7 @@ func agentRuntimeEndpoint(agentID string) string {
 }
 
 func setAgentRuntimeHeaders(request *http.Request, agent *api.Agent) {
+	request.Header.Set("X-MLAIOps-Graph-Module", agent.GraphModule)
 	request.Header.Set("X-MLAIOps-Agent-ID", agent.ID)
 	request.Header.Set("X-MLAIOps-Agent-Name", agent.Name)
 }

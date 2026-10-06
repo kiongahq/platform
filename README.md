@@ -139,6 +139,10 @@ Python SDK / CLI / UI
 
 ## Documentation
 
+**Agent frameworks:** use LangGraph, opt-in Agno/NOOA adapters, or a custom
+request/result adapter. See the [agent framework guide](docs/guides/agent-frameworks.md)
+for examples, runtime images, session handling, and NOOA isolation requirements.
+
 **Pretrained models:** connect a personal account in Settings, then use the
 Hugging Face Hub panel under Models to register a pinned revision and generate
 workspace download code. See the [Hugging Face guide](docs/guides/huggingface.md)
