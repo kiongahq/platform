@@ -245,7 +245,11 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 			client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 			response, err := client.Do(request)
 			if err != nil {
-				e.Message = "Workspace is offline. Ask your administrator to start it."
+				if kind == "ide" && os.Getenv("KIONGA_ENVIRONMENT") != "production" {
+					e.Message = "IDE is offline. Run make ide-up from the mlops directory, then retry."
+				} else {
+					e.Message = "Workspace is offline. Ask your administrator to start it."
+				}
 				return
 			}
 			defer response.Body.Close()

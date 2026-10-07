@@ -1,4 +1,4 @@
-.PHONY: install run test test-go test-python test-integration test-load test-stress test-security test-e2e lint format build verify local local-up local-rebuild local-down local-status local-logs ide-up ide-down kind-up docs-install docs-serve docs-build
+.PHONY: install run test test-go test-python test-integration test-load test-stress test-security test-e2e lint format build verify local local-up local-rebuild local-down local-status local-logs ide-up ide-agents-up ide-down kind-up docs-install docs-serve docs-build
 
 install:
 	python -m pip install -r requirements.txt
@@ -74,7 +74,10 @@ local-logs:
 	docker compose -f deploy/compose.yaml logs --tail 100
 
 ide-up:
-	docker compose -f deploy/compose.yaml --profile ide up -d --build ide
+	docker compose -f deploy/compose.yaml --profile ide up -d ide
+
+ide-agents-up:
+	KIONGA_IDE_AGENTS=true docker compose -f deploy/compose.yaml --profile ide up -d --build ide
 
 ide-down:
 	docker compose -f deploy/compose.yaml --profile ide stop ide

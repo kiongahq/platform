@@ -10,6 +10,12 @@ in either interface appears immediately in the other.
 make ide-up
 ```
 
+The first run downloads the code-server image and installs only the packages
+needed for the editor. If you also want Codex and Claude Code CLI tools inside
+the IDE terminal, run `make ide-agents-up`; this optional image build downloads
+Node.js and both pinned CLIs and can take longer. Jupyter's coding-agent tools
+are unaffected.
+
 Sign in to the console, then choose **IDE workspace**. It opens through the
 authenticated gateway at `/workspace.html?tool=ide`; no separate password or
 published IDE port is needed in Compose. The link explains when the IDE is
@@ -23,6 +29,15 @@ make ide-down
 
 The IDE is code-server, the open-source browser build of VS Code. It is an
 opt-in Compose profile and is not exposed by the public deployment overlay.
+If the IDE link says it is offline, run `make ide-up` from the repository root,
+then click the link again. The console checks readiness before launching it.
+
+On macOS checkouts backed by iCloud, evicted files in the repository root can
+block a cold gateway build. The Compose gateway and IDE use their smaller `go/`
+and `deploy/` build contexts. If Docker cannot download the Go builder image,
+an operator with local Go installed can cross-compile into `go/build/gateway`
+and package that binary with `go/Dockerfile.local` for the matching Docker CPU
+architecture. This is a local recovery path, not the normal release build.
 
 ## Generate a starter
 
@@ -65,7 +80,8 @@ state instead of leaving those decisions only in generated files.
 
 ## Direct agent use
 
-Pinned Codex and Claude Code CLIs are installed in both development surfaces:
+Pinned Codex and Claude Code CLIs are installed in Jupyter, and in the IDE after
+`make ide-agents-up`:
 
 ```bash
 codex
@@ -80,8 +96,8 @@ changes and tests before committing.
 
 - Agent API keys are injected from `.env`; they are not written into projects.
 - Agent configuration volumes persist login/config state separately from code.
-- The IDE has password authentication and binds only to the configured local
-  port. Never expose it directly to the internet.
+- The Compose IDE has no published port and delegates authentication to the
+  Kionga gateway. Never expose its internal port directly to the internet.
 - Jupyter and the IDE share source files, but only Jupyter receives FUSE and
   `SYS_ADMIN` for the object-store mount.
 
