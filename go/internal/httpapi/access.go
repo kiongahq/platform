@@ -35,8 +35,22 @@ func accessFor(repository store.Repository, value auth.Principal) any {
 	return access
 }
 
+// projectScoped reports whether a principal is limited to assigned and owned
+// projects: normal users always, engineers and viewers when their access
+// profile lists projects. Administrators, operators and services are not.
+func projectScoped(value auth.Principal) bool {
+	if privileged(value) {
+		return false
+	}
+	if slices.Contains(value.Roles, auth.RoleUser) {
+		return true
+	}
+	return value.Provisioned && len(value.ProjectIDs) > 0 &&
+		(slices.Contains(value.Roles, auth.RoleEngineer) || slices.Contains(value.Roles, auth.RoleViewer))
+}
+
 func allowedProjectIDs(repository store.Repository, value auth.Principal) map[string]bool {
-	if privileged(value) || !slices.Contains(value.Roles, auth.RoleUser) {
+	if !projectScoped(value) {
 		return nil
 	}
 	allowed := make(map[string]bool, len(value.ProjectIDs))
@@ -60,7 +74,7 @@ func projectAllowed(repository store.Repository, value auth.Principal, projectID
 }
 
 func filterProjects(items []api.Project, value auth.Principal) []api.Project {
-	if !slices.Contains(value.Roles, auth.RoleUser) {
+	if !projectScoped(value) {
 		return items
 	}
 	allowed := make(map[string]bool, len(value.ProjectIDs))

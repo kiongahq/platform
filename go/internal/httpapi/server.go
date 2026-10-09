@@ -21,6 +21,7 @@ import (
 	"github.com/ml-ai-ops/platform/internal/integrations"
 	"github.com/ml-ai-ops/platform/internal/pipelinespec"
 	"github.com/ml-ai-ops/platform/internal/platform"
+	"github.com/ml-ai-ops/platform/internal/policy"
 	"github.com/ml-ai-ops/platform/internal/store"
 	"github.com/ml-ai-ops/platform/pkg/api"
 )
@@ -177,8 +178,16 @@ func (s *Server) upsertUserAccess(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	if decision := s.authorize(r, policy.UserManage, policy.UserResource(r.PathValue("subject"))); !decision.Allowed {
+		writeDenied(w, decision)
+		return
+	}
 	if r.PathValue("subject") == principal(r).Subject && (req.Role != auth.RoleAdmin || req.Disabled) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "administrators cannot demote or suspend themselves")
+		return
+	}
+	if (req.Role != auth.RoleAdmin || req.Disabled) && s.wouldRemoveLastAdmin(r, r.PathValue("subject")) {
+		writeError(w, http.StatusConflict, "last_admin", errLastAdmin.Error())
 		return
 	}
 	access, err := s.store.UpsertUserAccess(r.PathValue("subject"), req, actor(r))
@@ -190,8 +199,16 @@ func (s *Server) upsertUserAccess(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteUserAccess(w http.ResponseWriter, r *http.Request) {
+	if decision := s.authorize(r, policy.UserManage, policy.UserResource(r.PathValue("subject"))); !decision.Allowed {
+		writeDenied(w, decision)
+		return
+	}
 	if r.PathValue("subject") == principal(r).Subject {
 		writeError(w, http.StatusBadRequest, "invalid_request", "administrators cannot remove their own access")
+		return
+	}
+	if s.wouldRemoveLastAdmin(r, r.PathValue("subject")) {
+		writeError(w, http.StatusConflict, "last_admin", errLastAdmin.Error())
 		return
 	}
 	if err := s.store.DeleteUserAccess(r.PathValue("subject"), actor(r)); err != nil {
@@ -227,6 +244,14 @@ func (s *Server) reviewAccessRequest(w http.ResponseWriter, r *http.Request) {
 	if err := decode(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
+	}
+	for _, pending := range s.store.AccessRequests() {
+		if pending.ID == r.PathValue("id") {
+			if decision := s.authorize(r, policy.UserManage, policy.UserResource(pending.Subject)); !decision.Allowed {
+				writeDenied(w, decision)
+				return
+			}
+		}
 	}
 	request, err := s.store.ReviewAccessRequest(r.PathValue("id"), req, actor(r))
 	writeMutation(w, request, err, http.StatusOK)
@@ -312,6 +337,9 @@ func (s *Server) createBlogPost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	if !s.blogAllowed(w, r, "new", req.Status) {
+		return
+	}
 	post, err := s.store.UpsertBlogPost("", req, actor(r))
 	writeMutation(w, post, err, http.StatusCreated)
 }
@@ -322,16 +350,37 @@ func (s *Server) updateBlogPost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	if !s.blogAllowed(w, r, r.PathValue("id"), req.Status) {
+		return
+	}
 	post, err := s.store.UpsertBlogPost(r.PathValue("id"), req, actor(r))
 	writeMutation(w, post, err, http.StatusOK)
 }
 
 func (s *Server) deleteBlogPost(w http.ResponseWriter, r *http.Request) {
+	if decision := s.authorize(r, policy.BlogWrite, policy.BlogResource(r.PathValue("id"))); !decision.Allowed {
+		writeDenied(w, decision)
+		return
+	}
 	if err := s.store.DeleteBlogPost(r.PathValue("id"), actor(r)); err != nil {
 		writeMutation(w, struct{}{}, err, http.StatusNoContent)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// blogAllowed requires blog:Write, plus blog:Publish when the post is saved
+// as published.
+func (s *Server) blogAllowed(w http.ResponseWriter, r *http.Request, id, status string) bool {
+	a := s.authorizerFor(r)
+	decision := a.gate(r, policy.BlogWrite, policy.BlogResource(id))
+	if decision.Allowed && status == "published" {
+		decision = a.check(policy.BlogPublish, policy.BlogResource(id))
+	}
+	if !decision.Allowed {
+		writeDenied(w, decision)
+	}
+	return decision.Allowed
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
@@ -407,12 +456,12 @@ func choose(condition bool, yes, no string) string {
 }
 
 func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, filterProjects(s.store.Projects(), principal(r)))
+	writeJSON(w, http.StatusOK, s.authorizerFor(r).visibleProjects(s.store.Projects()))
 }
 
 func (s *Server) project(w http.ResponseWriter, r *http.Request) {
 	item, err := s.store.Project(r.PathValue("id"))
-	if err == nil && !projectAllowed(s.store, principal(r), item.ID) {
+	if err == nil && !s.authorizerFor(r).allowed(policy.ProjectRead, policy.ProjectResource(item.ID)) {
 		err = store.ErrNotFound
 	}
 	writeMutation(w, item, err, http.StatusOK)
@@ -434,7 +483,7 @@ func (s *Server) setProjectRepository(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) pipelineDefinitions(w http.ResponseWriter, r *http.Request) {
-	items := filterPipelineDefinitions(s.store.PipelineDefinitions(), allowedProjectIDs(s.store, principal(r)))
+	items := s.authorizerFor(r).visibleDefinitions(s.store.PipelineDefinitions())
 	writeJSON(w, http.StatusOK, api.Page[api.PipelineDefinition]{Items: items, Total: len(items)})
 }
 
@@ -454,7 +503,7 @@ func (s *Server) projectTemplate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) pipelineDefinition(w http.ResponseWriter, r *http.Request) {
 	item, err := s.store.PipelineDefinition(r.PathValue("id"))
-	if err == nil && !projectAllowed(s.store, principal(r), item.ProjectID) {
+	if err == nil && !s.authorizerFor(r).allowed(policy.PipelineRead, definitionResource(item)) {
 		err = store.ErrNotFound
 	}
 	writeMutation(w, item, err, http.StatusOK)
@@ -488,6 +537,10 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
 		return
 	}
+	if decision := s.authorize(r, policy.ProjectCreate, policy.ProjectResource("*"), withProfile(req.RequestedProfile)); !decision.Allowed {
+		writeDenied(w, decision)
+		return
+	}
 	if req.RepositoryURL != "" && !auth.Allowed(principal(r), http.MethodPut, "/api/v1/projects/new/repository") {
 		writeError(w, http.StatusForbidden, "access_denied", "Git service access is required to connect a repository")
 		return
@@ -510,18 +563,38 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runs(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, filterRuns(s.store.Runs(), allowedProjectIDs(s.store, principal(r))))
+	writeJSON(w, http.StatusOK, s.authorizerFor(r).visibleRuns(s.store.Runs()))
 }
 func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 	item, err := s.store.Run(r.PathValue("id"))
-	if err == nil && !projectAllowed(s.store, principal(r), item.ProjectID) {
-		err = store.ErrNotFound
+	if err == nil {
+		var visible bool
+		if item, visible = s.authorizerFor(r).visibleRun(item); !visible {
+			err = store.ErrNotFound
+		}
 	}
 	writeMutation(w, item, err, http.StatusOK)
 }
-func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) {
-	if run, err := s.store.Run(r.PathValue("id")); err != nil || !projectAllowed(s.store, principal(r), run.ProjectID) {
+
+// runFor loads a run the caller may read and checks action on it. It writes
+// 404 when the run is missing or unreadable (existence is not disclosed) and
+// 403 with the decision when it is readable but action is denied.
+func (s *Server) runFor(w http.ResponseWriter, r *http.Request, action string) (api.PipelineRun, bool) {
+	a := s.authorizerFor(r)
+	run, err := s.store.Run(r.PathValue("id"))
+	if err != nil || !a.allowed(policy.PipelineRead, runResource(run)) {
 		writeError(w, http.StatusNotFound, "not_found", "run not found")
+		return run, false
+	}
+	if decision := a.gate(r, action, runResource(run)); !decision.Allowed {
+		writeDenied(w, decision)
+		return run, false
+	}
+	return run, true
+}
+
+func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.runFor(w, r, policy.PipelineRun); !ok {
 		return
 	}
 	item, err := s.store.CancelRun(r.PathValue("id"), actor(r))
@@ -544,12 +617,18 @@ func (s *Server) updateRunStep(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	// Executing pipelines report as the service identity. Anyone else must
+	// be able to read the run and hold pipeline:Write on its pipeline.
+	if !slices.Contains(principal(r).Roles, auth.RoleService) {
+		if _, ok := s.runFor(w, r, policy.PipelineWrite); !ok {
+			return
+		}
+	}
 	item, err := s.store.UpdateRunStep(r.PathValue("id"), req, actor(r))
 	writeMutation(w, item, err, http.StatusOK)
 }
 func (s *Server) retryRun(w http.ResponseWriter, r *http.Request) {
-	if run, err := s.store.Run(r.PathValue("id")); err != nil || !projectAllowed(s.store, principal(r), run.ProjectID) {
-		writeError(w, http.StatusNotFound, "not_found", "run not found")
+	if _, ok := s.runFor(w, r, policy.PipelineRun); !ok {
 		return
 	}
 	if err := enforceRunQuota(s.store, principal(r)); err != nil {
@@ -569,9 +648,17 @@ func (s *Server) submitPipeline(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	if !projectAllowed(s.store, principal(r), req.ProjectID) {
-		writeError(w, http.StatusForbidden, "access_denied", "project is not assigned to this user")
-		return
+	pipelineID := req.DefinitionID
+	if pipelineID == "" {
+		pipelineID = req.Name
+	}
+	a := s.authorizerFor(r)
+	resource := policy.PipelineResource(req.ProjectID, pipelineID)
+	for _, action := range append([]string{policy.PipelineRun}, overrideActions(req.Overrides)...) {
+		if decision := a.gate(r, action, resource); !decision.Allowed {
+			writeDenied(w, decision)
+			return
+		}
 	}
 	if err := enforceRunQuota(s.store, principal(r)); err != nil {
 		writeError(w, http.StatusForbidden, "quota_exceeded", err.Error())
@@ -609,8 +696,11 @@ func (s *Server) catalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, filtered)
 }
 
-func (s *Server) features(w http.ResponseWriter, _ *http.Request) {
-	items := s.store.FeatureViews()
+func (s *Server) features(w http.ResponseWriter, r *http.Request) {
+	a := s.authorizerFor(r)
+	items := slices.DeleteFunc(s.store.FeatureViews(), func(item api.FeatureView) bool {
+		return !a.allowed(policy.FeatureRead, policy.FeatureResource(item.Name))
+	})
 	writeJSON(w, http.StatusOK, api.Page[api.FeatureView]{Items: items, Total: len(items)})
 }
 
@@ -618,6 +708,10 @@ func (s *Server) applyFeatureView(w http.ResponseWriter, r *http.Request) {
 	var req api.ApplyFeatureViewRequest
 	if err := decode(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if decision := s.authorize(r, policy.FeatureWrite, policy.FeatureResource(req.Name)); !decision.Allowed {
+		writeDenied(w, decision)
 		return
 	}
 	item, err := s.store.ApplyFeatureView(req, actor(r))
@@ -628,6 +722,10 @@ func (s *Server) reportMaterialization(w http.ResponseWriter, r *http.Request) {
 	var req api.MaterializationReport
 	if err := decode(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if decision := s.authorize(r, policy.FeatureWrite, policy.FeatureResource(r.PathValue("name"))); !decision.Allowed {
+		writeDenied(w, decision)
 		return
 	}
 	item, err := s.store.ReportMaterialization(r.PathValue("name"), req.EntityCount, actor(r))
@@ -742,7 +840,8 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	send := func() bool {
-		digest := s.digest()
+		// Rebuilt every tick so policy changes apply to open streams.
+		digest := s.digestFor(s.authorizerFor(r))
 		raw, err := json.Marshal(digest)
 		if err != nil {
 			return false
@@ -768,9 +867,14 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// digest summarizes mutable state cheaply; identical digests mean no refresh.
-func (s *Server) digest() map[string]any {
-	runs := s.store.Runs()
+// digestFor summarizes the mutable state the caller may read; identical
+// digests mean no refresh. Counts and timestamps cover only projects,
+// agents and features the caller can see, so the stream never reveals
+// activity elsewhere.
+func (s *Server) digestFor(a *authorizer) map[string]any {
+	value := a.principal
+	allowed := allowedProjectIDs(s.store, value)
+	runs := a.visibleRuns(s.store.Runs())
 	latestRun := ""
 	active := 0
 	for _, run := range runs {
@@ -781,31 +885,49 @@ func (s *Server) digest() map[string]any {
 			active++
 		}
 	}
-	sessions := s.store.AgentSessions("")
+	agents := filterAgents(s.store.Agents(), allowed)
+	visibleAgents := map[string]bool{}
+	for _, agent := range agents {
+		visibleAgents[agent.ID] = true
+	}
+	sessions := slices.DeleteFunc(s.store.AgentSessions(""), func(session api.AgentSession) bool { return !visibleAgents[session.AgentID] })
 	latestSession := ""
 	for _, session := range sessions {
 		if session.UpdatedAt.Format(time.RFC3339Nano) > latestSession {
 			latestSession = session.UpdatedAt.Format(time.RFC3339Nano)
 		}
 	}
-	s.realtimeMu.RLock()
 	realtimeEvents := 0.0
-	for _, stats := range s.realtime {
-		if events, ok := stats["events"].(float64); ok {
-			realtimeEvents += events
+	if auth.Allowed(value, http.MethodGet, "/api/v1/realtime") {
+		s.realtimeMu.RLock()
+		for _, stats := range s.realtime {
+			if events, ok := stats["events"].(float64); ok {
+				realtimeEvents += events
+			}
+		}
+		s.realtimeMu.RUnlock()
+	}
+	connections, features := 0, 0
+	if auth.Allowed(value, http.MethodGet, "/api/v1/connections") {
+		connections = len(s.store.Connections())
+	}
+	if auth.Allowed(value, http.MethodGet, "/api/v1/features") {
+		for _, item := range s.store.FeatureViews() {
+			if a.allowed(policy.FeatureRead, policy.FeatureResource(item.Name)) {
+				features++
+			}
 		}
 	}
-	s.realtimeMu.RUnlock()
 	return map[string]any{
 		"runs":            len(runs),
 		"active_runs":     active,
 		"latest_run":      latestRun,
 		"sessions":        len(sessions),
 		"latest_session":  latestSession,
-		"models":          len(s.store.Models()),
-		"agents":          len(s.store.Agents()),
-		"connections":     len(s.store.Connections()),
-		"features":        len(s.store.FeatureViews()),
+		"models":          len(filterModels(s.store.Models(), allowed)),
+		"agents":          len(agents),
+		"connections":     connections,
+		"features":        features,
 		"realtime_events": realtimeEvents,
 	}
 }
@@ -1425,6 +1547,10 @@ func (s *Server) createConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	if decision := s.authorize(r, policy.InfraProvision, policy.ConnectionResource("*")); !decision.Allowed {
+		writeDenied(w, decision)
+		return
+	}
 	item, err := s.store.CreateConnection(req, actor(r))
 	writeMutation(w, item, err, http.StatusCreated)
 }
@@ -1439,6 +1565,10 @@ func (s *Server) testConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	if connection == nil {
 		writeError(w, http.StatusNotFound, "not_found", "connection not found")
+		return
+	}
+	if decision := s.authorize(r, policy.InfraProvision, policy.ConnectionResource(connection.ID)); !decision.Allowed {
+		writeDenied(w, decision)
 		return
 	}
 	status, message := "healthy", "Connection succeeded"

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"fmt"
+	"github.com/ml-ai-ops/platform/internal/policy"
 	"net/http"
 	"net/url"
 	"os"
@@ -67,6 +68,10 @@ func (s *Server) activateConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	if c == nil {
 		writeError(w, 404, "not_found", "Connection not found")
+		return
+	}
+	if decision := s.authorize(r, policy.InfraProvision, policy.ConnectionResource(c.ID)); !decision.Allowed {
+		writeDenied(w, decision)
 		return
 	}
 	if c.Type != "prefect" && c.Type != "openfaas" {

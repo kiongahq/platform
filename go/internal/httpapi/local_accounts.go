@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/ml-ai-ops/platform/internal/policy"
 	"github.com/ml-ai-ops/platform/internal/store"
 )
 
@@ -37,6 +38,10 @@ func (s *Server) setLocalPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	subject := r.PathValue("subject")
+	if decision := s.authorize(r, policy.UserManage, policy.UserResource(subject)); !decision.Allowed {
+		writeDenied(w, decision)
+		return
+	}
 	if _, err := s.store.AccessFor(subject); err != nil {
 		writeError(w, http.StatusNotFound, "not_provisioned", "Provision this user's access before issuing a password.")
 		return
@@ -56,6 +61,10 @@ func (s *Server) setLocalPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteLocalPassword(w http.ResponseWriter, r *http.Request) {
+	if decision := s.authorize(r, policy.UserManage, policy.UserResource(r.PathValue("subject"))); !decision.Allowed {
+		writeDenied(w, decision)
+		return
+	}
 	err := s.store.DeleteDocument(store.LocalAccountKind, r.PathValue("subject"), "local_account.deleted", actor(r))
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "This user has no local password.")

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ml-ai-ops/platform/internal/auth"
 	"github.com/ml-ai-ops/platform/internal/store"
 	"github.com/ml-ai-ops/platform/pkg/api"
 )
@@ -16,6 +17,8 @@ func TestAdminSetsLocalPasswordOnlyForProvisionedUsersInLocalMode(t *testing.T) 
 	put := func(subject, body string) int {
 		request := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/"+subject+"/local-password", strings.NewReader(body))
 		request.SetPathValue("subject", subject)
+		// Handlers authorize the resolved principal; RBAC middleware sets it.
+		request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}}))
 		response := httptest.NewRecorder()
 		s.setLocalPassword(response, request)
 		return response.Code

@@ -2,11 +2,22 @@ package httpapi
 
 import "net/http"
 
+// openapiPaths lets domain files document their routes from init() without
+// editing the shared table below.
+var openapiPaths = map[string]any{}
+
+func withOpenAPIPaths(paths map[string]any) map[string]any {
+	for path, item := range openapiPaths {
+		paths[path] = item
+	}
+	return paths
+}
+
 func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"openapi": "3.0.3",
 		"info":    map[string]any{"title": "Kionga API", "version": "0.1.0"},
-		"paths": map[string]any{
+		"paths": withOpenAPIPaths(map[string]any{
 			"/api/v1/settings/huggingface":          map[string]any{"get": map[string]any{"summary": "Personal Hub connection status (never returns credentials)"}, "put": map[string]any{"summary": "Verify and encrypt a personal Hugging Face read token"}, "delete": map[string]any{"summary": "Forget the personal Hub token; does not revoke it upstream"}},
 			"/api/v1/models/huggingface":            map[string]any{"get": map[string]any{"summary": "Search Hub models using the caller's personal connection"}},
 			"/api/v1/models/huggingface/import":     map[string]any{"post": map[string]any{"summary": "Register a commit-pinned Hub reference in an assigned project (no weight download)"}},
@@ -74,6 +85,6 @@ func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 			"/api/v1/connections/{id}/test":         map[string]any{"post": map[string]any{"summary": "Test a platform connection"}},
 			"/api/v1/audit":                         map[string]any{"get": map[string]any{"summary": "List audit events"}},
 			"/api/v1/traces":                        map[string]any{"post": map[string]any{"summary": "Record an agent trace"}},
-		},
+		}),
 	})
 }

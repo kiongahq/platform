@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ml-ai-ops/platform/internal/auth"
+	"github.com/ml-ai-ops/platform/internal/policy"
 	"github.com/ml-ai-ops/platform/internal/store"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -448,11 +449,11 @@ func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 	if kind == "workbench" {
 		destination += "lab"
 	}
+	if decision := s.authorize(r, policy.WorkspaceOpen, policy.WorkspaceResource(req.ProjectID, kind)); !decision.Allowed {
+		writeDenied(w, decision)
+		return
+	}
 	if req.ProjectID != "" {
-		if !projectAllowed(s.store, principal(r), req.ProjectID) {
-			writeError(w, 403, "forbidden", "This project has not been assigned to you")
-			return
-		}
 		project, err := s.store.Project(req.ProjectID)
 		if err != nil {
 			writeError(w, 404, "not_found", "Project not found")
