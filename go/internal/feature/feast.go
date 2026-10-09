@@ -2,10 +2,12 @@ package feature
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -15,6 +17,9 @@ import (
 type FeastClient struct {
 	BaseURL string
 	Client  *http.Client
+	// Token, when set, is sent as a bearer credential (Feast's OIDC or
+	// Kubernetes auth). It is resolved from a secret reference, never stored.
+	Token string
 }
 
 func NewFeastClient(baseURL string) *FeastClient {
@@ -39,6 +44,11 @@ type feastResponse struct {
 // Lookup implements the platform lookup contract against Feast. Feast returns
 // one column per feature; the platform returns one row per entity.
 func (c *FeastClient) Lookup(request Request) (Response, error) {
+	return c.LookupContext(context.Background(), request)
+}
+
+// LookupContext is Lookup bounded by ctx.
+func (c *FeastClient) LookupContext(ctx context.Context, request Request) (Response, error) {
 	if request.FeatureService == "" || len(request.Entities) == 0 {
 		return Response{}, errors.New("feature_service and at least one entity are required")
 	}
@@ -52,11 +62,14 @@ func (c *FeastClient) Lookup(request Request) (Response, error) {
 		}
 	}
 	body, _ := json.Marshal(feastRequest{FeatureService: request.FeatureService, Entities: entities})
-	httpRequest, err := http.NewRequest(http.MethodPost, c.BaseURL+"/get-online-features", bytes.NewReader(body))
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/get-online-features", bytes.NewReader(body))
 	if err != nil {
 		return Response{}, err
 	}
 	httpRequest.Header.Set("Content-Type", "application/json")
+	if c.Token != "" {
+		httpRequest.Header.Set("Authorization", "Bearer "+c.Token)
+	}
 	httpResponse, err := c.Client.Do(httpRequest)
 	if err != nil {
 		return Response{}, fmt.Errorf("feast server unreachable: %w", err)

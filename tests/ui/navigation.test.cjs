@@ -27,7 +27,7 @@ function consoleApp(services, view, overrides={}) {
     '/api/v1/projects':[{id:'p1',name:'Project one',namespace:'project-one',template:'blank',status:'ready'}],
     '/api/v1/pipelines/runs':[], '/api/v1/pipelines/definitions':{items:[]},
     '/api/v1/agents':{items:[],total:0}, '/api/v1/models':{items:[],total:0},
-    '/api/v1/features':{items:[]}, '/api/v1/functions':{items:[],configured:false},
+    '/api/v1/features':{items:[]}, '/api/v1/features/views':{items:[]}, '/api/v1/features/stores':{items:[]}, '/api/v1/functions':{items:[],configured:false},
     '/api/v1/storage/buckets':{buckets:[]}, '/api/v1/components':[], '/api/v1/connections':{items:[]},
     '/api/v1/realtime':{demos:{}}, '/api/v1/catalog':[], '/api/v1/settings/tokens':{items:[]},
     '/api/v1/access-requests':{items:[]},

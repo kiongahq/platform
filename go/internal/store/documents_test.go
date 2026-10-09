@@ -42,3 +42,11 @@ func TestStoreLogs(t *testing.T) {
 func TestStoreIAM(t *testing.T) {
 	storetest.IAM(t, store.New(filepath.Join(t.TempDir(), "state.json")))
 }
+
+func TestFeatureCatalogDocuments(t *testing.T) {
+	storetest.FeatureCatalog(t, store.New(filepath.Join(t.TempDir(), "state.json")))
+}
+
+func TestScaffoldJobDocuments(t *testing.T) {
+	storetest.ScaffoldJobs(t, store.New(filepath.Join(t.TempDir(), "state.json")))
+}

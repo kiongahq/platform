@@ -57,7 +57,8 @@ func main() {
 		FeatureURL: env("WORKSPACE_FEATURE_URL", "http://mlaiops-feature-gateway.mlaiops-system:8083"), StorageURL: env("WORKSPACE_STORAGE_URL", "http://mlaiops-storage-proxy.mlaiops-system:8084"),
 		MLflowURL: env("WORKSPACE_MLFLOW_URL", "http://mlflow.mlaiops-system:5000"), PrefectURL: env("WORKSPACE_PREFECT_URL", "http://prefect-server.mlaiops-system:4200/api"),
 		LangfuseURL: env("WORKSPACE_LANGFUSE_URL", "http://langfuse.mlaiops-system:3000"), KafkaRESTURL: env("WORKSPACE_KAFKA_REST_URL", "http://kafka-rest.mlaiops-system:8082"),
-		StorageClass: os.Getenv("WORKSPACE_STORAGE_CLASS"),
+		StorageClass:          os.Getenv("WORKSPACE_STORAGE_CLASS"),
+		AllowedStorageClasses: platformoperator.ParseStorageClasses(os.Getenv("WORKSPACE_ALLOWED_STORAGE_CLASSES")),
 	}).SetupWithManager(manager))
 	must((&platformoperator.PipelineReconciler{
 		Client: manager.GetClient(), KFP: integrations.NewKFP(os.Getenv("KFP_URL"), os.Getenv("KFP_TOKEN")),

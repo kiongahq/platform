@@ -90,3 +90,17 @@ func TestPostgresIAMPolicies(t *testing.T) {
 	defer repository.Close()
 	storetest.IAM(t, repository)
 }
+
+func TestPostgresFeatureCatalogAndScaffoldJobs(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	repository, err := store.OpenPostgres(context.Background(), databaseURL, "integration-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	storetest.FeatureCatalog(t, repository)
+	storetest.ScaffoldJobs(t, repository)
+}

@@ -45,10 +45,15 @@ COPY python/pipelines /opt/platform/python/pipelines
 COPY python/agents /opt/platform/python/agents
 RUN pip install --no-cache-dir "/opt/platform/python[agents,huggingface]"
 RUN pip install --no-cache-dir "jupyter-ai==3.0.1"
+# jupyter-server-proxy exposes the loopback workspace sidecar at
+# /workspaces/workbench/proxy/8890 behind the notebook token, the same way
+# code-server's /proxy/8890 does for the IDE (structured scaffold jobs).
+RUN pip install --no-cache-dir "jupyter-server-proxy==4.4.0"
 
 COPY deploy/jupyter/quickstart.ipynb /opt/seed/quickstart.ipynb
 COPY deploy/jupyter/entrypoint.sh /usr/local/bin/workbench
 COPY deploy/workspace/kionga.py /usr/local/bin/kionga
+COPY deploy/workspace/directories.py /usr/local/lib/kionga_workspace_directories.py
 RUN chmod +x /usr/local/bin/workbench \
  && chmod +x /usr/local/bin/kionga \
  && useradd --create-home --uid 1000 dev \

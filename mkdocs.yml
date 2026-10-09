@@ -100,6 +100,7 @@ nav:
       - Access control & policies: guides/access-control.md
       - AI coding & IDE workspace: guides/coding-workspace.md
       - Project templates: guides/project-templates.md
+      - Scaffolding in a workspace: guides/scaffolding.md
       - Engineering blog: guides/engineering-blog.md
       - Pipelines: guides/pipelines.md
       - Logs and events: guides/logs.md
@@ -109,6 +110,7 @@ nav:
       - Agent frameworks: guides/agent-frameworks.md
       - Agents: guides/agents.md
       - Feature store: guides/features.md
+      - Internal & external feature stores: guides/feature-stores.md
       - Real-time processing: guides/realtime.md
   - Reference:
       - Implementation status: reference/implementation-status.md
@@ -128,4 +130,5 @@ nav:
       - Public VM: operations/public-vm.md
       - Production operations: operations/production-operations.md
       - Log export: operations/log-export.md
+      - External object storage: operations/external-storage.md
       - Troubleshooting: operations/troubleshooting.md

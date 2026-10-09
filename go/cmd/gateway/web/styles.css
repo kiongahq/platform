@@ -996,3 +996,25 @@ p.hint { font-family: var(--font-sans); white-space: normal; }
 @media (max-width: 640px) {
   .iam-inline-form .wide-field { grid-column: auto; }
 }
+
+/* ---- scaffold jobs, feature stores and data connections ---- */
+.status.fresh { color: var(--success); background: var(--success-soft); }
+.status.stale { color: var(--warning); background: var(--warning-soft); }
+.status.never, .status.configured { color: var(--text-secondary); background: var(--neutral-soft); }
+.scaffold-actions { margin-top: var(--space-3); }
+.argv-list { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--space-2) 0; padding: 0; list-style: none; }
+.argv-list li { padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--radius-md); font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.scaffold-run { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.scaffold-run .run-heading { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: space-between; }
+.file-list { max-height: 220px; margin: var(--space-2) 0; padding-left: 1.2em; overflow: auto; font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.scaffold-output { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.store-panel { margin-bottom: var(--space-4, 16px); }
+.store-list { display: grid; gap: var(--space-2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.store-item { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.store-item header { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: space-between; }
+.store-item h4 { margin: 0; overflow-wrap: anywhere; }
+.store-item small, .store-item p { margin: 0; overflow-wrap: anywhere; }
+.data-connections { margin: var(--space-3) 0; }
+.data-connections h4 { margin: var(--space-3) 0 var(--space-2); }
+.feature-card .feature-store-line { overflow-wrap: anywhere; color: var(--text-secondary); font-size: var(--fs-xs); }
+label.checkbox { flex-direction: row; align-items: center; gap: var(--space-2); }

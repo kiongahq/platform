@@ -459,6 +459,11 @@ func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 404, "not_found", "Project not found")
 			return
 		}
+		folder, err := resolveProjectPath(project.Namespace)
+		if err != nil {
+			writeError(w, 422, "validation_error", err.Error())
+			return
+		}
 		if kind == "ide" {
 			cookie, err := ideSession(r.Context(), target)
 			if err != nil {
@@ -480,8 +485,7 @@ func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 				writeError(w, 502, "workspace_unavailable", "The IDE could not prepare this project folder. Rebuild or update its workspace image.")
 				return
 			}
-			destination += "?folder=" + url.QueryEscape("/workspace/projects/"+project.Namespace)
-			s.writeWorkspaceLaunch(w, r, target, kind, destination)
+			s.writeWorkspaceLaunch(w, r, target, kind, folder.ideFolderURL())
 			return
 		}
 		// Jupyter and the IDE share /workspace. The contents API creates the
@@ -491,7 +495,7 @@ func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 503, "workspace_unavailable", "Start the project's Jupyter workspace to prepare its shared folder")
 			return
 		}
-		for _, path := range []string{"projects", "projects/" + project.Namespace} {
+		for _, path := range []string{"projects", folder.Relative} {
 			endpoint := strings.TrimRight(upstream.String(), "/") + "/workspaces/workbench/api/contents/" + path
 			client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 			get, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, endpoint, nil)
@@ -523,7 +527,7 @@ func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		destination += "/tree/projects/" + url.PathEscape(project.Namespace)
+		destination = folder.jupyterTreeURL()
 	}
 	s.writeWorkspaceLaunch(w, r, target, kind, destination)
 }
