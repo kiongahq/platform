@@ -205,8 +205,8 @@ const viewMeta = {};
 /* Views whose data the project selector filters. Others hide the selector so
  * it never appears to do something it does not. */
 const projectScopedViews = new Set(["overview", "projects", "pipelines", "functions", "models", "agents", "logs"]);
-const adminViews = new Set(["access", "blogs"]);
-const ungatedViews = new Set(["access", "profile", "settings"]);
+const adminViews = new Set(["access"]);
+const ungatedViews = new Set(["access", "profile", "settings", "blogs"]);
 
 function registerView(id, loader, meta = {}) {
   viewLoaders[id] = loader;

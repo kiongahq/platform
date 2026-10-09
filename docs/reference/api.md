@@ -33,8 +33,17 @@ document remains available at `GET /api/openapi.json`. Every request is authoriz
 | `DELETE` | `/api/v1/settings/tokens/{id}` | key owner | Revoke a personal API key immediately |
 | `GET` | `/api/v1/blogs` | public | List published engineering posts |
 | `GET` | `/api/v1/blogs/{slug}` | public | Read a published post |
-| `GET` / `POST` | `/api/v1/admin/blogs` | admin/operator | List drafts or create a post |
-| `PUT` / `DELETE` | `/api/v1/admin/blogs/{id}` | admin/operator | Update, publish, or delete a post |
+| `GET` | `/media/blog/{id}/{480,960,1600}` | public once attached to a published post; editorial session otherwise | Blog image variant |
+| `POST` / `GET` / `DELETE` | `/api/v1/editorial/session` | editorial members (verified identity) | Open, read, end the editorial session (`kionga_editorial` cookie) |
+| `GET` / `POST` | `/api/v1/editorial/bootstrap` | local bootstrap admin or ML admin, once | Grant the first editorial admin |
+| `GET` / `POST` | `/api/v1/editorial/posts` | editorial session | List visible posts; create a block-content draft |
+| `GET` / `PUT` | `/api/v1/editorial/posts/{id}` | editorial session | Read; autosave with `base_revision` (409 + `latest` on conflict) |
+| `POST` | `/api/v1/editorial/posts/{id}/transition` | editorial session, role-checked | `submit`, `withdraw`, `request_changes`, `publish`, `schedule`, `unpublish`, `archive`, `restore` |
+| `GET` / `POST` | `/api/v1/editorial/posts/{id}/revisions[/{n}[/restore]]`, `/compare?from=&to=` | editorial session | Immutable revisions, compare, restore |
+| `POST` | `/api/v1/editorial/preview`, `/api/v1/editorial/markdown` | editorial session | Server-rendered preview; optional Markdown import |
+| `GET` / `POST` / `PATCH` | `/api/v1/editorial/media[/{id}]` | editorial session | Media library, multipart upload (10 MB), alt/caption/attribution |
+| `GET` / `PUT` / `DELETE` | `/api/v1/editorial/members[/{subject}]` | editorial admin for writes | Editorial membership |
+| `GET` / `PUT` | `/api/v1/editorial/settings` | editorial admin for writes | Blog headline and description |
 | `GET` | `/api/v1/dashboard` | viewer+ | Workspace summary (counts + recent runs) |
 | `GET` | `/api/v1/onboarding/readiness` | viewer+ | Onboarding readiness score |
 | `GET` | `/api/openapi.json` | public | OpenAPI document |

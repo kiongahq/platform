@@ -79,6 +79,7 @@ func main() {
 	handler := httpapi.New(repository, static)
 	httpapi.StartScheduler(ctx, repository)
 	httpapi.StartLogRetention(ctx, repository)
+	httpapi.StartEditorialPublisher(ctx, repository)
 	if issuer := os.Getenv("OIDC_ISSUER"); issuer != "" {
 		jwksURL := os.Getenv("OIDC_JWKS_URL")
 		if jwksURL == "" {

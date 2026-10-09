@@ -155,5 +155,5 @@ func (s *LocalSessionManager) authenticated(r *http.Request) (string, bool) {
 }
 
 func localConsolePath(path string) bool {
-	return path == "/console.html" || path == "/workspace.html" || strings.HasPrefix(path, "/js/") || path == "/styles.css" || strings.HasPrefix(path, "/workspaces/")
+	return path == "/console.html" || path == "/workspace.html" || path == "/editorial.html" || strings.HasPrefix(path, "/editorial/") || strings.HasPrefix(path, "/js/") || path == "/styles.css" || strings.HasPrefix(path, "/workspaces/")
 }
