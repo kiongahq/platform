@@ -56,6 +56,20 @@ func TestWorkspaceControllerProvisionsBoundedSharedWorkspace(t *testing.T) {
 	if len(secret.Data["token"]) < 24 {
 		t.Fatal("workspace must receive a generated authentication secret")
 	}
+	if len(secret.Data["api-token"]) < 32 || string(secret.Data["api-token"]) == string(secret.Data["token"]) {
+		t.Fatal("workspace API needs an independent generated credential")
+	}
+	firstAPIToken := string(secret.Data["api-token"])
+	firstWorkbenchToken := string(secret.Data["token"])
+	for _, container := range deployment.Spec.Template.Spec.Containers {
+		env := map[string]corev1.EnvVar{}
+		for _, item := range container.Env {
+			env[item.Name] = item
+		}
+		if env["MLAIOPS_URL"].Value != "http://127.0.0.1:8890" || env["KIONGA_GATEWAY_INTERNAL_URL"].Value != "http://gateway:8087" || env["KIONGA_WORKSPACE_API_TOKEN"].ValueFrom.SecretKeyRef.Key != "api-token" {
+			t.Fatalf("%s is missing workspace API identity: %#v", container.Name, env)
+		}
+	}
 
 	if err := client.Get(context.Background(), request.NamespacedName, workspace); err != nil {
 		t.Fatal(err)
@@ -72,5 +86,22 @@ func TestWorkspaceControllerProvisionsBoundedSharedWorkspace(t *testing.T) {
 	}
 	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 0 {
 		t.Fatal("suspended workspace must scale to zero")
+	}
+	if err := client.Get(context.Background(), request.NamespacedName, workspace); err != nil {
+		t.Fatal(err)
+	}
+	workspace.Spec.Subject = "user-2"
+	workspace.Spec.Disabled = false
+	if err := client.Update(context.Background(), workspace); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reconciler.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Get(context.Background(), types.NamespacedName{Name: workspace.Name + "-auth", Namespace: workspace.Namespace}, &secret); err != nil {
+		t.Fatal(err)
+	}
+	if string(secret.Data["api-token"]) == firstAPIToken || string(secret.Data["token"]) == firstWorkbenchToken || secret.Annotations["mlaiops.io/subject"] != "user-2" {
+		t.Fatal("all workspace credentials must rotate when its owner changes")
 	}
 }

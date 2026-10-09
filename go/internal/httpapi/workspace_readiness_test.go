@@ -157,3 +157,24 @@ func TestWorkspaceProxyPresentsUpstreamOrigin(t *testing.T) {
 		t.Fatalf("cross-origin request proxied: %d %q", response.Code, seenOrigin)
 	}
 }
+
+func TestIDEProxyPreservesValidatedBrowserOrigin(t *testing.T) {
+	var seenOrigin, forwardedHost string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenOrigin = r.Header.Get("Origin")
+		forwardedHost = r.Header.Get("X-Forwarded-Host")
+	}))
+	defer upstream.Close()
+	t.Setenv("KIONGA_IDE_UPSTREAM", upstream.URL)
+	t.Setenv("KIONGA_IDE_PASSWORD", "")
+	s := &Server{store: store.New()}
+	request := httptest.NewRequest("GET", "http://localhost:18080/workspaces/ide/stable/socket", nil)
+	request.SetPathValue("kind", "ide")
+	request.Header.Set("Origin", "http://localhost:18080")
+	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}}))
+	response := httptest.NewRecorder()
+	s.workspaceProxy(response, request)
+	if response.Code != 200 || seenOrigin != "http://localhost:18080" || forwardedHost != "localhost:18080" {
+		t.Fatalf("IDE received status %d, Origin %q, X-Forwarded-Host %q", response.Code, seenOrigin, forwardedHost)
+	}
+}

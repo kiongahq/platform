@@ -3,9 +3,11 @@ package operator
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"slices"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -81,12 +83,26 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 	authSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: workspace.Name + "-auth", Namespace: workspace.Namespace}}
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, authSecret, func() error {
 		authSecret.Labels = labels
-		if len(authSecret.Data["token"]) == 0 {
-			token := make([]byte, 24)
-			if _, randomErr := rand.Read(token); randomErr != nil {
-				return randomErr
+		if authSecret.Annotations == nil {
+			authSecret.Annotations = make(map[string]string)
+		}
+		previousSubject := authSecret.Annotations["mlaiops.io/subject"]
+		authSecret.Annotations["mlaiops.io/subject"] = workspace.Spec.Subject
+		if authSecret.Data == nil {
+			authSecret.Data = make(map[string][]byte)
+		}
+		if previousSubject != "" && previousSubject != workspace.Spec.Subject {
+			delete(authSecret.Data, "api-token")
+			delete(authSecret.Data, "token")
+		}
+		for _, key := range []string{"token", "api-token"} {
+			if len(authSecret.Data[key]) == 0 {
+				token := make([]byte, 24)
+				if _, randomErr := rand.Read(token); randomErr != nil {
+					return randomErr
+				}
+				authSecret.Data[key] = []byte(base64.RawURLEncoding.EncodeToString(token))
 			}
-			authSecret.Data = map[string][]byte{"token": []byte(base64.RawURLEncoding.EncodeToString(token))}
 		}
 		return controllerutil.SetControllerReference(&workspace, authSecret, r.Scheme())
 	})
@@ -105,6 +121,10 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		deployment.Spec.Replicas = &replicas
 		deployment.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"mlaiops.io/workspace": workspace.Name}}
 		deployment.Spec.Template.ObjectMeta.Labels = labels
+		if deployment.Spec.Template.Annotations == nil {
+			deployment.Spec.Template.Annotations = make(map[string]string)
+		}
+		deployment.Spec.Template.Annotations["mlaiops.io/api-token-hash"] = fmt.Sprintf("%x", sha256.Sum256(authSecret.Data["api-token"]))
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{FSGroup: ptrInt64(1000), RunAsNonRoot: ptrBool(true), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
 		deployment.Spec.Template.Spec.Containers = containers
 		deployment.Spec.Template.Spec.Volumes = volumes
@@ -178,10 +198,16 @@ func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.KiongaWorkspace, au
 			resources.Limits[corev1.ResourceName(gpuType)] = quantity
 		}
 		environment := []corev1.EnvVar{
-			{Name: "MLAIOPS_URL", Value: r.GatewayURL}, {Name: "MLAIOPS_FEATURE_GATEWAY_URL", Value: r.FeatureURL}, {Name: "MLAIOPS_STORAGE_PROXY_URL", Value: r.StorageURL},
+			{Name: "MLAIOPS_URL", Value: "http://127.0.0.1:8890"}, {Name: "KIONGA_GATEWAY_INTERNAL_URL", Value: "http://" + strings.TrimPrefix(strings.TrimPrefix(r.GatewayURL, "http://"), "https://")}, {Name: "MLAIOPS_FEATURE_GATEWAY_URL", Value: r.FeatureURL}, {Name: "MLAIOPS_STORAGE_PROXY_URL", Value: r.StorageURL},
 			{Name: "MLFLOW_TRACKING_URI", Value: r.MLflowURL}, {Name: "PREFECT_API_URL", Value: r.PrefectURL}, {Name: "LANGFUSE_HOST", Value: r.LangfuseURL}, {Name: "KAFKA_REST_URL", Value: r.KafkaRESTURL},
-			{Name: "KIONGA_SUBJECT", Value: workspace.Spec.Subject}, {Name: "KIONGA_WORKSPACE", Value: "/workspace"},
+			{Name: "KIONGA_SUBJECT", Value: workspace.Spec.Subject}, {Name: "KIONGA_WORKSPACE", Value: "/workspace"}, {Name: "KIONGA_WORKSPACE_NAME", Value: workspace.Name},
 		}
+		for i := range environment {
+			if environment[i].Name == "KIONGA_GATEWAY_INTERNAL_URL" {
+				environment[i].Value = strings.Replace(environment[i].Value, ":8080", ":8087", 1)
+			}
+		}
+		environment = append(environment, corev1.EnvVar{Name: "KIONGA_WORKSPACE_API_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: authSecret}, Key: "api-token"}}})
 		credentialName := "PASSWORD"
 		if service == "workbench" {
 			credentialName = "JUPYTER_TOKEN"

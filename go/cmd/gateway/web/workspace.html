@@ -1,3 +1,38 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kionga workspace</title><link rel="stylesheet" href="/styles.css"><style>body{height:100dvh;display:flex;flex-direction:column}.workspace-toolbar{display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:12px 20px;background:#fff;border-bottom:1px solid #ddd}.workspace-toolbar a{color:#0071e3}.workspace-frame{border:0;width:100%;flex:1;min-height:0}.workspace-message{padding:24px}.workspace-toolbar select{padding:6px;border:1px solid #ddd;border-radius:6px}</style></head>
-<body><header class="workspace-toolbar"><a id="back-console" href="/console.html">← Back to console</a><strong id="workspace-project">Workspace</strong><label>Open in <select id="workspace-tool"><option value="workbench">JupyterLab</option><option value="ide">Browser IDE</option></select></label><span id="workspace-status" role="status"></span><a href="/auth/logout">Log out</a></header><div class="workspace-message" id="workspace-message" role="status">Preparing your workspace…</div><button id="workspace-retry" hidden type="button">Retry</button><iframe id="workspace-frame" class="workspace-frame" title="Developer workspace" hidden allow="clipboard-read; clipboard-write"></iframe><script src="/workspace.js"></script></body></html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kionga workspace</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/workspace.css">
+</head>
+<body class="workspace-page">
+  <header class="workspace-toolbar">
+    <div class="workspace-leading">
+      <a class="workspace-back" id="back-console" href="/console.html">← Back to console</a>
+      <div class="workspace-title">
+        <span class="workspace-eyebrow">KIONGA WORKSPACE</span>
+        <strong id="workspace-project">Shared workspace</strong>
+      </div>
+    </div>
+    <div class="workspace-actions">
+      <div class="workspace-switcher">
+        <label for="workspace-tool">Open in</label>
+        <select id="workspace-tool">
+          <option value="workbench">JupyterLab</option>
+          <option value="ide">Browser IDE</option>
+        </select>
+      </div>
+      <span id="workspace-status" class="workspace-status" role="status">Checking your workspace…</span>
+      <a class="workspace-logout" href="/auth/logout">Log out</a>
+    </div>
+  </header>
+  <div class="workspace-loading">
+    <div class="workspace-message" id="workspace-message" role="status">Preparing your workspace…</div>
+    <button id="workspace-retry" hidden type="button">Retry</button>
+  </div>
+  <iframe id="workspace-frame" class="workspace-frame" title="Developer workspace" hidden allow="clipboard-read; clipboard-write"></iframe>
+  <script src="/workspace.js"></script>
+</body>
+</html>

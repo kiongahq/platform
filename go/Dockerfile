@@ -1,5 +1,4 @@
-# Local Go-service build context. Keeping it inside go/ avoids large or
-# unavailable files elsewhere in a macOS iCloud-backed checkout.
+# Local Go-service build context, kept inside go/ to minimize build inputs.
 FROM golang:1.26.9-alpine AS build
 WORKDIR /src/go
 COPY go.mod go.sum ./

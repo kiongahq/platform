@@ -18,6 +18,8 @@ import (
 	"github.com/kiongahq/platform/internal/integrations"
 	"github.com/kiongahq/platform/internal/runtimeconfig"
 	"github.com/kiongahq/platform/internal/store"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 )
 
 //go:embed web/*
@@ -77,6 +79,33 @@ func main() {
 		log.Printf("using local file repository at %s", dataPath)
 	}
 	handler := httpapi.New(repository, static)
+	// A separate cluster-internal listener accepts only verified workspace
+	// identities; it is never exposed through the public gateway/Ingress.
+	if namespace, localToken := os.Getenv("KIONGA_WORKSPACE_NAMESPACE"), os.Getenv("KIONGA_WORKSPACE_API_TOKEN"); namespace != "" || localToken != "" {
+		var workspaceClient dynamic.Interface
+		if namespace != "" {
+			config, err := rest.InClusterConfig()
+			if err != nil {
+				log.Fatalf("workspace API Kubernetes config: %v", err)
+			}
+			workspaceClient, err = dynamic.NewForConfig(config)
+			if err != nil {
+				log.Fatalf("workspace API Kubernetes client: %v", err)
+			}
+		}
+		localSubject := os.Getenv("MLAIOPS_LOCAL_USERNAME")
+		if localSubject == "" {
+			localSubject = "admin"
+		}
+		workspaceHandler := httpapi.WorkspaceIdentity(handler, workspaceClient, namespace, localToken, localSubject)
+		workspaceServer := &http.Server{Addr: ":8087", Handler: workspaceHandler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
+		go func() {
+			if err := workspaceServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("workspace API listener failed: %v", err)
+			}
+		}()
+		defer workspaceServer.Close()
+	}
 	httpapi.StartScheduler(ctx, repository)
 	httpapi.StartLogRetention(ctx, repository)
 	httpapi.StartEditorialPublisher(ctx, repository)

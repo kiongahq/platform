@@ -376,11 +376,10 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request) {
 			p.Out.Header.Set("Cookie", ideCookie)
 		}
 		p.SetXForwarded()
-		if p.Out.Header.Get("Origin") != "" {
-			// The browser origin was verified same-origin with the gateway
-			// above. Present the upstream's own origin so Jupyter's and
-			// code-server's websocket origin checks (which compare Origin with
-			// the proxied Host) accept kernels and collaboration sockets.
+		if kind == "workbench" && p.Out.Header.Get("Origin") != "" {
+			// Jupyter compares Origin with its upstream Host. Code-server
+			// instead compares Origin with X-Forwarded-Host, so the IDE must
+			// keep the already-validated browser origin unchanged.
 			p.Out.Header.Set("Origin", target.Scheme+"://"+target.Host)
 		}
 		if kind == "workbench" {
