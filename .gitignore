@@ -43,3 +43,14 @@ _site/
 
 # Browser test output (screenshots, traces, reports)
 artifacts/
+.ruff_cache/
+.mypy_cache/
+.env
+.env.*
+!.env.example
+
+# Local coding-assistant state; runtime agents remain source code.
+.claude/
+.codex/
+.cursor/
+.aider*
