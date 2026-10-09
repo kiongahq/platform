@@ -11,7 +11,7 @@
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="app-bar">
     <button class="icon-button quiet" id="sidebar-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true" aria-controls="sidebar"><span aria-hidden="true">☰</span></button>
-    <a class="app-brand" href="/console.html" data-view-target="overview"><span class="brand-mark" aria-hidden="true">K</span><b>Kionga</b></a>
+    <a class="app-brand" href="/console.html" data-view-target="overview" aria-label="Kionga overview"><span class="brand-mark" aria-hidden="true">K</span><b>Kionga</b></a>
     <span class="app-spacer"></span>
     <span class="menu-status" id="live-indicator" role="status" data-state="off" title="Live updates off"><span class="label">Live updates off</span></span>
     <span class="sr-only" id="refresh-status" role="status" aria-live="polite"></span>
@@ -106,7 +106,7 @@
         <div data-intro="pipelines"></div>
         <h2 class="eyebrow">Flows</h2>
         <div class="pipeline-definition-grid" id="pipeline-definition-grid"></div>
-        <article class="panel table-wrap">
+        <article class="panel table-wrap" tabindex="0" aria-label="Pipeline runs table">
           <div class="panel-heading table-heading"><div><p class="eyebrow">HISTORY</p><h3>Runs</h3></div><span class="tag" id="run-count">0 runs</span></div>
           <table class="data-table runs-table">
             <caption class="sr-only">Pipeline runs, newest first</caption>
@@ -145,7 +145,7 @@
         <div id="agent-summary" class="stat-grid"></div>
         <div id="agent-grid" class="card-grid"></div>
         <div class="split">
-          <article class="panel table-wrap agent-traces"><div class="panel-heading table-heading"><div><p class="eyebrow">SESSION MONITOR</p><h3>Live sessions</h3></div></div><table><thead><tr><th scope="col">Session</th><th scope="col">Agent</th><th scope="col">Node</th><th scope="col">Status</th><th scope="col">Turns</th><th scope="col">Tokens</th><th scope="col">Cost</th></tr></thead><tbody id="session-table"></tbody></table></article>
+          <article class="panel table-wrap agent-traces" tabindex="0" aria-label="Live sessions table"><div class="panel-heading table-heading"><div><p class="eyebrow">SESSION MONITOR</p><h3>Live sessions</h3></div></div><table><thead><tr><th scope="col">Session</th><th scope="col">Agent</th><th scope="col">Node</th><th scope="col">Status</th><th scope="col">Turns</th><th scope="col">Tokens</th><th scope="col">Cost</th></tr></thead><tbody id="session-table"></tbody></table></article>
           <article class="panel"><div class="panel-heading"><div><p class="eyebrow">PROMPT LIBRARY</p><h3>Langfuse prompts</h3></div></div><div id="prompt-list" class="prompt-list"></div></article>
         </div>
       </section>
@@ -214,15 +214,15 @@ python -m realtime.produce --demo recommendations --count 2</code><button type="
 
       <section id="blogs" class="view" aria-labelledby="page-title">
         <div class="section-heading"><div><p>Published articles on the public engineering blog.</p></div><div class="heading-actions"><a class="button-link" href="/blogs.html" target="_blank" rel="noopener">Open blog ↗</a><button class="primary" type="button" id="new-blog-post">＋ New post</button></div></div>
-        <article class="panel table-wrap"><table class="data-table"><thead><tr><th scope="col">Post</th><th scope="col">Author</th><th scope="col">Tags</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="blog-admin-table"></tbody></table></article>
+        <article class="panel table-wrap" tabindex="0"><table class="data-table"><thead><tr><th scope="col">Post</th><th scope="col">Author</th><th scope="col">Tags</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="blog-admin-table"></tbody></table></article>
       </section>
 
       <section id="access" class="view" aria-labelledby="page-title">
         <div class="section-heading"><div><p>Assign services, projects, storage, and workspace compute. Unassigned access is denied.</p></div><div class="heading-actions"><button class="primary" type="button" id="add-user-access" data-perm="access_manage">＋ Provision user</button></div></div>
         <div data-intro="access"></div>
         <div class="access-admin-stack">
-          <article class="panel table-wrap"><div class="panel-heading table-heading"><div><p class="eyebrow">APPROVAL QUEUE</p><h3>Access requests</h3></div><span class="tag" id="access-request-count">0 pending</span></div><table class="data-table"><thead><tr><th scope="col">Requester</th><th scope="col">Requested services</th><th scope="col">Reason</th><th scope="col">Submitted</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="access-request-table"></tbody></table></article>
-          <article class="panel table-wrap"><div class="panel-heading table-heading"><div><p class="eyebrow">PROVISIONED IDENTITIES</p><h3>Users</h3></div></div><table class="data-table"><thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Services</th><th scope="col">Compute</th><th scope="col">Storage</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="access-table"></tbody></table></article>
+          <article class="panel table-wrap" tabindex="0"><div class="panel-heading table-heading"><div><p class="eyebrow">APPROVAL QUEUE</p><h3>Access requests</h3></div><span class="tag" id="access-request-count">0 pending</span></div><table class="data-table"><thead><tr><th scope="col">Requester</th><th scope="col">Requested services</th><th scope="col">Reason</th><th scope="col">Submitted</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="access-request-table"></tbody></table></article>
+          <article class="panel table-wrap" tabindex="0"><div class="panel-heading table-heading"><div><p class="eyebrow">PROVISIONED IDENTITIES</p><h3>Users</h3></div></div><table class="data-table"><thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Services</th><th scope="col">Compute</th><th scope="col">Storage</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="access-table"></tbody></table></article>
         </div>
       </section>
     </main>

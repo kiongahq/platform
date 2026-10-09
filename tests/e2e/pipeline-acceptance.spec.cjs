@@ -71,7 +71,7 @@ test('branched DAG: schedule, manual run with override, parallel nodes, node log
 
   // Schedule: visible, pausable, resumable in the UI.
   await page.goto(`/console.html?view=pipelines&project=${project.id}`);
-  const card = page.locator(`[data-definition-detail="${definition.id}"]`);
+  const card = page.locator(`article[data-definition-detail="${definition.id}"]`);
   await expect(card).toContainText('30 2 * * *');
   await expect(card).toContainText('Africa/Nairobi');
   await card.click();

@@ -15,8 +15,8 @@ function scheduleSummary(definition) {
 
 function definitionCard(definition) {
   const jobs = definition.jobs || definition.nodes || [];
-  return `<article class="panel pipeline-definition-card interactive-card" role="button" tabindex="0" data-definition-detail="${escapeHTML(definition.id)}" aria-label="Open flow ${escapeHTML(definition.name)}">
-    <div><span class="kind">${escapeHTML(definition.execution_mode)} · v${escapeHTML(definition.version)}</span><h3>${escapeHTML(definition.name)}</h3><p>${plural(jobs.length, "job")} · ${escapeHTML(projectName(definition.project_id))}</p></div>
+  return `<article class="panel pipeline-definition-card interactive-card" data-definition-detail="${escapeHTML(definition.id)}">
+    <div><span class="kind">${escapeHTML(definition.execution_mode)} · v${escapeHTML(definition.version)}</span><h3><button type="button" class="card-title-button" data-definition-detail="${escapeHTML(definition.id)}">${escapeHTML(definition.name)}</button></h3><p>${plural(jobs.length, "job")} · ${escapeHTML(projectName(definition.project_id))}</p></div>
     ${can("pipelines_write") ? `<button type="button" class="btn-sm" data-run-definition="${escapeHTML(definition.id)}" data-project-id="${escapeHTML(definition.project_id)}">▶ Run</button>` : ""}
     <div class="schedule-line">${scheduleSummary(definition)}</div>
     <div class="definition-graph">${pipelineGraph(jobs, {compact: true, ariaLabel: `${definition.name} dependency graph`})}</div>

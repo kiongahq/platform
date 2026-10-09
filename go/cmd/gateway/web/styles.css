@@ -461,6 +461,8 @@ a[aria-disabled="true"] { opacity: .6; cursor: help; }
 .card .kind, .component .category { color: var(--accent); font-size: var(--fs-xs); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card footer, .component footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: auto; padding-top: var(--space-3); }
 .interactive-card { cursor: pointer; }
+.card-title-button { display: inline; min-height: 0; padding: 0; border: 0; color: inherit; background: none; box-shadow: none; font: inherit; text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
+.card-title-button:hover { color: var(--accent); }
 .interactive-card:hover { border-color: var(--accent); box-shadow: var(--shadow-lg); }
 .interactive-card:focus-visible { border-color: var(--accent); }
 .tags { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
