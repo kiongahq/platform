@@ -64,13 +64,8 @@ func renderBlock(b *strings.Builder, block api.Block, media MediaLookup) {
 			fmt.Fprintf(b, "<p>%s</p>\n", value.Text)
 		}
 	case headerData:
-		level := value.Level + 1
-		if level < 2 {
-			level = 2
-		}
-		if level > 4 {
-			level = 4
-		}
+		// The post title is the page's h1, so body headings start at h2.
+		level := min(max(value.Level, 2), 4)
 		fmt.Fprintf(b, `<h%d id="%s">%s</h%d>`+"\n", level, esc(anchor(value.Text)), value.Text, level)
 	case listData:
 		renderList(b, value.Style, value.Items)

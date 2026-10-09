@@ -16,8 +16,8 @@ import (
 // little more) into blocks: ATX headings, fenced code (``` or ~~~ with an
 // optional language), unordered/ordered/task lists, block quotes, horizontal
 // rules, paragraphs, and inline `code`, **bold**, *italic* and [links](url).
-// The legacy renderer shifted heading levels down by one (# -> h2); block
-// header levels keep that visual mapping (# -> level 1 -> h2).
+// The legacy renderer shifted heading levels down by one (# -> h2), so the
+// block level is the Markdown depth plus one and export subtracts it again.
 func FromMarkdown(source string) []api.Block {
 	lines := strings.Split(strings.ReplaceAll(source, "\r\n", "\n"), "\n")
 	var blocks []api.Block
@@ -62,7 +62,7 @@ func FromMarkdown(source string) []api.Block {
 		if match := heading.FindStringSubmatch(trimmed); match != nil {
 			flushParagraph()
 			flushList()
-			add("header", headerData{Text: inlineMarkdown(match[2]), Level: len(match[1])})
+			add("header", headerData{Text: inlineMarkdown(match[2]), Level: min(len(match[1])+1, 6)})
 			continue
 		}
 		if trimmed == "---" || trimmed == "***" {
@@ -167,7 +167,7 @@ func ToMarkdown(blocks []api.Block) string {
 		case paragraphData:
 			out = append(out, inlineToMarkdown(value.Text))
 		case headerData:
-			out = append(out, strings.Repeat("#", value.Level)+" "+inlineToMarkdown(value.Text))
+			out = append(out, strings.Repeat("#", max(value.Level-1, 1))+" "+inlineToMarkdown(value.Text))
 		case listData:
 			var lines []string
 			var walk func([]ListItem, int)
