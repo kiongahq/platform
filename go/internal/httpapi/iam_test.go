@@ -11,10 +11,10 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/auth"
-	"github.com/ml-ai-ops/platform/internal/policy"
-	"github.com/ml-ai-ops/platform/internal/store"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/internal/auth"
+	"github.com/kiongahq/platform/internal/policy"
+	"github.com/kiongahq/platform/internal/store"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // iamFixture is a server with two projects, a run and a definition in each,

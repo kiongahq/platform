@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 var ErrNotFound = errors.New("resource not found")

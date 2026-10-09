@@ -27,8 +27,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/logexport"
-	"github.com/ml-ai-ops/platform/internal/store"
+	"github.com/kiongahq/platform/internal/logexport"
+	"github.com/kiongahq/platform/internal/store"
 )
 
 func main() {

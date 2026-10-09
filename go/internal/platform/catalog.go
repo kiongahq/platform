@@ -7,7 +7,7 @@ package platform
 import (
 	"fmt"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // componentSpec maps a platform component to the connection types that make

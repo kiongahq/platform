@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 func validateBlog(req api.UpsertBlogPostRequest) (api.UpsertBlogPostRequest, error) {

@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ml-ai-ops/platform/internal/policy"
-	"github.com/ml-ai-ops/platform/internal/store"
+	"github.com/kiongahq/platform/internal/policy"
+	"github.com/kiongahq/platform/internal/store"
 )
 
 // IAM checks group, policy, revision and attachment persistence on any

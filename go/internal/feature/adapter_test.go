@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // seeded is the shared fixture every conformant adapter must serve:

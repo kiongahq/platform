@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ml-ai-ops/platform/internal/runtimeconfig"
+	"github.com/kiongahq/platform/internal/runtimeconfig"
 	"log"
 	"net/http"
 	"os"
@@ -19,7 +19,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 
-	"github.com/ml-ai-ops/platform/internal/integrations"
+	"github.com/kiongahq/platform/internal/integrations"
 )
 
 var lastSuccessfulPoll atomic.Int64

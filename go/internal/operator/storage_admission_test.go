@@ -14,7 +14,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	mlaiopsv1 "github.com/ml-ai-ops/platform/pkg/kube/v1alpha1"
+	mlaiopsv1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
 
 func TestValidateTenantStorage(t *testing.T) {

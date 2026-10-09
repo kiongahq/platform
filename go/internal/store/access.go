@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 func validateAccessRequest(req api.CreateAccessRequest) (api.CreateAccessRequest, error) {

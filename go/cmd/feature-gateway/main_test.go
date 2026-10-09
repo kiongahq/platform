@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ml-ai-ops/platform/internal/feature"
+	"github.com/kiongahq/platform/internal/feature"
 )
 
 func memoryGateway(token string) *gateway {

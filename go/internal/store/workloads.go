@@ -3,14 +3,14 @@ package store
 import (
 	"context"
 	"errors"
-	"github.com/ml-ai-ops/platform/internal/pipelinespec"
+	"github.com/kiongahq/platform/internal/pipelinespec"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 	"unicode"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 	kvalidation "k8s.io/apimachinery/pkg/util/validation"
 )
 

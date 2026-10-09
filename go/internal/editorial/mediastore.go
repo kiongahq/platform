@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/storage"
+	"github.com/kiongahq/platform/internal/storage"
 )
 
 // MediaStore keeps media bytes. Keys look like "<media id>/<variant>".

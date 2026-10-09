@@ -1,14 +1,14 @@
 package main
 
 import (
-	"github.com/ml-ai-ops/platform/internal/runtimeconfig"
+	"github.com/kiongahq/platform/internal/runtimeconfig"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/traceproxy"
+	"github.com/kiongahq/platform/internal/traceproxy"
 )
 
 func main() {

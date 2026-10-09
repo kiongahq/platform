@@ -11,9 +11,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/ml-ai-ops/platform/internal/auth"
-	"github.com/ml-ai-ops/platform/internal/store"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/internal/auth"
+	"github.com/kiongahq/platform/internal/store"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 type hubTransport func(*http.Request) (*http.Response, error)

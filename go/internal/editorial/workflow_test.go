@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 var (

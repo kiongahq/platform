@@ -27,8 +27,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/ml-ai-ops/platform/internal/execution"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/internal/execution"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // Reporter receives step transitions and log events.

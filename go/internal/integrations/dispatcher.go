@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	platformapi "github.com/ml-ai-ops/platform/pkg/api"
+	platformapi "github.com/kiongahq/platform/pkg/api"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/auth"
-	"github.com/ml-ai-ops/platform/internal/policy"
-	"github.com/ml-ai-ops/platform/internal/store"
+	"github.com/kiongahq/platform/internal/auth"
+	"github.com/kiongahq/platform/internal/policy"
+	"github.com/kiongahq/platform/internal/store"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"

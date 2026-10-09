@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/policy"
+	"github.com/kiongahq/platform/internal/policy"
 )
 
 // IAM resources are documents: groups, versioned policies, immutable policy

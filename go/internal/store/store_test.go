@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 func TestStorePersistsResourcesAndAudit(t *testing.T) {

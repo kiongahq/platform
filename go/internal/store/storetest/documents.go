@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ml-ai-ops/platform/internal/store"
+	"github.com/kiongahq/platform/internal/store"
 )
 
 type sampleDoc struct {

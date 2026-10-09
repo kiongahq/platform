@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/auth"
-	"github.com/ml-ai-ops/platform/internal/feature"
-	"github.com/ml-ai-ops/platform/internal/storage"
-	"github.com/ml-ai-ops/platform/internal/store"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/internal/auth"
+	"github.com/kiongahq/platform/internal/feature"
+	"github.com/kiongahq/platform/internal/storage"
+	"github.com/kiongahq/platform/internal/store"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // Feature stores, feature lineage and external object storage.

@@ -23,7 +23,7 @@ Kionga runs as one Docker Compose stack. The fastest path to a working platform 
 ## Fastest path: the full stack
 
 ```bash
-git clone https://github.com/ml-ai-ops/platform.git
+git clone https://github.com/kiongahq/platform.git
 cd platform
 make local-up
 ```

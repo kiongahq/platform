@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	platformmetrics "github.com/ml-ai-ops/platform/internal/metrics"
+	platformmetrics "github.com/kiongahq/platform/internal/metrics"
 )
 
 func main() {

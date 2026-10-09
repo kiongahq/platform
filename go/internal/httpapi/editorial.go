@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/auth"
-	"github.com/ml-ai-ops/platform/internal/editorial"
-	"github.com/ml-ai-ops/platform/internal/store"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/internal/auth"
+	"github.com/kiongahq/platform/internal/editorial"
+	"github.com/kiongahq/platform/internal/store"
+	"github.com/kiongahq/platform/pkg/api"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

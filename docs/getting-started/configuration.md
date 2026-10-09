@@ -204,8 +204,8 @@ Read by the operator and integration worker only:
 | --- | --- | --- |
 | `KFP_URL` / `KFP_TOKEN` / `KFP_EXPERIMENT_ID` | installation-specific | Kubernetes pipeline execution |
 | `MLFLOW_URL` | in-cluster MLflow | Model lifecycle integration |
-| `WORKBENCH_IMAGE` | `ghcr.io/ml-ai-ops/jupyter:latest` | Image for provisioned Jupyter containers |
-| `IDE_IMAGE` | `ghcr.io/ml-ai-ops/ide:latest` | Image for provisioned IDE containers |
+| `WORKBENCH_IMAGE` | `ghcr.io/kiongahq/jupyter:latest` | Image for provisioned Jupyter containers |
+| `IDE_IMAGE` | `ghcr.io/kiongahq/ide:latest` | Image for provisioned IDE containers |
 | `WORKSPACE_STORAGE_CLASS` | cluster default | Storage class for per-user PVCs |
 | `WORKSPACE_FEATURE_URL` / `WORKSPACE_STORAGE_URL` | in-cluster platform services | Feature and object access injected into each workspace |
 | `WORKSPACE_MLFLOW_URL` / `WORKSPACE_PREFECT_URL` | in-cluster upstreams | Experiment and orchestration endpoints injected into each workspace |

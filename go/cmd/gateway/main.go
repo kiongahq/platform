@@ -13,11 +13,11 @@ import (
 	// Distroless images ship no zoneinfo; schedules need IANA timezones.
 	_ "time/tzdata"
 
-	"github.com/ml-ai-ops/platform/internal/auth"
-	"github.com/ml-ai-ops/platform/internal/httpapi"
-	"github.com/ml-ai-ops/platform/internal/integrations"
-	"github.com/ml-ai-ops/platform/internal/runtimeconfig"
-	"github.com/ml-ai-ops/platform/internal/store"
+	"github.com/kiongahq/platform/internal/auth"
+	"github.com/kiongahq/platform/internal/httpapi"
+	"github.com/kiongahq/platform/internal/integrations"
+	"github.com/kiongahq/platform/internal/runtimeconfig"
+	"github.com/kiongahq/platform/internal/store"
 )
 
 //go:embed web/*
@@ -132,7 +132,7 @@ func main() {
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 	}()
-	log.Printf("ml-ai-ops-platform is ready at http://localhost:%s", port)
+	log.Printf("Kionga is ready at http://localhost:%s", port)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

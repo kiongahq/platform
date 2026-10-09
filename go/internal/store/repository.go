@@ -1,6 +1,6 @@
 package store
 
-import "github.com/ml-ai-ops/platform/pkg/api"
+import "github.com/kiongahq/platform/pkg/api"
 
 type Repository interface {
 	Documents

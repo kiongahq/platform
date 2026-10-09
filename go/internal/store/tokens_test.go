@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 func TestAPITokenLifecycle(t *testing.T) {
