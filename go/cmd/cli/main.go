@@ -19,6 +19,9 @@ func main() {
 	}
 	base := env("MLAIOPS_URL", "http://localhost:8080")
 	client := &http.Client{Timeout: 15 * time.Second}
+	if len(os.Args) >= 4 && os.Args[1] == "pipeline" && (os.Args[2] == "export" || os.Args[2] == "validate" || os.Args[2] == "apply") {
+		os.Exit(pipelineFile(client, base, os.Args[2:], os.Stdout, os.Stderr))
+	}
 	var method, path string
 	var body any
 	switch strings.Join(os.Args[1:], " ") {
@@ -97,6 +100,9 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "       mlaiops pipeline definitions | pipeline submit <project-id> [definition-id]")
 	fmt.Fprintln(os.Stderr, "       mlaiops function deploy <project-id> <name> <image> | function <invoke|invoke-async> <name>")
 	fmt.Fprintln(os.Stderr, "       mlaiops project connect <project-id> <repository-url> [branch]")
+	fmt.Fprintln(os.Stderr, "       mlaiops pipeline export <definition-id>            (canonical YAML to stdout)")
+	fmt.Fprintln(os.Stderr, "       mlaiops pipeline validate <file.kionga.yaml>")
+	fmt.Fprintln(os.Stderr, "       mlaiops pipeline apply <file.kionga.yaml> [definition-id] [message]")
 }
 func fatal(err error) {
 	if err != nil {

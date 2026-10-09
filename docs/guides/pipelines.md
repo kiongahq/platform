@@ -76,9 +76,17 @@ curl -s -X POST "$MLAIOPS_URL/api/v1/pipelines/definitions/yaml" \
   -d "{\"yaml\": $(jq -Rs . < flow.kionga.yaml), \"message\": \"tune train\"}"
 ```
 
-To review definitions in Git, commit the YAML from **Flow → YAML → Download** (or
-the API above) as `pipelines/<name>.kionga.yaml` in the project repository, and
-apply it with the YAML endpoint from CI. Kionga never commits to your repository.
+To review definitions in Git, keep them as `pipelines/<name>.kionga.yaml` in the
+project repository and use the CLI (`MLAIOPS_URL` and an API key in `MLAIOPS_TOKEN`):
+
+```bash
+mlaiops pipeline export <definition-id> > pipelines/churn.kionga.yaml   # start from Kionga
+mlaiops pipeline validate pipelines/churn.kionga.yaml                   # in CI: issues with line numbers, exit 1
+mlaiops pipeline apply pipelines/churn.kionga.yaml <definition-id> "PR #42"  # after merge
+```
+
+Applying unchanged YAML creates no revision. Kionga never commits to your
+repository; Git stays the review step and Kionga the execution record.
 
 ## Schedules
 
