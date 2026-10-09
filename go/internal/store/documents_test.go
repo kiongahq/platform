@@ -34,3 +34,11 @@ func TestStoreConcurrentStepReports(t *testing.T) {
 	}
 	storetest.ConcurrentStepReports(t, repo, project.ID)
 }
+
+func TestFeatureCatalogDocuments(t *testing.T) {
+	storetest.FeatureCatalog(t, store.New(filepath.Join(t.TempDir(), "state.json")))
+}
+
+func TestScaffoldJobDocuments(t *testing.T) {
+	storetest.ScaffoldJobs(t, store.New(filepath.Join(t.TempDir(), "state.json")))
+}
