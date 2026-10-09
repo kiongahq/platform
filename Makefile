@@ -1,105 +1,47 @@
-.PHONY: install run test test-go test-python test-integration test-load test-stress test-security test-e2e lint format build verify local local-up local-rebuild local-down local-status local-logs ide-up ide-agents-up ide-down kind-up docs-install docs-serve docs-build
+# Kionga platform: control-plane Go services and the embedded console.
+# Running the whole stack lives in kiongahq/deploy (make -C ../deploy local-up).
+.PHONY: run test test-go test-integration test-security lint fmt-check format build verify test-ui test-browser
 
-install:
-	python -m pip install -r requirements.txt
-	python -m pip install -e ./python
+GO_SERVICES := gateway operator integration-worker feature-gateway storage-proxy metrics-collector log-exporter cli
 
 run:
 	cd go && go run ./cmd/gateway
 
-test: test-go test-python
+test: test-go test-ui
 
 test-go:
-	cd go && go test -buildvcs=false ./...
+	cd go && go test -race -buildvcs=false ./...
 
-test-python:
-	python -m pytest python/tests -q
-
-test-integration:
+test-integration:            ## PostgreSQL integration tests in a throwaway container
 	bash scripts/integration-test.sh
-
-test-load:
-	k6 run tests/load/gateway.js
-
-test-stress:
-	bash scripts/stress-test.sh
 
 test-security:
 	cd go && go run golang.org/x/vuln/cmd/govulncheck@latest ./...
-	python -m pip install -q pip-audit && python -m pip_audit -r requirements.txt
 
-test-e2e:
-	bash scripts/e2e-kind.sh
+fmt-check:                   ## the same gofmt check CI runs
+	@out="$$(cd go && gofmt -l .)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
-lint:
+lint: fmt-check
 	cd go && go vet ./...
-	ruff check python
 
 format:
 	cd go && gofmt -w .
-	ruff format python
 
 build:
 	mkdir -p bin
-	cd go && for cmd in gateway operator integration-worker trace-proxy feature-gateway storage-proxy metrics-collector serving-manager log-exporter cli; do \
-		go build -buildvcs=false -o ../bin/mlaiops-$$cmd ./cmd/$$cmd; \
+	cd go && for cmd in $(GO_SERVICES); do \
+		go build -buildvcs=false -o ../bin/mlaiops-$$cmd ./cmd/$$cmd || exit 1; \
 	done
 
-verify: test lint build
+verify: lint test-go build
 	for f in go/cmd/gateway/web/js/*.js go/cmd/gateway/web/js/views/*.js go/cmd/gateway/web/*.js; do node --check $$f || exit 1; done
-	python -m compileall -q python/mlaiops_sdk
-	! rg -i '\b(mlrun|nuclio|v3io|iguazio)\b' go config
+	! rg -i '\b(mlrun|nuclio|v3io|iguazio)\b' go
 
-.PHONY: test-ui test-browser
 test-ui:
 	npm ci --ignore-scripts
 	npm run test:ui
 
-# Browser acceptance against a running stack (make local-up first). Uses the
-# installed Chrome; screenshots land in artifacts/screenshots/<viewport>/.
+# Browser acceptance against a running stack (make -C ../deploy local-up first).
+# Uses the installed Chrome; screenshots land in artifacts/screenshots/<viewport>/.
 test-browser:
 	KIONGA_URL=$${KIONGA_URL:-http://localhost:$${GATEWAY_PORT:-8080}} npx playwright test
-
-local: local-up
-
-local-up:
-	bash scripts/local-up.sh
-
-local-rebuild:
-	KIONGA_REBUILD=1 bash scripts/local-up.sh
-
-local-down:
-	docker compose -f deploy/compose.yaml down
-
-local-status:
-	docker compose -f deploy/compose.yaml ps --all
-
-local-logs:
-	docker compose -f deploy/compose.yaml logs --tail 100
-
-ide-up:
-	docker compose -f deploy/compose.yaml --profile ide up -d ide
-
-ide-agents-up:
-	KIONGA_IDE_AGENTS=true docker compose -f deploy/compose.yaml --profile ide up -d --build ide
-
-ide-down:
-	docker compose -f deploy/compose.yaml --profile ide stop ide
-
-public-up:
-	bash deploy/public-up.sh "$(DEPLOYMENT)"
-
-public-down:
-	python3 deploy/vm/up.py "$(DEPLOYMENT)" --stop
-
-kind-up:
-	bash scripts/kind-up.sh
-
-docs-install:
-	python -m pip install -r requirements-docs.txt
-
-docs-serve:
-	mkdocs serve
-
-docs-build:
-	mkdocs build --strict

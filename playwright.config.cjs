@@ -1,4 +1,4 @@
-// Browser acceptance lane. Runs against a live stack (make local-up) using
+// Browser acceptance lane. Runs against a live stack (make -C ../deploy local-up) using
 // the locally installed Chrome, so no browser download is needed.
 //   KIONGA_URL=http://localhost:18080 npx playwright test
 const {defineConfig} = require('@playwright/test');

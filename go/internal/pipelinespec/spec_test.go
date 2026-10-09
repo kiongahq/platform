@@ -180,7 +180,7 @@ func TestNextRunHonorsTimezone(t *testing.T) {
 }
 
 // The shared example also validates against contracts/pipeline/v1.schema.json
-// (python/tests/test_pipeline_schema.py), keeping the two in step.
+// (kiongahq/contracts: tests/test_pipeline_schema.py), keeping the two in step.
 func TestSharedExampleIsValid(t *testing.T) {
 	text, err := os.ReadFile("../../../contracts/pipeline/examples/branched.kionga.yaml")
 	if err != nil {

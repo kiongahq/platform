@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/microcosm-cc/bluemonday"
 	"github.com/kiongahq/platform/pkg/api"
+	"github.com/microcosm-cc/bluemonday"
 )
 
 // MediaLookup resolves a media id for rendering; ok=false drops the image.

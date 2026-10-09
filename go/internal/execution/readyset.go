@@ -3,7 +3,7 @@
 // branches run in parallel up to a bound, nodes whose `when` condition is not
 // met are skipped (their dependents still run), and nodes downstream of a
 // failure are skipped and reported. The Python container runner implements
-// the same semantics (python/pipelines/definition.py:execute_ready_set).
+// the same semantics (kiongahq/pipeline-runner: pipelines/definition.py:execute_ready_set).
 package execution
 
 import (

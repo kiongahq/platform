@@ -1,6 +1,0 @@
-# Documentation site (MkDocs Material). Build locally with:
-#   python -m pip install -r requirements-docs.txt
-#   mkdocs serve      # live preview at http://localhost:8000
-#   mkdocs build --strict
-mkdocs-material>=9.5
-pymdown-extensions>=10.7
