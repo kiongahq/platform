@@ -115,6 +115,7 @@ nav:
       - RBAC & security: reference/rbac.md
       - CLI: reference/cli.md
       - Kionga identifier migration: reference/kionga-migration.md
+      - "Decision: blog editor and editorial identity": reference/decisions/blog-editor.md
   - Operations:
       - Local operations: operations/local.md
       - Public hosting: hosting.md
