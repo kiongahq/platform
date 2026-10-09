@@ -104,3 +104,16 @@ func TestPostgresFeatureCatalogAndScaffoldJobs(t *testing.T) {
 	storetest.FeatureCatalog(t, repository)
 	storetest.ScaffoldJobs(t, repository)
 }
+
+func TestPostgresEditorialRevisionsMediaAndSchedule(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	repository, err := store.OpenPostgres(context.Background(), databaseURL, fmt.Sprintf("editorial-%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	storetest.Editorial(t, repository)
+}

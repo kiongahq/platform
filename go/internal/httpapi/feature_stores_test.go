@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,15 +27,6 @@ func fakeFeastServer(t *testing.T) *httptest.Server {
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
-}
-
-func decodeInto[T any](t *testing.T, response *httptest.ResponseRecorder) T {
-	t.Helper()
-	var value T
-	if err := json.Unmarshal(response.Body.Bytes(), &value); err != nil {
-		t.Fatalf("decode %s: %v", response.Body.String(), err)
-	}
-	return value
 }
 
 func TestFeatureStoreConnectionLifecycleNeverEchoesSecrets(t *testing.T) {

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex">
+  <title>Kionga Editorial</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/editorial/editorial.css">
+</head>
+<body class="editorial">
+  <a class="skip-link" href="#ed-main">Skip to content</a>
+  <header class="app-bar ed-bar">
+    <a class="app-brand" href="/editorial.html#/posts"><span class="brand-mark" aria-hidden="true">K</span><b>Kionga Editorial</b></a>
+    <span class="app-spacer"></span>
+    <a class="button-link quiet ed-hide-narrow" href="/blogs.html" target="_blank" rel="noopener">View blog ↗</a>
+    <a class="button-link quiet ed-hide-narrow" href="/console.html">ML console</a>
+    <span class="ed-member" id="ed-member" hidden><span class="account-avatar" id="ed-avatar" aria-hidden="true">E</span><span class="ed-member-copy"><b id="ed-member-name"></b><small id="ed-member-role"></small></span></span>
+    <button type="button" class="quiet" id="ed-signout" hidden>Leave workspace</button>
+  </header>
+  <div class="ed-shell" id="ed-shell">
+    <nav class="ed-nav" id="ed-nav" aria-label="Editorial navigation" hidden>
+      <a class="nav-item" href="#/posts" data-route="posts"><span aria-hidden="true">☰</span>Posts</a>
+      <a class="nav-item" href="#/drafts" data-route="drafts"><span aria-hidden="true">✎</span>Drafts</a>
+      <a class="nav-item" href="#/reviews" data-route="reviews"><span aria-hidden="true">✓</span>Reviews</a>
+      <a class="nav-item" href="#/media" data-route="media"><span aria-hidden="true">▣</span>Media</a>
+      <a class="nav-item" href="#/authors" data-route="authors"><span aria-hidden="true">◎</span>Authors</a>
+      <a class="nav-item" href="#/settings" data-route="settings"><span aria-hidden="true">⚙</span>Settings</a>
+    </nav>
+    <main id="ed-main" class="ed-main" tabindex="-1" aria-live="polite">
+      <section class="ed-gate panel" id="ed-loading"><p>Opening the editorial workspace…</p></section>
+    </main>
+  </div>
+  <div class="ed-toast" id="ed-toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="/vendor/editorjs/editorjs.umd.js" integrity="sha384-VCPYJjPO1nUrpiHNQ3xaVEF48GhfB6De5k5JldN/3TwGZru+K+sQt7GQ4jK98z1e" defer></script>
+  <script src="/vendor/editorjs/header.umd.js" integrity="sha384-gsHcARcunRrx+hZA2vZY6ESWTIC8ZJZpyuAjNmKponX5ftG43VHfZ8geURncPDPh" defer></script>
+  <script src="/vendor/editorjs/list.umd.js" integrity="sha384-rgmnoyP4Ld6tRkTXoq965fzulyZZ6NSUYy+JYI4mO9sxaJDrpyjORlNUz5Un2gbn" defer></script>
+  <script src="/vendor/editorjs/quote.umd.js" integrity="sha384-z43sl0T5c0VaZ0qANtyMgguU+QmuuzTmE4lWCjGDs2IgVrbQn6ycdbCwemISQxug" defer></script>
+  <script src="/vendor/editorjs/code.umd.js" integrity="sha384-pmKzfNHAxgIHBx/Nzm5HVAQyKQwkM/Mpcm2NSVPojR03VCm4g2kYBgzY9FsE4cXa" defer></script>
+  <script src="/vendor/editorjs/delimiter.umd.js" integrity="sha384-JxFg+sowMd+b7DsI8bCOvXPDtHPiIjXxSMk9WXaGWpDtSwzzMIb+tGwkaAh9qMgB" defer></script>
+  <script src="/vendor/editorjs/embed.umd.js" integrity="sha384-/1ZI1HlHcevdvuxte+CPpgCdkHnvAqD4P9oyVCu1bxTotpiAJDerFB+SObio3CH1" defer></script>
+  <script src="/vendor/editorjs/table.umd.js" integrity="sha384-EfF1OR87CAWMq8G2qxUxrFwwFX/9ZdVg0qyxuHTZyNKfzjAi+OS1qYg12c2oWzjI" defer></script>
+  <script src="/vendor/editorjs/inline-code.umd.js" integrity="sha384-+3JnsZ5Ef/PXN4aILTy12X6yX8sSVv213uEX7F8ab9j3aBMj/7sypQGQad44v5jo" defer></script>
+  <script src="/vendor/editorjs/marker.umd.js" integrity="sha384-xCW2AjuNs2r576ct9AvLo3Knz4N5tsszNVGXueZc7eI1iTEL0NSFy47G1er+diE+" defer></script>
+  <script src="/vendor/editorjs/warning.umd.js" integrity="sha384-ffeWk9dl1hzdMGuat8++w1VDrkssXdtXZ0TUEqlGOKxUfDgjO7ybm/+VHoReHrty" defer></script>
+  <script src="/editorial/state.js" defer></script>
+  <script src="/editorial/api.js" defer></script>
+  <script src="/editorial/image-tool.js" defer></script>
+  <script src="/editorial/views.js" defer></script>
+  <script src="/editorial/editor.js" defer></script>
+  <script src="/editorial/app.js" defer></script>
+</body>
+</html>

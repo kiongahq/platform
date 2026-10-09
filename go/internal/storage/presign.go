@@ -39,6 +39,19 @@ func Presign(config Config, request Request, now time.Time) (string, error) {
 	if method != "GET" && method != "PUT" {
 		return "", errors.New("operation must be GET or PUT")
 	}
+	return SignURL(config, method, request, now)
+}
+
+// SignURL presigns any S3 method for trusted in-process callers (the blog
+// media store needs DELETE). The storage proxy goes through Presign, which
+// keeps client-requested operations limited to GET and PUT.
+func SignURL(config Config, method string, request Request, now time.Time) (string, error) {
+	if config.Endpoint == "" || config.AccessKey == "" || config.SecretKey == "" {
+		return "", errors.New("storage endpoint and credentials must be configured")
+	}
+	if request.Bucket == "" || request.Key == "" || strings.Contains(request.Bucket, "/") || strings.Contains(request.Key, "..") {
+		return "", errors.New("valid bucket and key are required")
+	}
 	if request.TTLSeconds <= 0 {
 		request.TTLSeconds = 300
 	}
