@@ -94,17 +94,35 @@ func ProcessImage(data []byte) (ProcessedImage, error) {
 	bounds := img.Bounds()
 	result.SourceType, result.Width, result.Height = sniffed, bounds.Dx(), bounds.Dy()
 	opaque := isOpaque(img)
+	// Decide the variant set smallest-first, then scale largest-first so each
+	// smaller size is resampled from the previous one: the cost stays near
+	// one full-resolution pass even for 12-megapixel photos.
+	type plan struct {
+		name          string
+		width, height int
+	}
+	var plans []plan
 	for _, target := range VariantWidths {
 		width := min(target, result.Width)
 		height := max(1, int(float64(result.Height)*float64(width)/float64(result.Width)+0.5))
+		plans = append(plans, plan{itoa(target), width, height})
+		if width >= result.Width {
+			break
+		}
+	}
+	variants := make([]EncodedVariant, len(plans))
+	source := img
+	for index := len(plans) - 1; index >= 0; index-- {
+		p := plans[index]
 		var scaled draw.Image
 		if opaque {
-			scaled = image.NewRGBA(image.Rect(0, 0, width, height))
+			scaled = image.NewRGBA(image.Rect(0, 0, p.width, p.height))
 			draw.Draw(scaled, scaled.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
 		} else {
-			scaled = image.NewNRGBA(image.Rect(0, 0, width, height))
+			scaled = image.NewNRGBA(image.Rect(0, 0, p.width, p.height))
 		}
-		draw.CatmullRom.Scale(scaled, scaled.Bounds(), img, bounds, draw.Over, nil)
+		draw.CatmullRom.Scale(scaled, scaled.Bounds(), source, source.Bounds(), draw.Over, nil)
+		source = scaled
 		var buffer bytes.Buffer
 		contentType := "image/jpeg"
 		if opaque {
@@ -116,11 +134,9 @@ func ProcessImage(data []byte) (ProcessedImage, error) {
 		if err != nil {
 			return result, err
 		}
-		result.Variants = append(result.Variants, EncodedVariant{Name: itoa(target), Width: width, Height: height, ContentType: contentType, Data: buffer.Bytes()})
-		if width >= result.Width {
-			break
-		}
+		variants[index] = EncodedVariant{Name: p.name, Width: p.width, Height: p.height, ContentType: contentType, Data: buffer.Bytes()}
 	}
+	result.Variants = variants
 	return result, nil
 }
 

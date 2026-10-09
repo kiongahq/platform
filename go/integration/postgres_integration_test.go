@@ -76,3 +76,16 @@ func TestPostgresPipelineRevisions(t *testing.T) {
 	storetest.PipelineRevisions(t, repository, project.ID)
 	storetest.ConcurrentStepReports(t, repository, project.ID)
 }
+
+func TestPostgresEditorialRevisionsMediaAndSchedule(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	repository, err := store.OpenPostgres(context.Background(), databaseURL, fmt.Sprintf("editorial-%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	storetest.Editorial(t, repository)
+}

@@ -67,7 +67,7 @@ func TestProcessImageStripsExifAndAppliesOrientation(t *testing.T) {
 }
 
 func TestProcessImageVariantsAndFormats(t *testing.T) {
-	processed, err := ProcessImage(jpegBytes(t, 2400, 1200))
+	processed, err := ProcessImage(jpegBytes(t, 1700, 850))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestProcessImageVariantsAndFormats(t *testing.T) {
 	for i, want := range []int{480, 960, 1600} {
 		variant := processed.Variants[i]
 		decoded, format, err := image.Decode(bytes.NewReader(variant.Data))
-		if err != nil || format != "jpeg" || decoded.Bounds().Dx() != want || decoded.Bounds().Dy() != want/2 || variant.Width != want {
+		if err != nil || format != "jpeg" || decoded.Bounds().Dx() != min(want, 1700) || decoded.Bounds().Dy() != min(want, 1700)/2 || variant.Width != min(want, 1700) {
 			t.Fatalf("variant %d: %v %s %v", want, err, format, decoded.Bounds())
 		}
 	}
