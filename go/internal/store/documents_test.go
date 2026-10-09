@@ -38,3 +38,7 @@ func TestStoreConcurrentStepReports(t *testing.T) {
 func TestStoreLogs(t *testing.T) {
 	storetest.Logs(t, store.New(), "run-logs")
 }
+
+func TestStoreIAM(t *testing.T) {
+	storetest.IAM(t, store.New(filepath.Join(t.TempDir(), "state.json")))
+}

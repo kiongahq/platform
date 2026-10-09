@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ml-ai-ops/platform/internal/policy"
 	"github.com/ml-ai-ops/platform/internal/redact"
 	"github.com/ml-ai-ops/platform/internal/store"
 	"github.com/ml-ai-ops/platform/pkg/api"
@@ -194,6 +195,24 @@ func (s *Server) logFilterFor(r *http.Request) (api.LogFilter, int, string) {
 	return filter, 0, ""
 }
 
+// visibleLogs keeps entries the caller may read under policy (logs:Read on
+// the entry's pipeline). Assignment-based project scoping already narrowed
+// the query; this applies attached policies, including explicit denies.
+func (s *Server) visibleLogs(r *http.Request, entries []api.LogEntry) []api.LogEntry {
+	a := s.authorizerFor(r)
+	out := entries[:0]
+	for _, entry := range entries {
+		pipelineID := entry.PipelineID
+		if pipelineID == "" {
+			pipelineID = "training-pipeline"
+		}
+		if a.allowed(policy.LogsRead, policy.PipelineResource(entry.ProjectID, pipelineID)) {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
 func splitList(value string) []string {
 	var out []string
 	for _, item := range strings.Split(value, ",") {
@@ -220,9 +239,14 @@ func (s *Server) queryLogs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
 	}
+	full := len(entries) == filter.Limit || (filter.Limit == 0 && len(entries) == 200)
+	var last int64
+	if len(entries) > 0 {
+		last = entries[len(entries)-1].Sequence
+	}
+	entries = s.visibleLogs(r, entries)
 	response := map[string]any{"items": entries}
-	if len(entries) == filter.Limit || (filter.Limit == 0 && len(entries) == 200) {
-		last := entries[len(entries)-1].Sequence
+	if full {
 		if filter.Descending {
 			response["next_before"] = last
 		} else {
@@ -269,12 +293,20 @@ func (s *Server) streamLogs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(entries) > 0 {
-			payload, _ := json.Marshal(entries)
 			filter.After = entries[len(entries)-1].Sequence
+			page := len(entries)
+			entries = s.visibleLogs(r, entries)
+			if len(entries) == 0 {
+				if page == filter.Limit {
+					continue
+				}
+				goto wait
+			}
+			payload, _ := json.Marshal(entries)
 			fmt.Fprintf(w, "id: %d\nevent: logs\ndata: %s\n\n", filter.After, payload)
 			flusher.Flush()
 			heartbeat = time.Now()
-			if len(entries) == filter.Limit {
+			if page == filter.Limit {
 				continue // more are waiting; send the next page immediately
 			}
 		} else if time.Since(heartbeat) > 15*time.Second {
@@ -282,6 +314,7 @@ func (s *Server) streamLogs(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 			heartbeat = time.Now()
 		}
+	wait:
 		select {
 		case <-r.Context().Done():
 			return

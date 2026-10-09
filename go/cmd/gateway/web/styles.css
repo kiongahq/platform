@@ -969,3 +969,30 @@ p.hint { font-family: var(--font-sans); white-space: normal; }
   .log-line .sev, .log-line b { display: none; }
   #toast { right: var(--space-2); left: var(--space-2); bottom: var(--space-2); max-width: none; }
 }
+
+/* ---- IAM: tabs, policy editor, decisions ------------------------------------ */
+#access-tabs { margin-top: 0; }
+.iam-inline-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); align-items: end; gap: var(--space-2) var(--space-3); padding: 0; background: none; }
+.iam-inline-form label { margin: 0; min-width: 0; }
+.iam-inline-form .wide-field { grid-column: span 2; }
+.iam-inline-form .form-actions { justify-content: flex-start; }
+.policy-statement { margin: 0; min-width: 0; }
+.policy-statement .wide-field, .policy-statement details { grid-column: 1 / -1; }
+.statement-conditions summary { cursor: pointer; color: var(--text-secondary); font-size: var(--fs-sm); font-weight: 600; }
+#policy-json { width: 100%; }
+#iam-policy-dialog, #iam-group-dialog { width: min(900px, calc(100vw - 24px)); }
+#decision-dialog { width: min(760px, calc(100vw - 24px)); }
+.decision { display: grid; gap: var(--space-2); min-width: 0; margin-top: var(--space-3); overflow-wrap: anywhere; }
+.decision-verdict strong { margin-right: var(--space-1); }
+.decision.allow .decision-verdict strong { color: var(--success); }
+.decision.deny .decision-verdict strong { color: var(--danger); }
+.decision-trace { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-strong); }
+.decision-trace .data-table { min-width: 520px; }
+.effective-policy { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) 0; border-top: 1px solid var(--line); }
+.effective-policy:first-child { border-top: 0; }
+.effective-policy > div { min-width: 0; overflow-wrap: anywhere; }
+#toast.has-action { pointer-events: auto; }
+#toast .toast-action { min-height: 26px; margin-left: var(--space-2); padding: 0 var(--space-2); border-color: rgba(255, 255, 255, .6); color: #fff; background: transparent; box-shadow: none; }
+@media (max-width: 640px) {
+  .iam-inline-form .wide-field { grid-column: auto; }
+}

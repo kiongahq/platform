@@ -330,6 +330,11 @@ func Allowed(principal Principal, method, path string) bool {
 	if strings.HasPrefix(path, "/api/v1/admin/") {
 		return hasRole(principal, RoleAdmin) || hasRole(principal, RoleOperator)
 	}
+	// Self-service IAM reads (catalog, explain, effective access). The
+	// handlers restrict questions about other principals to administrators.
+	if strings.HasPrefix(path, "/api/v1/iam/") {
+		return method == http.MethodGet && !hasRole(principal, RoleService) && len(principal.Roles) > 0
+	}
 	if method == http.MethodGet && (path == "/api/v1/blogs" || strings.HasPrefix(path, "/api/v1/blogs/")) {
 		return true
 	}
@@ -468,6 +473,7 @@ func Permissions(principal Principal) map[string]bool {
 		"git_write":         Allowed(principal, http.MethodPut, "/api/v1/projects/example/repository"),
 		"connections_write": Allowed(principal, http.MethodPost, "/api/v1/connections"),
 		"access_manage":     Allowed(principal, http.MethodPut, "/api/v1/admin/users/example"),
+		"iam_manage":        Allowed(principal, http.MethodPut, "/api/v1/admin/iam/policies/example"),
 	}
 }
 

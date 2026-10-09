@@ -193,13 +193,13 @@ registerView("profile", loadMyAccess, {
     results: "The latest request and its decision appear on this page.",
   },
 });
-registerView("access", loadAccess, {
+registerView("access", async () => { await loadAccess(); await loadIAM(); }, {
   eyebrow: "IDENTITY & CAPACITY", title: "Users & access",
   intro: {
-    what: "Administrator tools for assigning services, projects, storage and compute to identities.",
-    why: "Unassigned access is denied by default; this is where you grant exactly what people need.",
+    what: "Administrator tools for identities, groups, IAM-style policies and their attachments, plus an access simulator.",
+    why: "Unassigned access is denied by default; roles and services set the baseline and policies refine it per project and pipeline.",
     needs: "Administrator or operator role.",
-    action: "Provision user stores an access profile. In local sign-in mode you can also set a password login.",
-    results: "Changes apply on the user's next request and are written to the audit log.",
+    action: "Provision user stores an access profile. Policies allow or deny actions on resources; attach them to users or groups.",
+    results: "Changes apply on the user's next request and are written to the audit log. Denials name the statement that decided.",
   },
 });

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ml-ai-ops/platform/internal/auth"
+	"github.com/ml-ai-ops/platform/internal/policy"
 	"github.com/ml-ai-ops/platform/internal/scheduler"
 	"github.com/ml-ai-ops/platform/internal/store"
 	"github.com/ml-ai-ops/platform/pkg/api"
@@ -64,8 +65,9 @@ func (s *Server) submitScheduledRun(ctx context.Context, definition api.Pipeline
 	if !auth.Allowed(owner, "POST", "/api/v1/pipelines/submit") {
 		return "", errors.New("schedule owner may not submit pipeline runs")
 	}
-	if !projectAllowed(s.store, owner, definition.ProjectID) {
-		return "", errors.New("schedule owner no longer has access to project " + definition.ProjectID)
+	decision := newAuthorizer(s.store, owner, policy.Context{Time: slot.UTC()}).check(policy.PipelineRun, definitionResource(definition))
+	if !decision.Allowed {
+		return "", errors.New("schedule owner may not run this pipeline: " + decision.Reason)
 	}
 	if err := enforceRunQuota(s.store, owner); err != nil {
 		return "", err

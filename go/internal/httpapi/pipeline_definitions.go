@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ml-ai-ops/platform/internal/pipelinespec"
+	"github.com/ml-ai-ops/platform/internal/policy"
 	"github.com/ml-ai-ops/platform/internal/store"
 	"github.com/ml-ai-ops/platform/pkg/api"
 )
@@ -97,9 +98,11 @@ func (s *Server) saveDefinitionYAML(w http.ResponseWriter, r *http.Request) {
 // editors: authorization, capacity and function checks, then the store.
 func (s *Server) saveDefinition(w http.ResponseWriter, r *http.Request, req api.UpsertPipelineDefinitionRequest) {
 	definitionID := r.PathValue("id")
+	a := s.authorizerFor(r)
+	resource := policy.PipelineResource(req.ProjectID, "*")
 	if definitionID != "" {
 		existing, err := s.store.PipelineDefinition(definitionID)
-		if err != nil || !projectAllowed(s.store, principal(r), existing.ProjectID) {
+		if err != nil || !a.allowed(policy.PipelineRead, definitionResource(existing)) {
 			writeError(w, http.StatusNotFound, "not_found", "pipeline definition not found")
 			return
 		}
@@ -107,9 +110,10 @@ func (s *Server) saveDefinition(w http.ResponseWriter, r *http.Request, req api.
 			writeIssues(w, pipelinespec.Issues{{Path: "metadata.project", Message: "a definition cannot move to another project; create a new one instead"}})
 			return
 		}
+		resource = definitionResource(existing)
 	}
-	if !projectAllowed(s.store, principal(r), req.ProjectID) {
-		writeError(w, http.StatusForbidden, "access_denied", "project is not assigned to this user")
+	if decision := a.gate(r, policy.PipelineWrite, resource); !decision.Allowed {
+		writeDenied(w, decision)
 		return
 	}
 	if err := enforcePipelineResources(s.store, principal(r), req.Jobs); err != nil {
@@ -147,7 +151,7 @@ func (s *Server) saveDefinition(w http.ResponseWriter, r *http.Request, req api.
 
 func (s *Server) allowedDefinition(w http.ResponseWriter, r *http.Request) (api.PipelineDefinition, bool) {
 	definition, err := s.store.PipelineDefinition(r.PathValue("id"))
-	if err != nil || !projectAllowed(s.store, principal(r), definition.ProjectID) {
+	if err != nil || !s.authorizerFor(r).allowed(policy.PipelineRead, definitionResource(definition)) {
 		writeError(w, http.StatusNotFound, "not_found", "pipeline definition not found")
 		return definition, false
 	}

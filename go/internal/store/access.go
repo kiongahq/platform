@@ -131,8 +131,8 @@ func validateAccess(subject string, req api.UpsertUserAccessRequest) (api.UserAc
 	if req.Role == "" {
 		req.Role = "user"
 	}
-	if req.Role != "admin" && req.Role != "user" {
-		return api.UserAccess{}, errors.New("role must be admin or user")
+	if !slices.Contains([]string{"admin", "operator", "engineer", "viewer", "user"}, req.Role) {
+		return api.UserAccess{}, errors.New("role must be admin, operator, engineer, viewer or user")
 	}
 	req.Services = unique(req.Services)
 	req.ProjectIDs = unique(req.ProjectIDs)

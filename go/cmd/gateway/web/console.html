@@ -220,10 +220,33 @@ python -m realtime.produce --demo recommendations --count 2</code><button type="
       <section id="access" class="view" aria-labelledby="page-title">
         <div class="section-heading"><div><p>Assign services, projects, storage, and workspace compute. Unassigned access is denied.</p></div><div class="heading-actions"><button class="primary" type="button" id="add-user-access" data-perm="access_manage">＋ Provision user</button></div></div>
         <div data-intro="access"></div>
-        <div class="access-admin-stack">
+        <div class="tabs" role="tablist" aria-label="Access administration" id="access-tabs"><button type="button" role="tab" id="access-tab-users" aria-selected="true" aria-controls="access-panel-users" data-access-tab="users">Users</button><button type="button" role="tab" id="access-tab-groups" aria-selected="false" aria-controls="access-panel-groups" data-access-tab="groups">Groups</button><button type="button" role="tab" id="access-tab-policies" aria-selected="false" aria-controls="access-panel-policies" data-access-tab="policies">Policies</button><button type="button" role="tab" id="access-tab-attachments" aria-selected="false" aria-controls="access-panel-attachments" data-access-tab="attachments">Attachments</button><button type="button" role="tab" id="access-tab-simulator" aria-selected="false" aria-controls="access-panel-simulator" data-access-tab="simulator">Access simulator</button></div>
+        <div class="access-admin-stack" id="access-panel-users" role="tabpanel" aria-labelledby="access-tab-users">
           <article class="panel table-wrap" tabindex="0"><div class="panel-heading table-heading"><div><p class="eyebrow">APPROVAL QUEUE</p><h3>Access requests</h3></div><span class="tag" id="access-request-count">0 pending</span></div><table class="data-table"><thead><tr><th scope="col">Requester</th><th scope="col">Requested services</th><th scope="col">Reason</th><th scope="col">Submitted</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="access-request-table"></tbody></table></article>
           <article class="panel table-wrap" tabindex="0"><div class="panel-heading table-heading"><div><p class="eyebrow">PROVISIONED IDENTITIES</p><h3>Users</h3></div></div><table class="data-table"><thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Services</th><th scope="col">Compute</th><th scope="col">Storage</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="access-table"></tbody></table></article>
         </div>
+        <div class="access-admin-stack" id="access-panel-groups" role="tabpanel" aria-labelledby="access-tab-groups" hidden>
+          <article class="panel table-wrap" tabindex="0"><div class="panel-heading table-heading"><div><p class="eyebrow">MEMBERSHIP</p><h3>Groups</h3><p>Attach policies to a group once; every member receives them.</p></div><button class="primary" type="button" id="add-iam-group" data-perm="iam_manage">＋ New group</button></div><table class="data-table"><thead><tr><th scope="col">Group</th><th scope="col">Members</th><th scope="col">Attached policies</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="iam-group-table"></tbody></table></article>
+        </div>
+        <div class="access-admin-stack" id="access-panel-policies" role="tabpanel" aria-labelledby="access-tab-policies" hidden>
+          <article class="panel table-wrap" tabindex="0"><div class="panel-heading table-heading"><div><p class="eyebrow">PERMISSIONS</p><h3>Policies</h3><p>Built-in role baselines apply through roles. Custom policies are versioned; every save keeps an immutable revision.</p></div><button class="primary" type="button" id="add-iam-policy" data-perm="iam_manage">＋ New policy</button></div><table class="data-table"><thead><tr><th scope="col">Policy</th><th scope="col">Version</th><th scope="col">Statements</th><th scope="col">Attached to</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="iam-policy-table"></tbody></table></article>
+        </div>
+        <div class="access-admin-stack" id="access-panel-attachments" role="tabpanel" aria-labelledby="access-tab-attachments" hidden>
+          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">GRANT</p><h3>Attach a policy</h3><p>You can only attach policies whose grants you already hold.</p></div></div>
+            <form id="iam-attach-form" class="iam-inline-form"><label>Policy<select name="policy_id" id="iam-attach-policy" required></select></label><label>Principal type<select name="principal_type"><option value="group">Group</option><option value="user">User</option></select></label><label>Principal<input name="principal_id" list="iam-principals" required placeholder="group id or user subject"></label><div class="form-actions"><button class="primary" type="submit" data-perm="iam_manage">Attach policy</button></div></form>
+            <p class="form-error" id="iam-attach-error" role="alert"></p>
+          </article>
+          <article class="panel table-wrap" tabindex="0"><div class="panel-heading table-heading"><div><p class="eyebrow">BINDINGS</p><h3>Attachments</h3></div></div><table class="data-table"><thead><tr><th scope="col">Policy</th><th scope="col">Principal</th><th scope="col">Attached</th><th scope="col">By</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="iam-attachment-table"></tbody></table></article>
+        </div>
+        <div class="access-admin-stack" id="access-panel-simulator" role="tabpanel" aria-labelledby="access-tab-simulator" hidden>
+          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">ACCESS SIMULATOR</p><h3>Would this request be allowed?</h3><p>Evaluates role baselines and attached policies exactly as the API does, and shows which statement decided.</p></div></div>
+            <form id="access-simulator-form" class="iam-inline-form"><label>Principal<input name="principal" list="iam-principals" placeholder="user subject (blank for you)"></label><label>Action<select name="action" id="simulator-action" required></select></label><label class="wide-field">Resource<input name="resource" required placeholder="kionga:project/prj-demo/pipeline/train"></label><label>Source IP<input name="ip" placeholder="optional, e.g. 10.0.0.5"></label><label>Resource profile<select name="resource_profile" id="simulator-profile"><option value="">Caller's profile</option></select></label><div class="form-actions"><button class="primary" type="submit">Evaluate</button></div></form>
+            <p class="form-error" id="access-simulator-error" role="alert"></p>
+            <div id="access-simulator-result" aria-live="polite"></div>
+          </article>
+          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">EFFECTIVE POLICIES</p><h3>What applies to this principal</h3></div></div><div id="access-effective"><p class="field-help">Evaluate a request to list the principal's policies.</p></div></article>
+        </div>
+        <datalist id="iam-principals"></datalist><datalist id="iam-actions"></datalist>
       </section>
     </main>
   </div>
@@ -426,6 +449,32 @@ mlaiops projects list</pre><div class="form-actions"><button class="primary" typ
     </form>
   </dialog>
 
+  <dialog id="iam-group-dialog" aria-labelledby="iam-group-title">
+    <form id="iam-group-form" class="provisioning-form compact-modal">
+      <header class="modal-header"><p class="eyebrow">GROUP</p><h2 id="iam-group-title">New group</h2><p>Members receive every policy attached to the group on their next request.</p></header>
+      <div class="modal-scroll"><input type="hidden" name="original_id"><section class="form-section"><div class="form-grid"><label>Name<input name="name" required minlength="2" maxlength="80" placeholder="ML analysts"></label><label>ID<input name="id" pattern="[a-z0-9][a-z0-9-]{1,62}" placeholder="generated from the name"></label></div><label>Description<input name="description" maxlength="500" placeholder="Who belongs here and why"></label><label>Members<textarea name="members" rows="4" placeholder="Subjects, separated by commas or new lines"></textarea><small>With OIDC, use the identity provider's sub claim; in local sign-in mode, the username.</small></label></section></div>
+      <footer class="modal-footer"><p class="form-error" id="iam-group-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save group</button></div></footer>
+    </form>
+  </dialog>
+
+  <dialog id="iam-policy-dialog" aria-labelledby="iam-policy-title">
+    <form id="iam-policy-form" class="provisioning-form" novalidate>
+      <header class="modal-header"><p class="eyebrow">POLICY</p><h2 id="iam-policy-title">New policy</h2><p>Default deny; an explicit deny always wins. Resources look like <code>kionga:project/&lt;id&gt;/pipeline/&lt;id&gt;</code>; a final <code>*</code> covers everything below.</p>
+        <div class="editor-tabs" role="tablist" aria-label="Policy editor mode"><button type="button" role="tab" id="policy-tab-form" aria-selected="true" aria-controls="policy-form-panel">Form</button><button type="button" role="tab" id="policy-tab-json" aria-selected="false" aria-controls="policy-json-panel">JSON</button></div>
+      </header>
+      <div class="modal-scroll"><input type="hidden" name="original_id"><input type="hidden" name="version">
+        <ul class="issue-list" id="policy-issues"></ul>
+        <div id="policy-form-panel" role="tabpanel" aria-labelledby="policy-tab-form">
+          <section class="form-section"><div class="form-grid"><label>Name<input name="name" required minlength="3" maxlength="80" placeholder="Read the churn project"></label><label>ID<input name="id" placeholder="generated from the name"></label></div><label>Description<input name="description" maxlength="500" placeholder="What this policy is for"></label></section>
+          <section class="form-section"><div class="form-section-title"><span aria-hidden="true">≡</span><div><h3>Statements</h3><p>Each statement allows or denies actions on resources, optionally under conditions.</p></div></div><div id="policy-statements"></div><div class="button-row start"><button type="button" id="add-policy-statement">＋ Add statement</button></div></section>
+        </div>
+        <div id="policy-json-panel" role="tabpanel" aria-labelledby="policy-tab-json" hidden><label>Policy JSON<textarea class="policy-editor" id="policy-json" spellcheck="false" rows="18"></textarea></label></div>
+      </div>
+      <footer class="modal-footer"><p class="form-error" id="iam-policy-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save policy</button></div></footer>
+    </form>
+  </dialog>
+
+  <dialog id="decision-dialog" aria-labelledby="decision-title"><div class="detail-sheet"><p class="eyebrow">ACCESS DECISION</p><h2 id="decision-title">Why was this denied?</h2><div id="decision-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
   <dialog id="about-dialog" aria-labelledby="about-title"><div class="detail-sheet"><p class="eyebrow">ABOUT</p><h2 id="about-title">Kionga</h2><div id="about-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
   <dialog id="preview-dialog" class="wide"><div class="detail-sheet"><div id="preview-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
   <dialog id="run-dialog"><div class="detail-sheet"><div id="run-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
@@ -446,6 +495,7 @@ mlaiops projects list</pre><div class="form-actions"><button class="primary" typ
   <script src="/js/views/data.js"></script>
   <script src="/js/views/platform.js"></script>
   <script src="/js/views/access.js"></script>
+  <script src="/js/views/iam.js"></script>
   <script src="/js/views/settings.js"></script>
   <script src="/js/views/blogs.js"></script>
   <script src="/huggingface.js"></script>

@@ -77,3 +77,16 @@ func TestPostgresPipelineRevisions(t *testing.T) {
 	storetest.ConcurrentStepReports(t, repository, project.ID)
 	storetest.Logs(t, repository, fmt.Sprintf("run-logs-%d", time.Now().UnixNano()))
 }
+
+func TestPostgresIAMPolicies(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	repository, err := store.OpenPostgres(context.Background(), databaseURL, fmt.Sprintf("iam-%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	storetest.IAM(t, repository)
+}
