@@ -89,3 +89,13 @@ template selected by the control plane. See
     Set `MLAIOPS_TOKEN` to a scoped personal key from **Console → Settings**.
     The CLI sends it as a bearer token and the gateway enforces the same service,
     project, and quota boundaries as the console.
+
+## Pipeline definitions as files
+
+| Command | Effect |
+| --- | --- |
+| `mlaiops pipeline export <definition-id>` | Prints the current revision's canonical YAML. |
+| `mlaiops pipeline validate <file>` | Validates against the server; prints issues as `line N (node X): message`; exit code 1 when invalid. |
+| `mlaiops pipeline apply <file> [definition-id] [message]` | Creates (no id) or updates the flow; prints `<id> revision N (sha256 …)`. |
+
+See [Pipelines](../guides/pipelines.md#revisions-diff-and-rollback).
