@@ -487,3 +487,21 @@ func TestLogsHonorLogsReadPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectSelectorMatchesPolicyVisibility(t *testing.T) {
+	f := newIAMFixture(t)
+	options := func() string { return f.user(http.MethodGet, "/api/v1/project-options", "").Body.String() }
+	if strings.Contains(options(), f.p2) || !strings.Contains(options(), f.p1) {
+		t.Fatalf("baseline options: %s", options())
+	}
+	createPolicy(t, f, `{"name":"Read bravo","statements":[{"sid":"ReadBravo","effect":"allow","actions":["project:Read"],"resources":["kionga:project/`+f.p2+`"]}]}`)
+	expectStatus(t, f.admin(http.MethodPost, "/api/v1/admin/iam/attachments", `{"policy_id":"read-bravo","principal_type":"user","principal_id":"user-1"}`), http.StatusCreated, "attach")
+	if !strings.Contains(options(), f.p2) {
+		t.Fatalf("policy-granted project missing from selector: %s", options())
+	}
+	createPolicy(t, f, `{"name":"Hide alpha","statements":[{"sid":"HideAlpha","effect":"deny","actions":["project:Read"],"resources":["kionga:project/`+f.p1+`"]}]}`)
+	expectStatus(t, f.admin(http.MethodPost, "/api/v1/admin/iam/attachments", `{"policy_id":"hide-alpha","principal_type":"user","principal_id":"user-1"}`), http.StatusCreated, "attach deny")
+	if strings.Contains(options(), f.p1) {
+		t.Fatalf("denied project still in selector: %s", options())
+	}
+}

@@ -189,11 +189,16 @@ func discoverWorkspace(ctx context.Context, client dynamic.Interface, namespace,
 }
 
 func (s *Server) projectOptions(w http.ResponseWriter, r *http.Request) {
-	// Only minimal metadata for projects already assigned to this identity.
+	// Minimal metadata for projects this identity works in: assigned ones
+	// (the selector serves every service, not only "projects"), plus
+	// projects a policy grants project:Read on, minus explicit denies.
 	items := []map[string]string{}
-	allowed := allowedProjectIDs(s.store, principal(r))
+	assigned := allowedProjectIDs(s.store, principal(r))
+	a := s.authorizerFor(r)
 	for _, p := range s.store.Projects() {
-		if allowed != nil && !allowed[p.ID] {
+		decision := a.check(policy.ProjectRead, policy.ProjectResource(p.ID))
+		explicitDeny := !decision.Allowed && decision.DecidedBy != policy.DefaultDeny && decision.DecidedBy != "coarse-gate"
+		if explicitDeny || !(decision.Allowed || assigned == nil || assigned[p.ID]) {
 			continue
 		}
 		items = append(items, map[string]string{"id": p.ID, "name": p.Name, "namespace": p.Namespace})
