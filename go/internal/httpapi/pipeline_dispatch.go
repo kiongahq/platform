@@ -134,6 +134,9 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 		go s.executeFunctionPipeline(context.Background(), run, definition)
 		return run
 	}
+	if run.DefinitionID != "" && kubernetesExecutorEnabled() {
+		return s.dispatchKubernetes(run)
+	}
 	if !s.prefectConfigured() {
 		failed, _ := s.reportStep(run.ID, api.UpdateRunStepRequest{Step: "submit-to-engine", Status: "failed", Message: "The pipeline engine is not configured (PREFECT_API_URL); the run was recorded but cannot execute."}, "system")
 		return failed
