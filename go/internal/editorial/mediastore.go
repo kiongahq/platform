@@ -118,7 +118,7 @@ func (f *FSStore) Delete(_ context.Context, key string) error {
 	return err
 }
 
-// S3Store keeps media in an S3-compatible bucket (MinIO locally) using
+// S3Store keeps media in an S3-compatible bucket (RustFS locally) using
 // SigV4-presigned requests, so no SDK is needed.
 type S3Store struct {
 	Config storage.Config

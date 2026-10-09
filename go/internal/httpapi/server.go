@@ -356,7 +356,7 @@ func readinessFor(repository store.Repository) api.Readiness {
 		{Key: "workspace", Label: "Create a workspace", Status: choose(len(repository.Projects()) > 0, "ready", "pending"), Description: "A project namespace and defaults are available.", Action: "projects"},
 		{Key: "kubernetes", Label: "Connect Kubernetes", Status: choose(healthy["kubernetes"], "ready", "pending"), Description: "Required to schedule pipelines and serving workloads.", Action: "platform"},
 		{Key: "tracking", Label: "Connect MLflow", Status: choose(healthy["mlflow"], "ready", "pending"), Description: "Tracks experiments, artifacts and model versions.", Action: "platform"},
-		{Key: "storage", Label: "Connect object storage", Status: choose(healthy["s3"] || healthy["minio"], "ready", "pending"), Description: "Stores datasets, models and pipeline artifacts.", Action: "platform"},
+		{Key: "storage", Label: "Connect object storage", Status: choose(healthy["s3"] || healthy["rustfs"] || healthy["minio"], "ready", "pending"), Description: "Stores datasets, models and pipeline artifacts.", Action: "platform"},
 		{Key: "events", Label: "Connect Kafka", Status: choose(healthy["kafka"], "ready", "pending"), Description: "Carries durable lifecycle and audit events.", Action: "platform"},
 	}
 	ready := 0

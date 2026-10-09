@@ -24,7 +24,7 @@ Data scientists usually want files. Infrastructure teams usually want object sto
 
 This guide explains a practical middle ground: mount selected S3-compatible buckets into a Jupyter workspace with **S3FS and FUSE**, keep the underlying object-store semantics visible, and design the container so failures are obvious rather than silently falling back to an empty local directory.
 
-The pattern works with AWS S3, MinIO, Ceph RGW, and many S3-compatible services.
+The pattern works with AWS S3, RustFS, MinIO, Ceph RGW, and many S3-compatible services.
 
 ## What we are building
 
@@ -156,7 +156,7 @@ For a production Kubernetes deployment, prefer workload identity, projected cred
 
 ### Path-style addressing
 
-**use_path_request_style** is commonly needed for MinIO and development endpoints where wildcard bucket DNS is unavailable. AWS S3 often works without it.
+**use_path_request_style** is commonly needed for RustFS, MinIO and development endpoints where wildcard bucket DNS is unavailable. AWS S3 often works without it.
 
 ### UID and GID mapping
 
