@@ -160,21 +160,21 @@ type PublicImage struct {
 // PublicBlogPost keeps the original /api/v1/blogs fields and adds the block
 // content, the server-rendered HTML and the cover image.
 type PublicBlogPost struct {
-	ID             string       `json:"id"`
-	Slug           string       `json:"slug"`
-	Title          string       `json:"title"`
-	Summary        string       `json:"summary"`
-	Content        string       `json:"content"`
-	Author         string       `json:"author"`
-	Tags           []string     `json:"tags"`
-	Status         string       `json:"status"`
-	CreatedAt      time.Time    `json:"created_at"`
-	UpdatedAt      time.Time    `json:"updated_at"`
-	PublishedAt    *time.Time   `json:"published_at,omitempty"`
-	ReadingMinutes int          `json:"reading_minutes"`
-	SEO            PostSEO      `json:"seo"`
-	Cover          *PublicImage `json:"cover,omitempty"`
-	Blocks         []Block      `json:"blocks,omitempty"`
-	RenderedHTML   string       `json:"rendered_html,omitempty"`
-	Related        []string     `json:"related,omitempty"`
+	ID             string           `json:"id"`
+	Slug           string           `json:"slug"`
+	Title          string           `json:"title"`
+	Summary        string           `json:"summary"`
+	Content        string           `json:"content"`
+	Author         string           `json:"author"`
+	Tags           []string         `json:"tags"`
+	Status         string           `json:"status"`
+	CreatedAt      time.Time        `json:"created_at"`
+	UpdatedAt      time.Time        `json:"updated_at"`
+	PublishedAt    *time.Time       `json:"published_at,omitempty"`
+	ReadingMinutes int              `json:"reading_minutes"`
+	SEO            PostSEO          `json:"seo"`
+	Cover          *PublicImage     `json:"cover,omitempty"`
+	Blocks         []Block          `json:"blocks,omitempty"`
+	RenderedHTML   string           `json:"rendered_html,omitempty"`
+	Related        []PublicBlogPost `json:"related,omitempty"`
 }

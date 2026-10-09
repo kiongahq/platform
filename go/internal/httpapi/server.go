@@ -60,12 +60,6 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/v1/settings/tokens", server.apiTokens)
 	mux.HandleFunc("POST /api/v1/settings/tokens", server.createAPIToken)
 	mux.HandleFunc("DELETE /api/v1/settings/tokens/{id}", server.revokeAPIToken)
-	mux.HandleFunc("GET /api/v1/blogs", server.blogPosts)
-	mux.HandleFunc("GET /api/v1/blogs/{slug}", server.blogPost)
-	mux.HandleFunc("GET /api/v1/admin/blogs", server.adminBlogPosts)
-	mux.HandleFunc("POST /api/v1/admin/blogs", server.createBlogPost)
-	mux.HandleFunc("PUT /api/v1/admin/blogs/{id}", server.updateBlogPost)
-	mux.HandleFunc("DELETE /api/v1/admin/blogs/{id}", server.deleteBlogPost)
 	mux.HandleFunc("GET /api/v1/dashboard", server.dashboard)
 	mux.HandleFunc("GET /api/v1/onboarding/readiness", server.readiness)
 	mux.HandleFunc("GET /api/v1/project-templates", server.projectTemplates)
@@ -281,58 +275,8 @@ func tokenScopesAllowed(repository store.Repository, value auth.Principal, servi
 	return true
 }
 
-func (s *Server) blogPosts(w http.ResponseWriter, _ *http.Request) {
-	items := make([]api.BlogPost, 0)
-	for _, post := range s.store.BlogPosts() {
-		if post.Status == "published" {
-			post.Content = ""
-			items = append(items, post)
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
-}
-
-func (s *Server) blogPost(w http.ResponseWriter, r *http.Request) {
-	post, err := s.store.BlogPost(r.PathValue("slug"))
-	if err != nil || post.Status != "published" {
-		writeError(w, http.StatusNotFound, "not_found", "blog post not found")
-		return
-	}
-	writeJSON(w, http.StatusOK, post)
-}
-
-func (s *Server) adminBlogPosts(w http.ResponseWriter, _ *http.Request) {
-	items := s.store.BlogPosts()
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
-}
-
-func (s *Server) createBlogPost(w http.ResponseWriter, r *http.Request) {
-	var req api.UpsertBlogPostRequest
-	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-	post, err := s.store.UpsertBlogPost("", req, actor(r))
-	writeMutation(w, post, err, http.StatusCreated)
-}
-
-func (s *Server) updateBlogPost(w http.ResponseWriter, r *http.Request) {
-	var req api.UpsertBlogPostRequest
-	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-	post, err := s.store.UpsertBlogPost(r.PathValue("id"), req, actor(r))
-	writeMutation(w, post, err, http.StatusOK)
-}
-
-func (s *Server) deleteBlogPost(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.DeleteBlogPost(r.PathValue("id"), actor(r)); err != nil {
-		writeMutation(w, struct{}{}, err, http.StatusNoContent)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
+// Blog reading and writing live in editorial.go (public /api/v1/blogs and
+// the /api/v1/editorial workspace API).
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "mlaiops-gateway", "version": "0.1.0"})

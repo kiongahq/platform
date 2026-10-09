@@ -124,7 +124,8 @@ func (v *Verifier) Middleware(next http.Handler) http.Handler {
 }
 
 func publicPath(method, path string) bool {
-	if method == http.MethodGet && (path == "/api/v1/blogs" || strings.HasPrefix(path, "/api/v1/blogs/")) {
+	if method == http.MethodGet && (path == "/api/v1/blogs" || strings.HasPrefix(path, "/api/v1/blogs/") ||
+		strings.HasPrefix(path, "/media/blog/") || strings.HasPrefix(path, "/vendor/highlight/")) {
 		return true
 	}
 	switch path {
@@ -329,6 +330,12 @@ func Allowed(principal Principal, method, path string) bool {
 	}
 	if strings.HasPrefix(path, "/api/v1/admin/") {
 		return hasRole(principal, RoleAdmin) || hasRole(principal, RoleOperator)
+	}
+	// The editorial workspace authorizes with its own membership and session
+	// (httpapi/editorial.go); platform roles neither grant nor deny it, but
+	// machine identities and API tokens never reach it.
+	if strings.HasPrefix(path, "/api/v1/editorial/") {
+		return principal.Subject != "" && !hasRole(principal, RoleService) && principal.Credential != "api_token"
 	}
 	if method == http.MethodGet && (path == "/api/v1/blogs" || strings.HasPrefix(path, "/api/v1/blogs/")) {
 		return true
