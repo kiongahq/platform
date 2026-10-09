@@ -960,7 +960,7 @@ p.hint { font-family: var(--font-sans); white-space: normal; }
 .status.fresh { color: var(--success); background: var(--success-soft); }
 .status.stale { color: var(--warning); background: var(--warning-soft); }
 .status.never, .status.configured { color: var(--text-secondary); background: var(--neutral-soft); }
-.scaffold-facts { margin: var(--space-3) 0; }
+.scaffold-actions { margin-top: var(--space-3); }
 .argv-list { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--space-2) 0; padding: 0; list-style: none; }
 .argv-list li { padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--radius-md); font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 .scaffold-run { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); }

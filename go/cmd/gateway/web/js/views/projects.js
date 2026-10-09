@@ -65,7 +65,7 @@ async function openProjectDetail(id) {
       ${metaList([["Output folder", `<code>${escapeHTML(output)}</code>`], ["Template", `${escapeHTML(project.template)} v${escapeHTML(project.template_version || "—")}`], ["Opens in", "JupyterLab and the IDE open this same folder"]])}
       <div class="command-block"><code>${escapeHTML(project.scaffold_command)}</code>${copyButton(project.scaffold_command, "Copy command")}</div>
       <p class="field-help">To run it yourself, open a terminal in <code>/workspace/projects</code> and paste the command.</p>
-      <div class="button-row start">${canRun ? `<button type="button" class="primary" data-scaffold-run="${escapeHTML(project.id)}">Run in workspace…</button>` : `<button type="button" disabled title="${escapeHTML(can("projects_write") ? "Running in a workspace needs JupyterLab or the IDE assigned to you." : denialReason())}">Run in workspace…</button>`}</div>
+      <div class="button-row start scaffold-actions">${canRun ? `<button type="button" class="primary" data-scaffold-run="${escapeHTML(project.id)}">Run in workspace…</button>` : `<button type="button" disabled title="${escapeHTML(can("projects_write") ? "Running in a workspace needs JupyterLab or the IDE assigned to you." : denialReason())}">Run in workspace…</button>`}</div>
       <div id="scaffold-run" class="scaffold-run" aria-live="polite" hidden></div>
       ${repository ? `<p class="field-help" style="margin-top:var(--space-3)">Already scaffolded and pushed? Sync it into a workspace with <code>kionga project sync ${escapeHTML(project.id)}</code>.</p>` : ""}
     </article>` : "";
