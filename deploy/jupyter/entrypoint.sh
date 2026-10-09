@@ -46,6 +46,10 @@ if [ ! -f /workspace/quickstart.ipynb ]; then
   cp /opt/seed/quickstart.ipynb /workspace/quickstart.ipynb
 fi
 
+# Loopback-only workspace sidecar (project folders and structured scaffold
+# jobs). Jupyter reaches it through jupyter-server-proxy behind its token.
+"$@" env KIONGA_WORKSPACE=/workspace python3 /usr/local/lib/kionga_workspace_directories.py &
+
 exec "$@" jupyter lab \
   --ip=0.0.0.0 \
   --port=8888 \
