@@ -114,7 +114,7 @@ test('branched DAG: schedule, manual run with override, parallel nodes, node log
   expect(run.provenance.definition_revision).toBe(3);
   expect(run.provenance.definition_sha256).toMatch(/^[a-f0-9]{64}$/);
   expect(run.provenance.overrides.parameters.window).toBe('weekly');
-  expect(run.provenance.policy_decision).toContain('role-baseline');
+  expect(run.provenance.policy_decision).toMatch(/pipeline:Run=kionga-admin@v\d+#\w+.*pipeline:OverrideParameters=/);
   expect(Object.keys(run.provenance.image_digests).sort()).toEqual(['extract', 'join', 'left', 'right']);
   for (const step of run.steps) {
     expect(step.workload_kind).toBe('docker-container');
