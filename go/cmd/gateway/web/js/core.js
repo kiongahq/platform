@@ -18,6 +18,7 @@ const api = async (path, options = {}) => {
     const error = new Error(body.message || body.error || "Unable to complete this request. Please retry.");
     error.status = response.status;
     error.details = body.details || body.errors || null;
+    error.decision = body.decision || null;
     throw error;
   }
   return body;
@@ -44,13 +45,54 @@ const csv = value => String(value || "").split(",").map(item => item.trim()).fil
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 let toastTimer = null;
-function toast(message, kind = "info") {
+/* A failure carrying an access decision (403 from the policy engine) gets a
+ * "Why?" button that explains the denial for the current user. */
+function toast(message, kind = "info", failure = null) {
   const node = document.querySelector("#toast");
   node.textContent = message;
+  const decision = failure?.decision;
+  node.classList.toggle("has-action", Boolean(decision));
+  if (decision) {
+    const why = document.createElement("button");
+    why.type = "button";
+    why.className = "toast-action";
+    why.textContent = "Why?";
+    why.setAttribute("aria-label", "Why was this denied?");
+    why.addEventListener("click", () => explainDenial(decision).catch(error => toast(error.message, "error")));
+    node.append(" ", why);
+  }
   node.classList.toggle("error", kind === "error");
   node.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => node.classList.remove("show"), kind === "error" ? 5000 : 2600);
+  toastTimer = setTimeout(() => node.classList.remove("show"), decision ? 9000 : kind === "error" ? 5000 : 2600);
+}
+
+/* Renders a policy decision and its explain trace. */
+function decisionHTML(decision) {
+  const allowed = decision.allowed === true;
+  const matched = decision.matched_statements || [];
+  const evaluated = decision.evaluated_policies || [];
+  return `<div class="decision ${allowed ? "allow" : "deny"}" data-decision="${allowed ? "allow" : "deny"}">
+    <p class="decision-verdict"><strong>${allowed ? "Allowed" : "Denied"}</strong> <code>${escapeHTML(decision.action)}</code> on <code>${escapeHTML(decision.resource)}</code></p>
+    <p>${escapeHTML(decision.reason)}</p>
+    ${metaList([["Decided by", `<code>${escapeHTML(decision.decided_by)}</code>`], ["Policies evaluated", String(evaluated.length)]])}
+    ${matched.length ? `<div class="table-wrap decision-trace"><table class="data-table compact-table"><thead><tr><th scope="col">Statement</th><th scope="col">Effect</th><th scope="col">Policy</th><th scope="col">Applies through</th></tr></thead><tbody>${matched.map(item => `<tr><td><code>${escapeHTML(item.sid)}</code></td><td>${status(item.effect === "deny" ? "denied" : "allowed")}</td><td>${escapeHTML(item.policy_name)} <small>v${escapeHTML(item.version)}</small></td><td>${escapeHTML(item.source)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="field-help">No statement matched this action and resource.</p>`}
+    ${evaluated.length ? `<div class="tags">${evaluated.map(item => `<span class="tag" title="${escapeHTML(item.source)}">${escapeHTML(item.id)}@v${escapeHTML(item.version)}</span>`).join("")}</div>` : ""}
+  </div>`;
+}
+
+/* Re-evaluates a denial for the signed-in user and shows the trace. The
+ * decision from the failed request is the fallback (and is authoritative
+ * for the coarse role/service gate, which explain does not model). */
+async function explainDenial(decision) {
+  let shown = decision;
+  if (decision.action && decision.resource && decision.decided_by !== "coarse-gate") {
+    try {
+      shown = (await api(`/api/v1/iam/explain?${new URLSearchParams({action: decision.action, resource: decision.resource})}`)).decision || decision;
+    } catch { /* keep the original decision */ }
+  }
+  document.querySelector("#decision-detail").innerHTML = decisionHTML(shown);
+  document.querySelector("#decision-dialog").showModal();
 }
 
 async function copyText(value) {
@@ -97,7 +139,7 @@ async function withBusy(button, action, {success = "", failure = true} = {}) {
     return result;
   } catch (error) {
     if (button) flashButton(button, "error");
-    if (failure) toast(error.message, "error");
+    if (failure) toast(error.message, "error", error);
     throw error;
   } finally {
     if (button) { button.removeAttribute("aria-busy"); button.disabled = false; }
@@ -349,7 +391,7 @@ async function handleDynamicClick(event) {
   }
 }
 document.addEventListener("click", event => {
-  handleDynamicClick(event).catch(failure => { feedback(failure.message, true); toast(failure.message, "error"); });
+  handleDynamicClick(event).catch(failure => { feedback(failure.message, true); toast(failure.message, "error", failure); });
 });
 document.addEventListener("keydown", event => {
   if ((event.key === "Enter" || event.key === " ") && event.target.matches("[role='button']")) {
