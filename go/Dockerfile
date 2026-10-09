@@ -1,6 +1,6 @@
 # Local Go-service build context. Keeping it inside go/ avoids large or
 # unavailable files elsewhere in a macOS iCloud-backed checkout.
-FROM golang:1.25-alpine AS build
+FROM golang:1.26.9-alpine AS build
 WORKDIR /src/go
 COPY go.mod go.sum ./
 RUN --mount=type=cache,id=kionga-go-mod,target=/go/pkg/mod go mod download
