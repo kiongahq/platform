@@ -40,7 +40,7 @@
         <p class="nav-group-label">Account</p>
         <button class="nav-item" type="button" data-view="profile"><span aria-hidden="true">♙</span>My access</button>
         <button class="nav-item" type="button" data-view="settings"><span aria-hidden="true">⚙</span>Settings</button>
-        <button class="nav-item" type="button" data-view="blogs" data-admin-only hidden><span aria-hidden="true">✎</span>Engineering blog</button>
+        <button class="nav-item" type="button" data-view="blogs"><span aria-hidden="true">✎</span>Engineering blog</button>
       </nav>
       <div class="sidebar-footer">
         <div class="cluster user-chip"><i id="user-dot" aria-hidden="true"></i><span><b id="user-name">…</b><small id="user-role">Resolving identity</small></span></div>
@@ -205,8 +205,8 @@ python -m realtime.produce --demo recommendations --count 2</code><button type="
       </section>
 
       <section id="blogs" class="view" aria-labelledby="page-title">
-        <div class="section-heading"><div><p>Published articles on the public engineering blog.</p></div><div class="heading-actions"><a class="button-link" href="/blogs.html" target="_blank" rel="noopener">Open blog ↗</a><button class="primary" type="button" id="new-blog-post">＋ New post</button></div></div>
-        <article class="panel table-wrap"><table class="data-table"><thead><tr><th scope="col">Post</th><th scope="col">Author</th><th scope="col">Tags</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="blog-admin-table"></tbody></table></article>
+        <div class="section-heading"><div><p>Published articles on the public engineering blog. Writing, review and publishing happen in the separate editorial workspace, which needs an editorial membership (ML platform roles do not grant it).</p></div><div class="heading-actions"><a class="button-link" href="/blogs.html" target="_blank" rel="noopener">Open blog ↗</a><a class="button-link primary" href="/editorial.html" id="open-editorial">Open editorial workspace</a></div></div>
+        <article class="panel table-wrap"><table class="data-table"><thead><tr><th scope="col">Post</th><th scope="col">Author</th><th scope="col">Tags</th><th scope="col">Published</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="blog-published-table"></tbody></table></article>
       </section>
 
       <section id="access" class="view" aria-labelledby="page-title">
@@ -298,13 +298,6 @@ python -m realtime.produce --demo recommendations --count 2</code><button type="
   <dialog id="api-token-secret-dialog" aria-labelledby="api-token-secret-title"><div class="detail-sheet token-secret-sheet"><p class="eyebrow">KEY CREATED</p><h2 id="api-token-secret-title">Copy your key now</h2><p>This secret will not be shown again.</p><div class="token-secret"><code id="api-token-secret"></code><button type="button" id="copy-api-token">Copy</button></div><pre class="hint">export MLAIOPS_TOKEN="your-key"
 mlaiops projects list</pre><div class="form-actions"><button class="primary" type="button" data-dialog-close>I have saved it</button></div></div></dialog>
 
-  <dialog id="blog-editor-dialog" aria-labelledby="blog-editor-title">
-    <form id="blog-editor-form" class="provisioning-form blog-editor-form">
-      <header class="modal-header"><p class="eyebrow">ENGINEERING BLOG</p><h2 id="blog-editor-title">New post</h2><p>Markdown is stored in the control plane and rendered safely on the public site.</p></header>
-      <div class="modal-scroll"><input type="hidden" name="id"><section class="form-section"><div class="form-grid"><label>Title<input name="title" required minlength="5" placeholder="A useful engineering title"></label><label>Slug<input name="slug" placeholder="generated-from-title"></label><label>Status<select name="status"><option value="draft">Draft</option><option value="published">Published</option></select></label><label>Author<input name="author" value="Kionga Engineering"></label><label>Tags<input name="tags" placeholder="Jupyter, S3, Infrastructure"></label></div><label>Summary<textarea name="summary" required minlength="20" rows="3" placeholder="What will a reader learn?"></textarea></label></section><section class="form-section"><label>Article Markdown<textarea class="blog-content-editor" name="content" required minlength="100" rows="20" placeholder="## Section title&#10;&#10;Write a detailed, practical engineering guide…"></textarea></label></section></div>
-      <footer class="modal-footer"><p class="form-error" id="blog-editor-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save post</button></div></footer>
-    </form>
-  </dialog>
 
   <dialog id="chat-dialog" aria-labelledby="chat-agent-name">
     <div class="detail-sheet chat-sheet">
