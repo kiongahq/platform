@@ -36,6 +36,9 @@ type WorkspaceReconciler struct {
 	LangfuseURL    string
 	KafkaRESTURL   string
 	StorageClass   string
+	// AllowedStorageClasses, when set, is the only set of classes tenant
+	// workspace claims may use (WORKSPACE_ALLOWED_STORAGE_CLASSES).
+	AllowedStorageClasses []string
 }
 
 func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
@@ -45,6 +48,11 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 	}
 	if workspace.Spec.Subject == "" || workspace.Spec.Compute.VCPUs < 1 || workspace.Spec.Compute.MemoryGB < 1 || workspace.Spec.StorageGB < 1 {
 		return r.fail(ctx, &workspace, "InvalidSpec", fmt.Errorf("subject, vcpus, memoryGB and storageGB must be positive"))
+	}
+
+	volumes := []corev1.Volume{{Name: "workspace", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: workspace.Name}}}}
+	if err := ValidateTenantStorage(r.StorageClass, r.AllowedStorageClasses, volumes); err != nil {
+		return r.fail(ctx, &workspace, "StorageNotAllowed", err)
 	}
 
 	labels := map[string]string{
@@ -99,7 +107,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		deployment.Spec.Template.ObjectMeta.Labels = labels
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{FSGroup: ptrInt64(1000), RunAsNonRoot: ptrBool(true), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
 		deployment.Spec.Template.Spec.Containers = containers
-		deployment.Spec.Template.Spec.Volumes = []corev1.Volume{{Name: "workspace", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvc.Name}}}}
+		deployment.Spec.Template.Spec.Volumes = volumes
 		return controllerutil.SetControllerReference(&workspace, deployment, r.Scheme())
 	})
 	if err != nil {
