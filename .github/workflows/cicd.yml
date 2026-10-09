@@ -16,13 +16,13 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run test:ui
-      - run: node --check go/cmd/gateway/web/workspace.js
+      - run: for f in go/cmd/gateway/web/js/*.js go/cmd/gateway/web/js/views/*.js go/cmd/gateway/web/*.js; do node --check "$f"; done
 
   go:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16.9-alpine
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: mlaiops
           POSTGRES_PASSWORD: mlaiops-ci
@@ -38,10 +38,12 @@ jobs:
         working-directory: go
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive        # contracts/, read by pipelinespec tests
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
-          cache-dependency-path: go/go.mod
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
       - run: gofmt -l . | tee /tmp/unformatted && test ! -s /tmp/unformatted
       - run: go vet ./...
       - run: go test -race ./...
@@ -50,18 +52,16 @@ jobs:
           TEST_DATABASE_URL: postgres://mlaiops:mlaiops-ci@localhost:5432/mlaiops?sslmode=disable
       - run: go build ./cmd/...
       - name: Enforce architecture exclusions
-        run: |
-          ! grep -RniE '\b(mlrun|nuclio|v3io|iguazio)\b' . ../config
+        run: "! grep -RniE '\\b(mlrun|nuclio|v3io|iguazio)\\b' ."
 
-  python:
+  security:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
         with:
-          python-version: "3.11"
-          cache: pip
-      - run: make install
-      - run: ruff check python
-      - run: python -m pytest -q
-      - run: python -m compileall -q python/mlaiops_sdk
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: govulncheck (fails on any called vulnerability)
+        working-directory: go
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

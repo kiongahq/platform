@@ -236,7 +236,7 @@ func classifyWorkspaceProbe(ctx context.Context, client *http.Client, kind strin
 		if response, err := client.Do(request); err == nil {
 			response.Body.Close()
 			if response.StatusCode < 500 && response.StatusCode != http.StatusNotFound {
-				return workspaceMisrouted, "Jupyter is running from an outdated image that does not serve /workspaces/workbench/. Rebuild it with make local-rebuild (or docker compose -f deploy/compose.yaml up -d --build jupyter)."
+				return workspaceMisrouted, "Jupyter is running from an outdated image that does not serve /workspaces/workbench/. Rebuild it from the deploy checkout with make -C deploy local-rebuild (or docker compose -f deploy/compose.yaml up -d --build jupyter)."
 			}
 		}
 		return workspaceMisrouted, "Jupyter does not serve /workspaces/workbench/api. Check that the workspace runs with --ServerApp.base_url=/workspaces/workbench/."

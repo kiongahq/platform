@@ -269,7 +269,7 @@ func executeScaffold(ctx context.Context, kind string, target *workspaceDestinat
 	switch {
 	case response.StatusCode == http.StatusOK:
 	case response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusBadGateway:
-		return failed("This workspace image has no scaffold runner. Rebuild it (make local-rebuild) so it includes the Kionga workspace sidecar.")
+		return failed("This workspace image has no scaffold runner. Rebuild it (make -C deploy local-rebuild) so it includes the Kionga workspace sidecar.")
 	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden || (response.StatusCode >= 300 && response.StatusCode < 400):
 		return failed("The workspace rejected the scaffold credential. KIONGA_WORKSPACE_JOB_TOKEN must match on the gateway and the workspace.")
 	default:

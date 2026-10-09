@@ -1,25 +1,13 @@
 name: Build & Publish Images
 
-# Builds every service image and publishes it to the GitHub Container
-# Registry (ghcr.io/kiongahq/<service>), so a VM can pull the exact images
-# instead of rebuilding them — the "build once, deploy anywhere" path.
-#
-# Tags applied:
-#   sha-<short>   every build (immutable, deployable pin)
-#   latest        pushes to the default branch
-#   <branch>      branch pushes
-#   X.Y.Z         git tags like v1.2.3 (semver)
-
+# Publishes the platform's Go services to ghcr.io/kiongahq/<service>. Other
+# images are published by their own repositories (see kiongahq/deploy).
+#   sha-<short>  every build      latest  default branch      X.Y.Z  v* tags
 on:
   push:
     branches: [main]
     tags: ["v*"]
-    paths:
-      - go/**
-      - python/**
-      - deploy/**
-      - Dockerfile
-      - .github/workflows/build.yml
+    paths: [go/**, .github/workflows/build.yml]
   workflow_dispatch:
 
 permissions:
@@ -32,74 +20,14 @@ concurrency:
 
 jobs:
   images:
-    name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.service }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Go services — one Dockerfile, selected by the SERVICE build arg.
-          - { name: gateway, dockerfile: Dockerfile, context: ., build_args: "SERVICE=gateway" }
-          - { name: operator, dockerfile: Dockerfile, context: ., build_args: "SERVICE=operator" }
-          - { name: integration-worker, dockerfile: Dockerfile, context: ., build_args: "SERVICE=integration-worker" }
-          - { name: trace-proxy, dockerfile: Dockerfile, context: ., build_args: "SERVICE=trace-proxy" }
-          - { name: feature-gateway, dockerfile: Dockerfile, context: ., build_args: "SERVICE=feature-gateway" }
-          - { name: storage-proxy, dockerfile: Dockerfile, context: ., build_args: "SERVICE=storage-proxy" }
-          - { name: metrics-collector, dockerfile: Dockerfile, context: ., build_args: "SERVICE=metrics-collector" }
-          - { name: serving-manager, dockerfile: Dockerfile, context: ., build_args: "SERVICE=serving-manager" }
-          - { name: cli, dockerfile: Dockerfile, context: ., build_args: "SERVICE=cli" }
-          # Python and other images — their own Dockerfiles and contexts.
-          - { name: agent-runtime, dockerfile: python/agent_runtime/Dockerfile, context: . }
-          - { name: pipeline-runner, dockerfile: python/pipelines/Dockerfile, context: . }
-          - { name: jupyter, dockerfile: deploy/jupyter/Dockerfile, context: . }
-          - { name: ide, dockerfile: deploy/ide/Dockerfile, context: . }
-          - { name: mlflow, dockerfile: deploy/mlflow/Dockerfile, context: deploy/mlflow }
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Image metadata (tags + labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
-          tags: |
-            type=sha,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          build-args: ${{ matrix.build_args }}
-          platforms: linux/amd64
-          push: true
-          provenance: mode=min
-          sbom: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-
-      - name: Summary
-        run: |
-          {
-            echo "### ${{ matrix.name }} published"
-            echo "Immutable digest: ${{ steps.build.outputs.digest }}"
-            echo '```'
-            echo "${{ steps.meta.outputs.tags }}"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+        service: [gateway, operator, integration-worker, feature-gateway, storage-proxy,
+                  metrics-collector, log-exporter, cli]
+    uses: kiongahq/.github/.github/workflows/image.yml@main
+    with:
+      image: ${{ matrix.service }}
+      context: go
+      build-args: SERVICE=${{ matrix.service }}

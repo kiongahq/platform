@@ -13,7 +13,7 @@ infrastructure services and Python owns the ML-facing SDK and workload primitive
 - Versioned Kubernetes CRDs, RBAC, network isolation, and reconciled per-user Jupyter/IDE workspaces
 - Online feature gateway with a Feast-compatible request shape
 - S3/MinIO proxy generating bounded AWS SigV4 URLs
-- OpenAI-compatible LLM reverse proxy with asynchronous trace emission
+- OpenAI-compatible LLM reverse proxy with asynchronous trace emission ([trace-proxy](https://github.com/kiongahq/trace-proxy))
 - Prometheus component-health collector
 - Standard API clients for KFP, MLflow, Langfuse, and Kafka REST Proxy
 - PostgreSQL repositories with transactional Kafka outbox delivery
@@ -37,7 +37,7 @@ infrastructure services and Python owns the ML-facing SDK and workload primitive
   model-specific exact-dependency serving images and a generic serving fallback
 - Agent sessions, traces, tools, token usage and cost aggregation
 - Dex, Vault, CloudNativePG backup and scoped NetworkPolicy assets
-- Typed Python SDK, pipeline compiler, tool registry, and tracing primitive
+- Typed Python SDK, pipeline compiler, tool registry, and tracing primitive ([sdk-python](https://github.com/kiongahq/sdk-python))
 - Single-binary CLI for common platform operations
 - Container and Kubernetes deployment assets
 
@@ -51,71 +51,55 @@ trusted laptop or single-operator VM, not multi-tenant isolation. Distributed-te
 deployments use Kubernetes-native workers/KFP and KServe without exposing a node's
 container-runtime socket to platform workloads.
 
+## Repositories
+
+This repository is Kionga's control plane: the Go gateway and its embedded console,
+auth and IAM policies, the PostgreSQL store, scheduler, pipeline validation and
+execution, logs, editorial, the Kubernetes operator, feature gateway, storage proxy,
+integration worker, log exporter and CLI. The other parts live beside it in the
+[kiongahq](https://github.com/kiongahq) organization:
+[sdk-python](https://github.com/kiongahq/sdk-python),
+[agent-runtime](https://github.com/kiongahq/agent-runtime),
+[pipeline-runner](https://github.com/kiongahq/pipeline-runner),
+[serving](https://github.com/kiongahq/serving),
+[trace-proxy](https://github.com/kiongahq/trace-proxy),
+[workspace](https://github.com/kiongahq/workspace),
+[contracts](https://github.com/kiongahq/contracts) (a submodule here, at `contracts/`),
+[deploy](https://github.com/kiongahq/deploy) and
+[docs](https://github.com/kiongahq/docs). See
+[Repositories](https://kiongahq.github.io/docs/overview/repositories/) for how they
+connect.
+
 ## Quick start
 
-The full platform requires Docker Engine with Compose v2, 8 GB of Docker memory,
-and roughly 25–35 GB of free Docker storage for the first build. Go and Python are
-only required when building or testing outside containers.
+Run the whole platform from [deploy](https://github.com/kiongahq/deploy), which
+clones this repository and the others side by side and builds them together:
 
 ```bash
-make local-up
+mkdir ~/kionga && cd ~/kionga
+git clone git@github.com:kiongahq/deploy.git
+make -C deploy workspace     # clones platform, sdk-python, agent-runtime, ...
+make -C deploy local-up
 ```
 
-That command performs the whole bootstrap: it checks Docker, limits concurrent
-downloads, retries transient registry/CDN failures, builds the local images, waits
-for the API, and creates Kafka topics. Re-running it is safe and resumes cached image
-layers. `make local` is a shorter alias.
-
-Normal starts reuse local images and build any that are missing. After changing
-Dockerized source or dependencies, run `make local-rebuild` once to rebuild the
-affected images and start the stack.
-
-Open the console URL printed by `make local-up` and sign in with the local
-development account `admin` / `mlaiops-local`. It defaults to
-<http://localhost:8080>; if that port is occupied, the script chooses an available
-port in 18080–18084 and prints the actual URL. Set `GATEWAY_PORT` to choose one
-explicitly.
-
-The SDK and CLI use the same API:
-
-Create an API key in **Settings → API keys** and export it as `MLAIOPS_TOKEN`
-before using the SDK or CLI. Local API requests now require authentication too.
-Open Jupyter or the IDE from the console to reuse your signed-in session. Select
-a project first to keep its context across pipelines, models, agents, and tools.
-
-```python
-from mlaiops_sdk import MLAIOpsClient
-
-with MLAIOpsClient(actor="engineer@example.com") as client:
-    project = client.create_project(
-        "churn",
-        template="production-ml",
-        framework="xgboost",
-        accelerator="cpu",
-    )
-    run = client.submit_pipeline(project.id)
-```
+Open <http://localhost:8080> and sign in with the local development account
+`admin` / `mlaiops-local`. Create an API key in **Settings → API keys** and export it
+as `MLAIOPS_TOKEN` to use the SDK or CLI.
 
 ## Build and verify
 
 ```bash
-make verify
-make test-integration
+git clone --recurse-submodules git@github.com:kiongahq/platform.git
+make verify              # gofmt, vet, race tests, builds, console syntax
+make test-ui             # console unit tests (jsdom)
+make test-integration    # PostgreSQL integration tests (Docker)
+make test-browser        # Playwright acceptance against a running stack
+make run                 # gateway alone on :8080 with a file-backed store
 ```
 
-Builds produced in `bin/`:
-
-```text
-mlaiops-gateway
-mlaiops-operator
-mlaiops-integration-worker
-mlaiops-trace-proxy
-mlaiops-feature-gateway
-mlaiops-storage-proxy
-mlaiops-metrics-collector
-mlaiops-serving-manager
-mlaiops-cli
-```
+Binaries land in `bin/` (`mlaiops-gateway`, `-operator`, `-integration-worker`,
+`-feature-gateway`, `-storage-proxy`, `-metrics-collector`, `-log-exporter`, `-cli`).
+CI publishes the same services as `ghcr.io/kiongahq/<service>`.
 
 ## Architecture
 
@@ -141,45 +125,18 @@ Python SDK / CLI / UI
 
 ## Documentation
 
-**Public deployments:** use the [managed Kubernetes guide](docs/operations/managed-kubernetes.md)
-for the replicated control plane, or the [VM guide](docs/operations/public-vm.md)
-for a gateway-only pilot. Both use non-secret configuration and mounted secret
-files instead of production `.env` files. Review the
-[operational acceptance checklist](docs/operations/production-operations.md) before launch.
-The Kubernetes path supports isolated workspace subdomains and includes
-`scripts/verify-production.py` for staged cluster, TLS, RBAC and workspace checks.
-
-**Agent frameworks:** use LangGraph, opt-in Agno/NOOA adapters, or a custom
-request/result adapter. See the [agent framework guide](docs/guides/agent-frameworks.md)
-for examples, runtime images, session handling, and NOOA isolation requirements.
-
-**Pretrained models:** connect a personal account in Settings, then use the
-Hugging Face Hub panel under Models to register a pinned revision and generate
-workspace download code. See the [Hugging Face guide](docs/guides/huggingface.md)
-for encrypted credential setup, SDK usage, gated models, and deployment boundaries.
-
-Full documentation lives in [`docs/`](docs/index.md) and builds into a browsable site
-with MkDocs Material — architecture, every service and module, installation,
-configuration reference, the REST API, RBAC, and operations:
-
-```bash
-make docs-install     # pip install mkdocs-material
-make docs-serve       # live preview at http://localhost:8000
-make docs-build       # strict static build into site/
-```
-
-Start at [`docs/index.md`](docs/index.md). The
-[implementation status](docs/reference/implementation-status.md) distinguishes
-what is bundled locally, enabled by an optional profile, configured externally,
-or delivered on the Kubernetes scale path. The
-[project-template catalog](docs/guides/project-templates.md) covers heavyweight ML,
-distributed training, agent projects, and full-stack AI starters; the
-[identifier migration](docs/reference/kionga-migration.md) covers upgrades to the
-Kionga runtime and CRDs.
+<https://kiongahq.github.io/docs/>, built from [kiongahq/docs](https://github.com/kiongahq/docs):
+architecture, every service and module, installation, configuration, the REST API,
+RBAC and operations. Start with
+[implementation status](https://kiongahq.github.io/docs/reference/implementation-status/)
+for what is bundled, optional, external or on the Kubernetes scale path, and the
+[managed Kubernetes](https://kiongahq.github.io/docs/operations/managed-kubernetes/) and
+[public VM](https://kiongahq.github.io/docs/operations/public-vm/) guides before a
+public deployment.
 
 ## Important scope boundary
 
-This repository implements the platform-owned integration and control services. It does not
+The Kionga repositories implement the platform-owned integration and control services. It does not
 fork or vendor Kafka, MinIO, KFP/Argo, MLflow, Feast, KServe, Redis, PostgreSQL, Langfuse,
 or OpenFaaS. Compose bundles the upstream services listed in the implementation-status
 matrix; Kubernetes engines and OpenFaaS are connected through standard APIs.

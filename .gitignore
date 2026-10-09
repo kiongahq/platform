@@ -38,7 +38,7 @@ data/
 site/
 _site/
 
-# Local build-input fingerprints (scripts/build_inputs.py)
+# Local build-input fingerprints (from before the split; kiongahq/deploy keeps its own)
 .local-state/
 
 # Browser test output (screenshots, traces, reports)
