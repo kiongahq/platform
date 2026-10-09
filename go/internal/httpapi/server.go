@@ -621,6 +621,9 @@ func (s *Server) applyFeatureView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := s.store.ApplyFeatureView(req, actor(r))
+	if err == nil {
+		err = s.recordFeatureApply(item, actor(r))
+	}
 	writeMutation(w, item, err, http.StatusCreated)
 }
 
