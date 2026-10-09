@@ -298,7 +298,7 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				e.State = workspaceOffline
 				if kind == "ide" && os.Getenv("KIONGA_ENVIRONMENT") != "production" {
-					e.Message = "IDE is offline. Run make ide-up from the mlops directory, then retry."
+					e.Message = "IDE is offline. Run make -C deploy ide-up from the Kionga workspace folder, then retry."
 				} else {
 					e.Message = "Workspace is offline. Ask your administrator to start it."
 				}

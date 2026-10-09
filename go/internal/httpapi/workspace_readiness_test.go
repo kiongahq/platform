@@ -112,6 +112,7 @@ func TestWorkspaceReadinessStates(t *testing.T) {
 }
 
 func TestWorkspaceReadinessOffline(t *testing.T) {
+	t.Setenv("KIONGA_ENVIRONMENT", "local")
 	t.Setenv("KIONGA_JUPYTER_UPSTREAM", "http://127.0.0.1:1")
 	t.Setenv("KIONGA_IDE_UPSTREAM", "http://127.0.0.1:1")
 	s := &Server{store: store.New()}
@@ -121,6 +122,9 @@ func TestWorkspaceReadinessOffline(t *testing.T) {
 	s.workspaces(response, request)
 	if !strings.Contains(response.Body.String(), `"state":"offline"`) {
 		t.Fatalf("offline upstream not reported: %s", response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "make -C deploy ide-up") || strings.Contains(response.Body.String(), "mlops directory") {
+		t.Fatalf("IDE startup guidance is stale: %s", response.Body.String())
 	}
 }
 
