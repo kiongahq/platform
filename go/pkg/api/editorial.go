@@ -102,7 +102,6 @@ type SavePostRequest struct {
 	EditorVersion string     `json:"editor_version,omitempty"`
 	Cover         *PostCover `json:"cover,omitempty"`
 	SEO           PostSEO    `json:"seo"`
-	PublishAt     *time.Time `json:"publish_at,omitempty"`
 }
 
 // TransitionRequest moves a post through the workflow.
