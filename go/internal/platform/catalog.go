@@ -24,7 +24,7 @@ var componentSpecs = []componentSpec{
 	{"Pipeline Engine", "Orchestration", "Prefect (Compose) or Kubeflow Pipelines (Kubernetes)", []string{"prefect", "kfp", "kubeflow"}},
 	{"Experiment Tracker", "ML lifecycle", "MLflow with PostgreSQL and S3 artifacts", []string{"mlflow"}},
 	{"Feature Store", "Data", "Feast definitions with Redis online serving", []string{"feast", "redis"}},
-	{"Object Store", "Storage", "RustFS (bundled) or an external S3-compatible store", []string{"s3", "rustfs", "minio"}},
+	{"Object Store", "Storage", "RustFS (bundled) or an external S3-compatible store", []string{"s3", "rustfs"}},
 	{"Inference Engine", "Serving", "MLflow model serving (Compose) or KServe (Kubernetes)", []string{"serving", "kserve"}},
 	{"Agent Observability", "Agentic AI", "Langfuse for traces, prompts, and evaluations", []string{"langfuse"}},
 	{"Streaming Broker", "Events", "Apache Kafka lifecycle and trace topics", []string{"kafka"}},

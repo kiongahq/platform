@@ -153,7 +153,7 @@
       <section class="panel"><h2 class="ed-h2">Workspace</h2><dl class="ed-facts">
         <div><dt>Your role</dt><dd>${esc(ROLE_LABELS[member.role] || member.role)}</dd></div>
         <div><dt>Session</dt><dd>${esc(limits.session_hours || 4)} hours, re-checked on every request</dd></div>
-        <div><dt>Media storage</dt><dd>${esc(session.media_backend === "s3" ? "Object storage (S3/MinIO)" : "Local filesystem")}</dd></div>
+        <div><dt>Media storage</dt><dd>${esc(session.media_backend === "s3" ? "Object storage (S3/RustFS)" : "Local filesystem")}</dd></div>
         <div><dt>Upload limit</dt><dd>${Math.round((limits.max_upload_bytes || 10485760) / 1048576)} MB; JPEG, PNG, WebP, GIF</dd></div>
         <div><dt>Image sizes</dt><dd>${esc((limits.variant_widths || [480, 960, 1600]).join(", "))} px wide</dd></div></dl></section>`;
     if (!admin) return;

@@ -281,7 +281,7 @@ python -m realtime.produce --demo recommendations --count 2</code><button type="
   <dialog id="connection-dialog" aria-labelledby="connection-dialog-title">
     <form id="connection-form">
       <p class="eyebrow">CONNECT SERVICE</p><h2 id="connection-dialog-title">Add infrastructure</h2><p>Kionga tests the endpoint right away. Prefect and OpenFaaS can then be activated for new operations; other connections monitor services configured in your deployment.</p>
-      <label>Service<select name="type"><option value="kubernetes">Kubernetes</option><option value="mlflow">MLflow</option><option value="s3">S3 / MinIO</option><option value="kafka">Kafka REST</option><option value="langfuse">Langfuse</option><option value="prefect">Prefect</option><option value="openfaas">OpenFaaS</option><option value="redis">Redis / Feast</option></select></label>
+      <label>Service<select name="type"><option value="kubernetes">Kubernetes</option><option value="mlflow">MLflow</option><option value="rustfs">RustFS (local)</option><option value="s3">S3-compatible storage</option><option value="kafka">Kafka REST</option><option value="langfuse">Langfuse</option><option value="prefect">Prefect</option><option value="openfaas">OpenFaaS</option><option value="redis">Redis / Feast</option></select></label>
       <label>Connection name<input name="name" required placeholder="e.g. production-mlflow"></label>
       <label>Service address<input name="endpoint" required type="url" placeholder="https://prefect.example.com/api"><small>Prefect: its API base address. OpenFaaS: its gateway address. Others: a health endpoint.</small></label>
       <label>Credential reference<input name="secret_ref" required value="none" placeholder="none or env:PREFECT_API_KEY"><small>Use <code>none</code>, or <code>env:VARIABLE</code> for a secret set on the gateway. Never paste a secret here.</small></label>
@@ -318,7 +318,7 @@ python -m realtime.produce --demo recommendations --count 2</code><button type="
       <label>Connection name<input name="name" required pattern="[a-z0-9][a-z0-9-]{1,62}" placeholder="e.g. team-lake"></label>
       <label>Endpoint<input name="endpoint" required type="url" placeholder="https://s3.eu-west-1.amazonaws.com"></label>
       <div class="form-grid"><label>Region<input name="region" placeholder="us-east-1"></label><label>Bucket<input name="bucket" required placeholder="team-lake"></label></div>
-      <label class="checkbox"><input type="checkbox" name="path_style"> Path-style addressing (MinIO, Ceph, dotted bucket names)</label>
+      <label class="checkbox"><input type="checkbox" name="path_style"> Path-style addressing (RustFS, Ceph, dotted bucket names)</label>
       <label>Credential reference<input name="secret_ref" required placeholder="env:LAKE_CREDENTIALS"><small>The variable holds <code>ACCESS_KEY_ID:SECRET_ACCESS_KEY</code>.</small></label>
       <label>CA bundle (PEM)<textarea name="ca_bundle" rows="3" spellcheck="false" placeholder="Only for private certificate authorities"></textarea></label>
       <label>Allowed projects<input name="allowed_projects" placeholder="Empty means every project"></label>

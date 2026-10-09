@@ -12,7 +12,7 @@ infrastructure services and Python owns the ML-facing SDK and workload primitive
   production agents, full-stack AI applications, and expert-owned Python systems
 - Versioned Kubernetes CRDs, RBAC, network isolation, and reconciled per-user Jupyter/IDE workspaces
 - Online feature gateway with a Feast-compatible request shape
-- S3/MinIO proxy generating bounded AWS SigV4 URLs
+- S3-compatible storage proxy generating bounded AWS SigV4 URLs
 - OpenAI-compatible LLM reverse proxy with asynchronous trace emission ([trace-proxy](https://github.com/kiongahq/trace-proxy))
 - Prometheus component-health collector
 - Standard API clients for KFP, MLflow, Langfuse, and Kafka REST Proxy
@@ -113,7 +113,7 @@ Python SDK / CLI / UI
           ├── MLflow           (experiments and registry)
           ├── KServe           (model and LLM serving)
           ├── Feast / Redis    (features)
-          ├── MinIO / S3       (artifacts)
+          ├── RustFS / S3      (artifacts)
           ├── Kafka            (events)
           ├── OpenFaaS         (functions and event-driven microservices)
           └── Langfuse         (LLM traces and prompts)
@@ -137,7 +137,7 @@ public deployment.
 ## Important scope boundary
 
 The Kionga repositories implement the platform-owned integration and control services. It does not
-fork or vendor Kafka, MinIO, KFP/Argo, MLflow, Feast, KServe, Redis, PostgreSQL, Langfuse,
+fork or vendor Kafka, RustFS, KFP/Argo, MLflow, Feast, KServe, Redis, PostgreSQL, Langfuse,
 or OpenFaaS. Compose bundles the upstream services listed in the implementation-status
 matrix; Kubernetes engines and OpenFaaS are connected through standard APIs.
 

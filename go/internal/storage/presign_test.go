@@ -44,7 +44,7 @@ func verifySigV4(t *testing.T, method, rawURL, secret string) {
 
 func TestPresignVerifiesLikeAnS3Server(t *testing.T) {
 	signed, err := Presign(
-		Config{Endpoint: "http://minio:9000", AccessKey: "mlaiops", SecretKey: "secret"},
+		Config{Endpoint: "http://objectstore:9000", AccessKey: "mlaiops", SecretKey: "secret"},
 		Request{Bucket: "mlaiops-features", Key: "customer_profile/snapshot.parquet", Operation: "PUT", TTLSeconds: 300},
 		time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC),
 	)
@@ -59,7 +59,7 @@ func TestPresignVerifiesLikeAnS3Server(t *testing.T) {
 }
 
 func TestBrowserURLsVerifyLikeAnS3Server(t *testing.T) {
-	browser := NewBrowser(Config{Endpoint: "http://minio:9000", AccessKey: "mlaiops", SecretKey: "secret"})
+	browser := NewBrowser(Config{Endpoint: "http://objectstore:9000", AccessKey: "mlaiops", SecretKey: "secret"})
 	query := url.Values{}
 	query.Set("list-type", "2")
 	signed, err := browser.signedURL("GET", "/mlaiops-models", query, time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC))
@@ -70,7 +70,7 @@ func TestBrowserURLsVerifyLikeAnS3Server(t *testing.T) {
 }
 
 func TestPresignCreatesBoundedSigV4URL(t *testing.T) {
-	got, err := Presign(Config{Endpoint: "http://minio:9000", Region: "us-east-1", AccessKey: "key", SecretKey: "secret"}, Request{Bucket: "models", Key: "churn/1/model.pkl", Operation: "GET", TTLSeconds: 300}, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
+	got, err := Presign(Config{Endpoint: "http://objectstore:9000", Region: "us-east-1", AccessKey: "key", SecretKey: "secret"}, Request{Bucket: "models", Key: "churn/1/model.pkl", Operation: "GET", TTLSeconds: 300}, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestPresignCreatesBoundedSigV4URL(t *testing.T) {
 }
 
 func TestPresignRejectsExcessiveTTL(t *testing.T) {
-	_, err := Presign(Config{Endpoint: "http://minio", AccessKey: "key", SecretKey: "secret"}, Request{Bucket: "x", Key: "x", Operation: "PUT", TTLSeconds: 901}, time.Now())
+	_, err := Presign(Config{Endpoint: "http://objectstore", AccessKey: "key", SecretKey: "secret"}, Request{Bucket: "x", Key: "x", Operation: "PUT", TTLSeconds: 901}, time.Now())
 	if err == nil {
 		t.Fatal("expected TTL error")
 	}

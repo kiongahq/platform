@@ -198,7 +198,7 @@ func TestMediaStoreFromEnv(t *testing.T) {
 	if MediaStoreFromEnv().Name() != "fs" {
 		t.Fatal("default backend should be fs without an endpoint")
 	}
-	t.Setenv("KIONGA_BLOG_MEDIA_S3_ENDPOINT", "http://minio:9000")
+	t.Setenv("KIONGA_BLOG_MEDIA_S3_ENDPOINT", "http://objectstore:9000")
 	if store := MediaStoreFromEnv(); store.Name() != "s3" || store.(*S3Store).Bucket != "kionga-blog-media" {
 		t.Fatal("endpoint should select s3 with the default bucket")
 	}

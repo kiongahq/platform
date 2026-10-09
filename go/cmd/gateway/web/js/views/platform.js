@@ -134,7 +134,7 @@ onClick("[data-configure-component]", node => {
     "Pipeline Engine": {type: "prefect", endpoint: "http://prefect-server:4200/api"},
     "Experiment Tracker": {type: "mlflow", endpoint: "http://mlflow:5000/health"},
     "Feature Store": {type: "redis", endpoint: "http://feature-gateway:8083/healthz"},
-    "Object Store": {type: "s3", endpoint: "http://minio:9000/minio/health/live"},
+    "Object Store": {type: "rustfs", endpoint: "http://objectstore:9000/health"},
     "Inference Engine": {type: "kubernetes", endpoint: "http://serving-manager:8085/healthz"},
     "Agent Observability": {type: "langfuse", endpoint: "http://langfuse:3000/api/public/health"},
     "Streaming Broker": {type: "kafka", endpoint: "http://kafka-rest:8082"},
