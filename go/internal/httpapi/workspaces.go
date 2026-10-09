@@ -200,11 +200,53 @@ func (s *Server) projectOptions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+// Workspace readiness states. The console shows the message verbatim; the
+// state lets it pick the right next step without parsing prose.
+const (
+	workspaceReady        = "ready"
+	workspaceOffline      = "offline"
+	workspaceForbidden    = "forbidden"
+	workspaceUnconfigured = "unconfigured"
+	workspaceUnauthorized = "unauthorized"
+	workspaceMisrouted    = "misrouted"
+	workspaceStarting     = "starting"
+)
+
+// classifyWorkspaceProbe explains a non-2xx readiness probe. A 404 on the
+// prefixed Jupyter API almost always means the running image predates the
+// base_url the gateway proxies to, so it re-probes the unprefixed API to
+// confirm before saying so.
+func classifyWorkspaceProbe(ctx context.Context, client *http.Client, kind string, target *workspaceDestination, status int) (string, string) {
+	switch {
+	case status == http.StatusUnauthorized || status == http.StatusForbidden || (status >= 300 && status < 400):
+		if kind == "workbench" {
+			return workspaceUnauthorized, "Jupyter rejected the gateway token. JUPYTER_TOKEN in the workspace and KIONGA_JUPYTER_TOKEN in the gateway must match; restart both after changing them."
+		}
+		return workspaceUnauthorized, "The IDE rejected the gateway credentials. KIONGA_IDE_PASSWORD must match the IDE password, or set KIONGA_IDE_AUTH_MODE=none for local use."
+	case status == http.StatusNotFound && kind == "workbench":
+		root := strings.TrimRight(target.String(), "/") + "/api"
+		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, root, nil)
+		request.Header.Set("Authorization", "token "+target.token)
+		if response, err := client.Do(request); err == nil {
+			response.Body.Close()
+			if response.StatusCode < 500 && response.StatusCode != http.StatusNotFound {
+				return workspaceMisrouted, "Jupyter is running from an outdated image that does not serve /workspaces/workbench/. Rebuild it with make local-rebuild (or docker compose -f deploy/compose.yaml up -d --build jupyter)."
+			}
+		}
+		return workspaceMisrouted, "Jupyter does not serve /workspaces/workbench/api. Check that the workspace runs with --ServerApp.base_url=/workspaces/workbench/."
+	case status >= 500:
+		return workspaceStarting, fmt.Sprintf("Workspace is starting or failing (HTTP %d). Retry in a few seconds; if it persists, check the workspace container logs.", status)
+	default:
+		return workspaceMisrouted, fmt.Sprintf("Workspace readiness check returned HTTP %d.", status)
+	}
+}
+
 func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 	type entry struct {
 		ID        string `json:"id"`
 		Name      string `json:"name"`
 		Available bool   `json:"available"`
+		State     string `json:"state"`
 		URL       string `json:"url,omitempty"`
 		Message   string `json:"message"`
 	}
@@ -217,11 +259,13 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			e := &items[i]
 			if !auth.Allowed(principal(r), http.MethodGet, "/workspaces/"+kind+"/") {
+				e.State = workspaceForbidden
 				e.Message = "Request access to use this workspace"
 				return
 			}
 			target, err := workspaceTarget(kind, r)
 			if err != nil {
+				e.State = workspaceUnconfigured
 				e.Message = err.Error()
 				return
 			}
@@ -237,6 +281,7 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 			} else {
 				cookie, err := ideSession(ctx, target)
 				if err != nil {
+					e.State = workspaceUnauthorized
 					e.Message = err.Error()
 					return
 				}
@@ -245,6 +290,7 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 			client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 			response, err := client.Do(request)
 			if err != nil {
+				e.State = workspaceOffline
 				if kind == "ide" && os.Getenv("KIONGA_ENVIRONMENT") != "production" {
 					e.Message = "IDE is offline. Run make ide-up from the mlops directory, then retry."
 				} else {
@@ -252,11 +298,12 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 				}
 				return
 			}
-			defer response.Body.Close()
+			response.Body.Close()
 			if response.StatusCode < 200 || response.StatusCode >= 300 {
-				e.Message = "Workspace is not ready or its credentials need updating"
+				e.State, e.Message = classifyWorkspaceProbe(ctx, client, kind, target, response.StatusCode)
 				return
 			}
+			e.State = workspaceReady
 			e.Available = true
 			if os.Getenv("KIONGA_ENVIRONMENT") == "production" && os.Getenv("KIONGA_WORKSPACE_BASE_DOMAIN") != "" {
 				e.URL = "/workspace.html?tool=" + kind
@@ -323,6 +370,13 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request) {
 			p.Out.Header.Set("Cookie", ideCookie)
 		}
 		p.SetXForwarded()
+		if p.Out.Header.Get("Origin") != "" {
+			// The browser origin was verified same-origin with the gateway
+			// above. Present the upstream's own origin so Jupyter's and
+			// code-server's websocket origin checks (which compare Origin with
+			// the proxied Host) accept kernels and collaboration sockets.
+			p.Out.Header.Set("Origin", target.Scheme+"://"+target.Host)
+		}
 		if kind == "workbench" {
 			p.Out.Header.Set("Authorization", "token "+target.token)
 		}

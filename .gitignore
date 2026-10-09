@@ -37,3 +37,9 @@ data/
 .tools.nosync/
 site/
 _site/
+
+# Local build-input fingerprints (scripts/build_inputs.py)
+.local-state/
+
+# Browser test output (screenshots, traces, reports)
+artifacts/
