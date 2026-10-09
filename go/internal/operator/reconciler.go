@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	platformapi "github.com/ml-ai-ops/platform/pkg/api"
+	platformapi "github.com/kiongahq/platform/pkg/api"
 )
 
 type AgentSpec struct {

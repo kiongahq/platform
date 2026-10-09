@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"github.com/microcosm-cc/bluemonday"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // MediaLookup resolves a media id for rendering; ok=false drops the image.

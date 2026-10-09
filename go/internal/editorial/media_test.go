@@ -17,7 +17,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ml-ai-ops/platform/internal/storage"
+	"github.com/kiongahq/platform/internal/storage"
 )
 
 // withExif inserts an APP1 Exif segment (orientation + a fake GPS marker

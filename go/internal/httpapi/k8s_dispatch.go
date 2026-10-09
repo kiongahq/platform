@@ -9,8 +9,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	"github.com/ml-ai-ops/platform/internal/k8sexec"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/internal/k8sexec"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // KIONGA_EXECUTOR=kubernetes runs container flows as Kubernetes Jobs from the

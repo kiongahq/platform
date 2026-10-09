@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // LogStore persists structured log entries. Both repository backends

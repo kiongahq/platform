@@ -2,13 +2,13 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/ml-ai-ops/platform/internal/runtimeconfig"
+	"github.com/kiongahq/platform/internal/runtimeconfig"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/storage"
+	"github.com/kiongahq/platform/internal/storage"
 )
 
 func main() {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	platformapi "github.com/ml-ai-ops/platform/pkg/api"
+	platformapi "github.com/kiongahq/platform/pkg/api"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
@@ -16,7 +16,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	mlaiopsv1 "github.com/ml-ai-ops/platform/pkg/kube/v1alpha1"
+	mlaiopsv1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
 
 func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {

@@ -3,7 +3,7 @@ package platform
 import (
 	"testing"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 type fakeSource struct {

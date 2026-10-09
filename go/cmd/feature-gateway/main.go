@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/feature"
-	"github.com/ml-ai-ops/platform/internal/runtimeconfig"
+	"github.com/kiongahq/platform/internal/feature"
+	"github.com/kiongahq/platform/internal/runtimeconfig"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )

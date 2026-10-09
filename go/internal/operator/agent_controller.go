@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	mlaiopsv1 "github.com/ml-ai-ops/platform/pkg/kube/v1alpha1"
+	mlaiopsv1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
 
 const agentFinalizer = "mlaiops.io/agent-cleanup"

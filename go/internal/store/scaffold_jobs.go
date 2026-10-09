@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // Scaffold jobs are documents. A per-project lock document guarantees at

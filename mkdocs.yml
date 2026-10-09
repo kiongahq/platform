@@ -1,11 +1,11 @@
-site_name: Kionga — ml-ai-ops-platform
+site_name: Kionga
 site_description: >-
   Self-hosted MLOps, data-centric AI, and agentic AI platform — a Compose
   application stack with a Kubernetes scale path. Full documentation: architecture,
   services, modules, installation, configuration, API, RBAC, and operations.
 site_author: Kionga platform team
-repo_name: ml-ai-ops/platform
-repo_url: https://github.com/ml-ai-ops/platform
+repo_name: kiongahq/platform
+repo_url: https://github.com/kiongahq/platform
 edit_uri: edit/main/docs/
 docs_dir: docs
 copyright: Kionga is a self-hosted platform. Local credentials in this documentation are development defaults — override every one for public deployments.

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ml-ai-ops/platform/internal/auth"
-	"github.com/ml-ai-ops/platform/internal/store"
+	"github.com/kiongahq/platform/internal/auth"
+	"github.com/kiongahq/platform/internal/store"
 )
 
 // workbenchReadiness runs GET /api/v1/workspaces as an admin against a fake

@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/editorial"
-	"github.com/ml-ai-ops/platform/internal/store"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/internal/editorial"
+	"github.com/kiongahq/platform/internal/store"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // Editorial checks the editorial workspace's document usage on a backend:

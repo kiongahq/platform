@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ml-ai-ops/platform/internal/auth"
-	"github.com/ml-ai-ops/platform/internal/httpapi"
-	"github.com/ml-ai-ops/platform/internal/store"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/internal/auth"
+	"github.com/kiongahq/platform/internal/httpapi"
+	"github.com/kiongahq/platform/internal/store"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // The CLI round-trips a definition through the real API handler.

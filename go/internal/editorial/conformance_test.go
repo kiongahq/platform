@@ -3,8 +3,8 @@ package editorial_test
 import (
 	"testing"
 
-	"github.com/ml-ai-ops/platform/internal/store"
-	"github.com/ml-ai-ops/platform/internal/store/storetest"
+	"github.com/kiongahq/platform/internal/store"
+	"github.com/kiongahq/platform/internal/store/storetest"
 )
 
 // The same contract runs against PostgreSQL in go/integration.

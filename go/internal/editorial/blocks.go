@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 )

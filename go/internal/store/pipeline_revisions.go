@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/pipelinespec"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/internal/pipelinespec"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // PipelineRevisionKind stores immutable definition revisions as documents.

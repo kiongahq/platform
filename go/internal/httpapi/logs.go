@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/policy"
-	"github.com/ml-ai-ops/platform/internal/redact"
-	"github.com/ml-ai-ops/platform/internal/store"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/internal/policy"
+	"github.com/kiongahq/platform/internal/redact"
+	"github.com/kiongahq/platform/internal/store"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 func init() {

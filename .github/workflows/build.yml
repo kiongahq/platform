@@ -1,7 +1,7 @@
 name: Build & Publish Images
 
 # Builds every service image and publishes it to the GitHub Container
-# Registry (ghcr.io/ml-ai-ops/<service>), so a VM can pull the exact images
+# Registry (ghcr.io/kiongahq/<service>), so a VM can pull the exact images
 # instead of rebuilding them — the "build once, deploy anywhere" path.
 #
 # Tags applied:

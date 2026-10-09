@@ -1,4 +1,4 @@
-# Kionga: ml-ai-ops-platform
+# Kionga
 
 Kionga is a self-hosted control plane for classical ML, data-centric AI, and agentic AI
 workloads. Go owns

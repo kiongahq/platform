@@ -1,6 +1,6 @@
 # Go packages
 
-The Go module is `github.com/ml-ai-ops/platform` (Go 1.25). Its direct application
+The Go module is `github.com/kiongahq/platform` (Go 1.25). Its direct application
 dependencies include `github.com/jackc/pgx/v5` for Postgres; Kubernetes controller
 libraries and their transitive dependencies support the scale path. Commands live under `go/cmd/`,
 reusable logic under `go/internal/`, and public API types under `go/pkg/`.

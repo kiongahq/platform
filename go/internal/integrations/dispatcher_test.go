@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	platformapi "github.com/ml-ai-ops/platform/pkg/api"
+	platformapi "github.com/kiongahq/platform/pkg/api"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 func block(kind string, data any) api.Block {

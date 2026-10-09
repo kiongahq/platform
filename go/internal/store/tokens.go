@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 func validateTokenRequest(req api.CreateAPITokenRequest) (api.CreateAPITokenRequest, error) {

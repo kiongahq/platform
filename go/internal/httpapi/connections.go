@@ -2,15 +2,15 @@ package httpapi
 
 import (
 	"fmt"
-	"github.com/ml-ai-ops/platform/internal/policy"
+	"github.com/kiongahq/platform/internal/policy"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/integrations"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/internal/integrations"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 func (s *Server) activeConnection(kind string) *api.Connection {

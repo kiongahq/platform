@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // Feature-store documents: external connections, immutable definition

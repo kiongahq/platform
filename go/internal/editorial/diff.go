@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 // BlockChange is one entry of a revision comparison.

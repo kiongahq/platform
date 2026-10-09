@@ -1,4 +1,4 @@
-# Kionga — the ml-ai-ops-platform
+# Kionga
 
 Kionga is a **self-hosted platform that brings the whole AI lifecycle together** —
 classical ML, data-centric AI, and agentic AI — behind one control plane and one

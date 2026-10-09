@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/store"
-	"github.com/ml-ai-ops/platform/internal/store/storetest"
-	"github.com/ml-ai-ops/platform/pkg/api"
+	"github.com/kiongahq/platform/internal/store"
+	"github.com/kiongahq/platform/internal/store/storetest"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
 func TestPostgresPersistsResourceAuditAndOutboxAtomically(t *testing.T) {

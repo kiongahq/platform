@@ -2,7 +2,7 @@ package operator
 
 import "testing"
 
-import platformapi "github.com/ml-ai-ops/platform/pkg/api"
+import platformapi "github.com/kiongahq/platform/pkg/api"
 
 func TestReconcileAgentBuildsWorkloadAndTraffic(t *testing.T) {
 	plan, err := ReconcileAgent(AgentSpec{

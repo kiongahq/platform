@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ml-ai-ops/platform/internal/auth"
-	"github.com/ml-ai-ops/platform/internal/store"
+	"github.com/kiongahq/platform/internal/auth"
+	"github.com/kiongahq/platform/internal/store"
 )
 
 const edgeCookieName = "kionga_workspace_session"
