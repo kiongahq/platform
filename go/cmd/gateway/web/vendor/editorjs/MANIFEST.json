@@ -1,0 +1,82 @@
+{
+  "verified_against": "jsDelivr package API sha256",
+  "files": [
+    {
+      "file": "editorjs.umd.js",
+      "package": "@editorjs/editorjs",
+      "version": "2.31.7",
+      "upstream": "/dist/editorjs.umd.js",
+      "integrity": "sha384-VCPYJjPO1nUrpiHNQ3xaVEF48GhfB6De5k5JldN/3TwGZru+K+sQt7GQ4jK98z1e"
+    },
+    {
+      "file": "header.umd.js",
+      "package": "@editorjs/header",
+      "version": "2.8.9",
+      "upstream": "/dist/header.umd.js",
+      "integrity": "sha384-gsHcARcunRrx+hZA2vZY6ESWTIC8ZJZpyuAjNmKponX5ftG43VHfZ8geURncPDPh"
+    },
+    {
+      "file": "list.umd.js",
+      "package": "@editorjs/list",
+      "version": "2.0.9",
+      "upstream": "/dist/editorjs-list.umd.js",
+      "integrity": "sha384-rgmnoyP4Ld6tRkTXoq965fzulyZZ6NSUYy+JYI4mO9sxaJDrpyjORlNUz5Un2gbn"
+    },
+    {
+      "file": "quote.umd.js",
+      "package": "@editorjs/quote",
+      "version": "2.7.6",
+      "upstream": "/dist/quote.umd.js",
+      "integrity": "sha384-z43sl0T5c0VaZ0qANtyMgguU+QmuuzTmE4lWCjGDs2IgVrbQn6ycdbCwemISQxug"
+    },
+    {
+      "file": "code.umd.js",
+      "package": "@editorjs/code",
+      "version": "2.9.4",
+      "upstream": "/dist/code.umd.js",
+      "integrity": "sha384-pmKzfNHAxgIHBx/Nzm5HVAQyKQwkM/Mpcm2NSVPojR03VCm4g2kYBgzY9FsE4cXa"
+    },
+    {
+      "file": "delimiter.umd.js",
+      "package": "@editorjs/delimiter",
+      "version": "1.4.2",
+      "upstream": "/dist/delimiter.umd.js",
+      "integrity": "sha384-JxFg+sowMd+b7DsI8bCOvXPDtHPiIjXxSMk9WXaGWpDtSwzzMIb+tGwkaAh9qMgB"
+    },
+    {
+      "file": "embed.umd.js",
+      "package": "@editorjs/embed",
+      "version": "2.8.0",
+      "upstream": "/dist/embed.umd.js",
+      "integrity": "sha384-/1ZI1HlHcevdvuxte+CPpgCdkHnvAqD4P9oyVCu1bxTotpiAJDerFB+SObio3CH1"
+    },
+    {
+      "file": "table.umd.js",
+      "package": "@editorjs/table",
+      "version": "2.4.6",
+      "upstream": "/dist/table.umd.js",
+      "integrity": "sha384-EfF1OR87CAWMq8G2qxUxrFwwFX/9ZdVg0qyxuHTZyNKfzjAi+OS1qYg12c2oWzjI"
+    },
+    {
+      "file": "inline-code.umd.js",
+      "package": "@editorjs/inline-code",
+      "version": "1.5.2",
+      "upstream": "/dist/inline-code.umd.js",
+      "integrity": "sha384-+3JnsZ5Ef/PXN4aILTy12X6yX8sSVv213uEX7F8ab9j3aBMj/7sypQGQad44v5jo"
+    },
+    {
+      "file": "marker.umd.js",
+      "package": "@editorjs/marker",
+      "version": "1.4.0",
+      "upstream": "/dist/marker.umd.js",
+      "integrity": "sha384-xCW2AjuNs2r576ct9AvLo3Knz4N5tsszNVGXueZc7eI1iTEL0NSFy47G1er+diE+"
+    },
+    {
+      "file": "warning.umd.js",
+      "package": "@editorjs/warning",
+      "version": "1.4.1",
+      "upstream": "/dist/warning.umd.js",
+      "integrity": "sha384-ffeWk9dl1hzdMGuat8++w1VDrkssXdtXZ0TUEqlGOKxUfDgjO7ybm/+VHoReHrty"
+    }
+  ]
+}
