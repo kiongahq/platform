@@ -34,3 +34,7 @@ func TestStoreConcurrentStepReports(t *testing.T) {
 	}
 	storetest.ConcurrentStepReports(t, repo, project.ID)
 }
+
+func TestStoreIAM(t *testing.T) {
+	storetest.IAM(t, store.New(filepath.Join(t.TempDir(), "state.json")))
+}
