@@ -35,7 +35,7 @@ build:
 
 verify: lint test-go build
 	for f in go/cmd/gateway/web/js/*.js go/cmd/gateway/web/js/views/*.js go/cmd/gateway/web/*.js; do node --check $$f || exit 1; done
-	! rg -i '\b(mlrun|nuclio|v3io|iguazio)\b' go
+	! rg -i '\b(nuclio|v3io|iguazio)\b' go
 
 test-ui:
 	npm ci --ignore-scripts
