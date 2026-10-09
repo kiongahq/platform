@@ -185,12 +185,26 @@ that exceed it are rejected before anything starts.
 
 ## Kubernetes
 
-The control plane's executor contract (dispatch with a pinned revision, step facts,
-typed workload ids, ready-set semantics) is executor-neutral, but **the gateway does
-not yet create Kubernetes Jobs or Pods for pipeline nodes**. The operator contains a
-`KiongaPipelineRun` reconciler that targets KFP; the gateway does not create those
-resources. Multi-node and isolated multi-tenant execution therefore remain on the
-roadmap; see [Implementation status](../reference/implementation-status.md).
+Set `pipelineExecutor.kubernetes: true` in the Helm values (gateway environment
+`KIONGA_EXECUTOR=kubernetes`, `KIONGA_K8S_NAMESPACE`) to run container nodes as
+Kubernetes Jobs from the gateway instead of the Compose pipeline runner:
+
+- one `batch/v1` Job per node attempt, labelled `kionga.dev/{tenant,project,run,node,attempt}`,
+  in one dedicated namespace (create it with your NetworkPolicy and ResourceQuota);
+- the node timeout is `activeDeadlineSeconds`; retries and backoff are driven by
+  Kionga (`backoffLimit: 0`) so attempts are reported the same way everywhere;
+- pods run non-root, with all capabilities dropped, no privilege escalation and no
+  service-account token;
+- workloads are reported as `k8s-job` (`namespace/name`), exit codes and reasons
+  such as `OOMKilled` or a deadline are recorded, and Pod and Job events appear in
+  the node's logs with source `k8s`;
+- the chart grants the gateway only Jobs (create/delete) and Pods/Events (read) in
+  that namespace.
+
+Container stdout is not yet streamed from Kubernetes pods into the log store;
+read it with `kubectl logs` using the Job name shown on the node. The executor is
+tested against the Kubernetes API fake; it has **not yet been validated on a live
+cluster**. Function nodes are not supported by this executor.
 
 ## Writing a native Prefect flow
 

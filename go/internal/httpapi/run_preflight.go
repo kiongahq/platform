@@ -91,7 +91,7 @@ func (s *Server) preflight(principal auth.Principal, req api.SubmitPipelineReque
 	} else {
 		result.add("concurrent runs", "pass", "Within your concurrent run quota.")
 	}
-	engineReady := s.prefectConfigured()
+	engineReady := s.prefectConfigured() || (req.DefinitionID != "" && kubernetesExecutorEnabled())
 	if req.DefinitionID == "" {
 		if engineReady {
 			result.add("engine", "pass", "The pipeline engine is configured.")
