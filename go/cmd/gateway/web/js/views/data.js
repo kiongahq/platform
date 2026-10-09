@@ -132,7 +132,7 @@ let catalogCache = [];
 async function loadCatalog(kind = "") {
   const items = await api(`/api/v1/catalog${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`);
   catalogCache = items;
-  document.querySelector("#catalog-grid").innerHTML = items.length ? items.map((item, index) => `<article class="card interactive-card" role="button" tabindex="0" data-catalog-detail="${index}"><span class="kind">${escapeHTML(item.kind)} · ${escapeHTML(item.version)}</span><h3>${escapeHTML(item.name)}</h3><div class="tags">${item.metadata.map(meta => `<span class="tag">${escapeHTML(meta)}</span>`).join("")}</div><footer><span></span>${status(item.status)}</footer></article>`).join("") : emptyState("Nothing in the catalog yet", "It fills up as you register models, features, agents and tools.");
+  document.querySelector("#catalog-grid").innerHTML = items.length ? items.map((item, index) => `<article class="card interactive-card" role="button" tabindex="0" data-catalog-detail="${index}"><span class="kind">${escapeHTML(item.kind)} · ${escapeHTML(item.version)}</span><h3>${escapeHTML(item.name)}</h3><div class="tags">${(Array.isArray(item.metadata) ? item.metadata : []).map(meta => `<span class="tag">${escapeHTML(meta)}</span>`).join("")}</div><footer><span></span>${status(item.status)}</footer></article>`).join("") : emptyState("Nothing in the catalog yet", "It fills up as you register models, features, agents and tools.");
 }
 document.querySelectorAll("[data-kind]").forEach(button => button.addEventListener("click", () => {
   document.querySelectorAll("[data-kind]").forEach(n => { n.classList.remove("active"); n.setAttribute("aria-pressed", "false"); });

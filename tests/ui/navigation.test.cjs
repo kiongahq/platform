@@ -59,6 +59,15 @@ for(const view of ['agents','platform','functions','storage','pipelines','projec
  });
 }
 
+test('catalog renders a tool whose metadata is null',async t=>{
+ const app=consoleApp(['catalog'],'catalog',{'/api/v1/catalog':[
+   {kind:'tool',name:'tagless-tool',version:'1.0',status:'ready',metadata:null},
+ ]});t.after(()=>app.dom.window.close());await tick();
+ assert.match(app.w.document.querySelector('#catalog-grid').textContent,/tagless-tool/);
+ assert.equal(app.w.document.querySelector('#view-feedback').hidden,true);
+ assert.deepEqual(app.errors,[]);
+});
+
 test('startup retry reloads identity before loading a permitted page',async t=>{
  const app=consoleApp(['projects'],'projects',{'/api/v1/me':new Error('Identity temporarily unavailable')});
  t.after(()=>app.dom.window.close());await tick();

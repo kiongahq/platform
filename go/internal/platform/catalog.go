@@ -99,7 +99,7 @@ func Catalog(source CatalogSource) []api.CatalogItem {
 		items = append(items, api.CatalogItem{Name: agent.Name, Version: agent.Version, Status: agent.Status, Kind: "agent", Metadata: metadata})
 	}
 	for _, tool := range source.Tools() {
-		items = append(items, api.CatalogItem{Name: tool.Name, Version: tool.Version, Status: tool.Status, Kind: "tool", Metadata: tool.Tags})
+		items = append(items, api.CatalogItem{Name: tool.Name, Version: tool.Version, Status: tool.Status, Kind: "tool", Metadata: append([]string{}, tool.Tags...)})
 	}
 	return items
 }

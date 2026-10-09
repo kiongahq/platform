@@ -82,7 +82,7 @@ make -C deploy workspace     # clones platform, sdk-python, agent-runtime, ...
 make -C deploy local-up
 ```
 
-Open <http://localhost:8080> and sign in with the local development account
+Open [http://localhost:8080](http://localhost:8080) and sign in with the local development account
 `admin` / `mlaiops-local`. Create an API key in **Settings → API keys** and export it
 as `MLAIOPS_TOKEN` to use the SDK or CLI.
 
@@ -125,7 +125,7 @@ Python SDK / CLI / UI
 
 ## Documentation
 
-<https://kiongahq.github.io/docs/>, built from [kiongahq/docs](https://github.com/kiongahq/docs):
+[https://kiongahq.github.io/docs/](https://kiongahq.github.io/docs/), built from [kiongahq/docs](https://github.com/kiongahq/docs):
 architecture, every service and module, installation, configuration, the REST API,
 RBAC and operations. Start with
 [implementation status](https://kiongahq.github.io/docs/reference/implementation-status/)

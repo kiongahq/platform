@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/kiongahq/platform/pkg/api"
@@ -11,6 +12,28 @@ type fakeSource struct {
 	agents   []api.Agent
 	tools    []api.Tool
 	features []api.FeatureView
+}
+
+func TestCatalogToolWithoutTagsSerializesEmptyMetadata(t *testing.T) {
+	items := Catalog(fakeSource{tools: []api.Tool{{Name: "no_tags"}}})
+	if len(items) != 1 || items[0].Metadata == nil {
+		t.Fatalf("tool metadata must be an empty array, got %+v", items)
+	}
+	payload, err := json.Marshal(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(payload) == "" || !json.Valid(payload) {
+		t.Fatalf("invalid catalog JSON: %s", payload)
+	}
+	var decoded []map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	metadata, ok := decoded[0]["metadata"].([]any)
+	if !ok || len(metadata) != 0 {
+		t.Fatalf("metadata must serialize as [], got %s", payload)
+	}
 }
 
 func (f fakeSource) Models() []api.Model             { return f.models }
