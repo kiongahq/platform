@@ -55,12 +55,18 @@ async function openProjectDetail(id) {
     const state = workspaceState[tool];
     const label = tool === "ide" ? "Open in IDE" : "Open in Jupyter";
     return state?.available
-      ? `<a class="button-link" target="_blank" rel="noopener" href="${workspaceURL(tool, id)}">${label} ↗</a>`
+      ? `<a class="button-link" target="_blank" rel="noopener" href="${workspaceURL(tool, id)}" title="Opens /workspace/projects/${escapeHTML(project.namespace)}">${label} ↗</a>`
       : `<button type="button" disabled title="${escapeHTML(state?.message || "Checking workspace availability")}">${label}</button>`;
   }).join("");
-  const scaffold = project.scaffold_command ? `<article class="panel">
-      <div class="panel-heading"><div><p class="eyebrow">SCAFFOLD</p><h3>Generate the starter code</h3><p>Run this in a terminal (or the IDE) from the folder that should contain the project. It writes a <code>${escapeHTML(project.namespace)}/</code> directory with code, tests and a platform manifest.</p></div></div>
+  const output = `/workspace/projects/${project.namespace}`;
+  const canRun = can("projects_write") && (hasService("workbench") || hasService("ide"));
+  const scaffold = project.scaffold_command ? `<article class="panel" id="scaffold-panel" data-scaffold-project="${escapeHTML(project.id)}">
+      <div class="panel-heading"><div><p class="eyebrow">SCAFFOLD</p><h3>Generate the starter code</h3><p>The scaffold command writes a production-shaped starter (code, tests, CI, container and a platform manifest) from this project's versioned template. It never overwrites a folder that already has files.</p></div></div>
+      ${metaList([["Output folder", `<code>${escapeHTML(output)}</code>`], ["Template", `${escapeHTML(project.template)} v${escapeHTML(project.template_version || "—")}`], ["Opens in", "JupyterLab and the IDE open this same folder"]])}
       <div class="command-block"><code>${escapeHTML(project.scaffold_command)}</code>${copyButton(project.scaffold_command, "Copy command")}</div>
+      <p class="field-help">To run it yourself, open a terminal in <code>/workspace/projects</code> and paste the command.</p>
+      <div class="button-row start">${canRun ? `<button type="button" class="primary" data-scaffold-run="${escapeHTML(project.id)}">Run in workspace…</button>` : `<button type="button" disabled title="${escapeHTML(can("projects_write") ? "Running in a workspace needs JupyterLab or the IDE assigned to you." : denialReason())}">Run in workspace…</button>`}</div>
+      <div id="scaffold-run" class="scaffold-run" aria-live="polite" hidden></div>
       ${repository ? `<p class="field-help" style="margin-top:var(--space-3)">Already scaffolded and pushed? Sync it into a workspace with <code>kionga project sync ${escapeHTML(project.id)}</code>.</p>` : ""}
     </article>` : "";
   panel.innerHTML = `<nav class="breadcrumb" aria-label="Breadcrumb"><button type="button" class="quiet" data-project-back>← All projects</button></nav>
@@ -90,9 +96,80 @@ async function openProjectDetail(id) {
       </div>
     </div>`;
   panel.querySelector("h2").focus?.();
+  if (project.scaffold_command && hasService("projects")) loadLatestScaffoldJob(project.id).catch(() => {});
 }
 
-onClick("[data-project-back]", () => { selectedResource = ""; history.pushState({}, "", routeURL("projects", "")); showProjectList(); });
+// ---- scaffold jobs -----------------------------------------------------------
+/* A scaffold job runs the project's stored, catalog-derived argv inside the
+ * user's workspace. The browser never sends a command: it asks for the plan,
+ * shows it verbatim in a confirmation dialog, then starts the job and polls. */
+let scaffoldPoll = null;
+const scaffoldPollMS = 1000;
+let scaffoldPlan = null;
+
+function renderScaffoldJob(job) {
+  const node = document.querySelector("#scaffold-run");
+  if (!node || document.querySelector("#scaffold-panel")?.dataset.scaffoldProject !== job.project_id) return false;
+  node.hidden = false;
+  const active = job.status === "queued" || job.status === "running";
+  const files = job.files || [], git = job.git_status || [];
+  node.innerHTML = `<div class="run-heading"><h4>Last run ${status(job.status)}</h4><small>${active ? "Running in your workspace…" : `Finished ${timeTag(job.ended_at)}`} · ${escapeHTML(job.workspace === "ide" ? "IDE" : "JupyterLab")} · requested by ${escapeHTML(job.requested_by || "—")}</small></div>
+    ${active ? `<p class="field-help">Generating files in <code>${escapeHTML(job.output_dir)}</code>. This usually takes a few seconds.</p>` : ""}
+    ${job.error ? `<p class="form-error" role="alert">${escapeHTML(job.error)}</p>` : ""}
+    ${job.status === "succeeded" ? `<p class="field-help">Created ${plural(files.length, "file")} in <code>${escapeHTML(job.output_dir)}</code>. Open the project in JupyterLab or the IDE to start working.</p>` : ""}
+    ${files.length ? `<details ${job.status === "succeeded" ? "open" : ""}><summary>Produced files (${files.length})</summary><ul class="file-list">${files.map(file => `<li>${escapeHTML(file)}</li>`).join("")}</ul></details>` : ""}
+    ${git.length ? `<details><summary>git status (${git.length})</summary><pre class="hint scaffold-output">${escapeHTML(git.join("\n"))}</pre></details>` : (!active && job.status === "succeeded" ? `<p class="field-help">No Git repository was initialized in the folder.</p>` : "")}
+    ${job.output_tail ? `<details ${job.status === "failed" ? "open" : ""}><summary>Command output</summary><pre class="hint scaffold-output">${escapeHTML(job.output_tail)}</pre></details>` : ""}`;
+  return active;
+}
+
+function stopScaffoldPoll() { clearTimeout(scaffoldPoll); scaffoldPoll = null; }
+
+async function pollScaffoldJob(projectID, jobID) {
+  stopScaffoldPoll();
+  const job = await api(`/api/v1/projects/${encodeURIComponent(projectID)}/scaffold-jobs/${encodeURIComponent(jobID)}`);
+  if (renderScaffoldJob(job)) scaffoldPoll = setTimeout(() => pollScaffoldJob(projectID, jobID).catch(error => toast(error.message, "error")), scaffoldPollMS);
+  else if (job.status === "succeeded") toast("Starter code generated.");
+  return job;
+}
+
+async function loadLatestScaffoldJob(projectID) {
+  stopScaffoldPoll();
+  const jobs = (await api(`/api/v1/projects/${encodeURIComponent(projectID)}/scaffold-jobs`)).items || [];
+  if (!jobs.length) return;
+  if (renderScaffoldJob(jobs[0])) scaffoldPoll = setTimeout(() => pollScaffoldJob(projectID, jobs[0].id).catch(() => {}), scaffoldPollMS);
+}
+
+onClick("[data-scaffold-run]", async node => {
+  const projectID = node.dataset.scaffoldRun;
+  scaffoldPlan = await withBusy(node, () => api(`/api/v1/projects/${encodeURIComponent(projectID)}/scaffold-plan`), {});
+  const detail = document.querySelector("#scaffold-confirm-detail");
+  document.querySelector("#scaffold-confirm-error").textContent = scaffoldPlan.available ? "" : scaffoldPlan.reason;
+  document.querySelector("#scaffold-confirm-run").disabled = !scaffoldPlan.available;
+  detail.innerHTML = `${metaList([
+    ["Workspace", escapeHTML(scaffoldPlan.workspace === "ide" ? "Browser IDE" : scaffoldPlan.workspace ? "JupyterLab" : "None available")],
+    ["Runs in", `<code>${escapeHTML(scaffoldPlan.working_dir)}</code>`],
+    ["Writes to", `<code>${escapeHTML(scaffoldPlan.output_dir)}</code>`],
+  ])}<p class="eyebrow">EXACT COMMAND</p><div class="command-block"><code id="scaffold-confirm-command">${escapeHTML(scaffoldPlan.command)}</code></div><p class="field-help">Arguments, passed one by one:</p><ol class="argv-list" aria-label="Command arguments">${scaffoldPlan.argv.map(arg => `<li>${escapeHTML(arg)}</li>`).join("")}</ol>`;
+  document.querySelector("#scaffold-confirm-dialog").dataset.project = projectID;
+  document.querySelector("#scaffold-confirm-dialog").showModal();
+});
+
+document.querySelector("#scaffold-confirm-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const dialog = document.querySelector("#scaffold-confirm-dialog");
+  const projectID = dialog.dataset.project, error = document.querySelector("#scaffold-confirm-error");
+  error.textContent = "";
+  try {
+    const body = scaffoldPlan?.workspace ? {options: {workspace: scaffoldPlan.workspace}} : {};
+    const job = await withBusy(event.submitter, () => api(`/api/v1/projects/${encodeURIComponent(projectID)}/scaffold-jobs`, {method: "POST", body: JSON.stringify(body)}), {failure: false});
+    dialog.close();
+    renderScaffoldJob(job);
+    await pollScaffoldJob(projectID, job.id);
+  } catch (failure) { error.textContent = failure.message; }
+});
+
+onClick("[data-project-back]", () => { stopScaffoldPoll(); selectedResource = ""; history.pushState({}, "", routeURL("projects", "")); showProjectList(); });
 onClick("[data-project-detail]", async node => {
   selectedResource = node.dataset.projectDetail;
   history.pushState({}, "", routeURL("projects", selectedResource));
@@ -273,7 +350,7 @@ document.querySelector("#project-form").addEventListener("submit", async event =
     const created = await withBusy(event.submitter, () => api("/api/v1/projects", {method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.target)))}), {failure: false});
     event.target.reset(); selectedProjectTemplate = "";
     document.querySelector("#project-dialog").close();
-    toast("Project created. Copy its scaffold command to generate the code.");
+    toast("Project created. Generate its code from the scaffold panel.");
     await loadProjectOptions();
     await navigateTo("projects", {project: "", resource: created.id});
   } catch (failure) { error.textContent = failure.message; }
@@ -286,7 +363,7 @@ registerView("projects", loadProjects, {
     what: "A project groups code, pipelines, functions, models and agents under one namespace and optional Git repository.",
     why: "Every other area filters by project, and Jupyter and the IDE open its folder.",
     needs: "The projects service. Creating projects also needs project quota.",
-    action: "New project stores the record and returns a scaffold command; it does not write files until you run that command.",
-    results: "Open a project to see related resources, its scaffold command and Git status.",
+    action: "New project stores the record and a scaffold command. Files are written only when you run it: copy it into a terminal, or choose Run in workspace and confirm.",
+    results: "Open a project to see related resources, its scaffold command, the last run's files, errors and git status.",
   },
 });

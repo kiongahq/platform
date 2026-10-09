@@ -152,6 +152,7 @@
       <section id="features" class="view" aria-labelledby="page-title">
         <div class="section-heading"><div><p>Version-controlled definitions, online materialization status, freshness and schemas.</p></div><div class="heading-actions"><label class="sr-only" for="feature-search">Search feature views</label><input type="search" id="feature-search" placeholder="Search feature views…"></div></div>
         <div data-intro="features"></div>
+        <section class="panel store-panel" aria-labelledby="feature-stores-title"><div class="panel-heading"><div><p class="eyebrow">WHERE FEATURES LIVE</p><h3 id="feature-stores-title">Feature stores</h3><p>The internal store is managed by Kionga. External stores are connected by an administrator and shared with specific projects.</p></div></div><div id="feature-store-list" class="store-list" aria-live="polite"></div></section>
         <div id="feature-grid" class="card-grid"></div>
       </section>
 
@@ -178,7 +179,7 @@ python -m realtime.produce --demo recommendations --count 2</code><button type="
 
       <section id="catalog" class="view" aria-labelledby="page-title"><div class="section-heading"><div><p>Models, features, agents and tools, searchable and understandable.</p></div><div class="filters" role="group" aria-label="Filter catalog by kind"><button type="button" class="active" aria-pressed="true" data-kind="">All</button><button type="button" aria-pressed="false" data-kind="model">Models</button><button type="button" aria-pressed="false" data-kind="feature">Features</button><button type="button" aria-pressed="false" data-kind="agent">Agents</button><button type="button" aria-pressed="false" data-kind="tool">Tools</button></div></div><div data-intro="catalog"></div><div id="catalog-grid" class="card-grid"></div></section>
 
-      <section id="platform" class="view" aria-labelledby="page-title"><div class="section-heading"><div><p>Nothing is green by wishful thinking. Every connection is actively checked.</p></div><div class="heading-actions"><button class="primary" type="button" id="add-connection" data-perm="connections_write">＋ Add connection</button></div></div><div data-intro="platform"></div><div class="platform-layout"><div class="panel"><div class="panel-heading"><div><p class="eyebrow">ONBOARDING</p><h3>Production readiness</h3></div><strong id="readiness-percent">0%</strong></div><ol id="readiness-list" class="checklist"></ol></div><div><div id="connection-grid" class="card-grid connection-grid"></div><div id="component-grid" class="component-grid"></div></div></div></section>
+      <section id="platform" class="view" aria-labelledby="page-title"><div class="section-heading"><div><p>Nothing is green by wishful thinking. Every connection is actively checked.</p></div><div class="heading-actions"><button class="primary" type="button" id="add-connection" data-perm="connections_write">＋ Add connection</button></div></div><div data-intro="platform"></div><div class="platform-layout"><div class="panel"><div class="panel-heading"><div><p class="eyebrow">ONBOARDING</p><h3>Production readiness</h3></div><strong id="readiness-percent">0%</strong></div><ol id="readiness-list" class="checklist"></ol></div><div><div id="connection-grid" class="card-grid connection-grid"></div><section id="data-connections" class="panel data-connections" data-admin-only hidden aria-labelledby="data-connections-title"><div class="panel-heading"><div><p class="eyebrow">DATA CONNECTIONS</p><h3 id="data-connections-title">Feature stores and object storage</h3><p>Secrets stay in the gateway environment and are referenced as <code>env:VARIABLE</code>. Test runs a live check and records the reason.</p></div><div class="button-row"><button type="button" id="add-feature-store">＋ Feature store</button><button type="button" id="add-storage-connection">＋ Object storage</button></div></div><h4>Feature stores</h4><div id="feature-store-connections" class="store-list"></div><h4>External object storage</h4><div id="storage-connections" class="store-list"></div></section><div id="component-grid" class="component-grid"></div></div></div></section>
 
       <section id="profile" class="view" aria-labelledby="page-title">
         <div class="section-heading"><div><p>Your effective role, assigned services, project scope, and resource allocation.</p></div><div class="heading-actions"><button class="primary" type="button" id="request-access">Request access</button></div></div>
@@ -252,6 +253,43 @@ python -m realtime.produce --demo recommendations --count 2</code><button type="
       <label>Service address<input name="endpoint" required type="url" placeholder="https://prefect.example.com/api"><small>Prefect: its API base address. OpenFaaS: its gateway address. Others: a health endpoint.</small></label>
       <label>Credential reference<input name="secret_ref" required value="none" placeholder="none or env:PREFECT_API_KEY"><small>Use <code>none</code>, or <code>env:VARIABLE</code> for a secret set on the gateway. Never paste a secret here.</small></label>
       <p class="form-error" id="connection-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save and test</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="scaffold-confirm-dialog" class="wide" aria-labelledby="scaffold-confirm-title">
+    <form id="scaffold-confirm-form" method="dialog">
+      <p class="eyebrow">RUN IN WORKSPACE</p><h2 id="scaffold-confirm-title">Generate the starter code?</h2>
+      <p>Kionga will run exactly this command in your workspace, without a shell, using only the project's stored template settings. Nothing else is executed.</p>
+      <div id="scaffold-confirm-detail"></div>
+      <p class="form-error" id="scaffold-confirm-error" role="alert"></p>
+      <div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit" id="scaffold-confirm-run">Run in workspace</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="feature-store-dialog" aria-labelledby="feature-store-title">
+    <form id="feature-store-form">
+      <p class="eyebrow">FEATURE STORE</p><h2 id="feature-store-title">Connect an external feature store</h2><p>Only providers with an adapter can be connected. The connection is saved, then tested.</p>
+      <label>Provider<select name="provider" id="feature-store-provider"></select><small id="feature-store-provider-help"></small></label>
+      <label>Connection name<input name="name" required pattern="[a-z0-9][a-z0-9-]{1,62}" placeholder="e.g. team-feast"></label>
+      <label>Feature server URL<input name="url" required type="url" placeholder="http://feast-feature-server:6566"></label>
+      <label>Feature services<input name="feature_services" placeholder="customer_profile, fraud_signals"><small>Optional, comma separated. Feast's HTTP server cannot list them itself.</small></label>
+      <label>Credential reference<input name="secret_ref" placeholder="env:FEAST_TOKEN"><small>Optional bearer token set on the gateway. Never paste a secret here.</small></label>
+      <label>Allowed projects<input name="allowed_projects" placeholder="Empty means every project"><small>Comma-separated project IDs.</small></label>
+      <p class="form-error" id="feature-store-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save and test</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="storage-connection-dialog" aria-labelledby="storage-connection-title">
+    <form id="storage-connection-form">
+      <p class="eyebrow">OBJECT STORAGE</p><h2 id="storage-connection-title">Connect S3-compatible storage</h2><p>Kionga checks the bucket with a signed request. Credentials come from the gateway environment.</p>
+      <label>Connection name<input name="name" required pattern="[a-z0-9][a-z0-9-]{1,62}" placeholder="e.g. team-lake"></label>
+      <label>Endpoint<input name="endpoint" required type="url" placeholder="https://s3.eu-west-1.amazonaws.com"></label>
+      <div class="form-grid"><label>Region<input name="region" placeholder="us-east-1"></label><label>Bucket<input name="bucket" required placeholder="team-lake"></label></div>
+      <label class="checkbox"><input type="checkbox" name="path_style"> Path-style addressing (MinIO, Ceph, dotted bucket names)</label>
+      <label>Credential reference<input name="secret_ref" required placeholder="env:LAKE_CREDENTIALS"><small>The variable holds <code>ACCESS_KEY_ID:SECRET_ACCESS_KEY</code>.</small></label>
+      <label>CA bundle (PEM)<textarea name="ca_bundle" rows="3" spellcheck="false" placeholder="Only for private certificate authorities"></textarea></label>
+      <label>Allowed projects<input name="allowed_projects" placeholder="Empty means every project"></label>
+      <p class="form-error" id="storage-connection-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save and test</button></div>
     </form>
   </dialog>
 

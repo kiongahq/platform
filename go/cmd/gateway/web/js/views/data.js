@@ -1,24 +1,62 @@
 /* Data views: feature store, object storage and endpoints, real-time
  * streams, and the shared catalog. */
 let featureCache = [];
+let featureStoreCache = [];
+const freshnessLabel = freshness => {
+  if (!freshness || freshness.state === "never") return "Never materialized";
+  const age = freshness.age_seconds || 0;
+  const human = age < 120 ? `${age}s` : age < 7200 ? `${Math.round(age / 60)}m` : `${Math.round(age / 3600)}h`;
+  return `${freshness.state === "stale" ? "Stale" : "Fresh"} · updated ${human} ago${freshness.ttl_seconds ? ` · TTL ${freshness.ttl_seconds}s` : ""}`;
+};
+const accessibleProjects = store => store.all_projects ? "All projects" : (store.allowed_projects || []).map(projectName).join(", ") || "No projects";
+function storeItem(store, actions = "") {
+  const health = store.health || {state: "configured", detail: ""};
+  return `<article class="store-item" data-store-id="${escapeHTML(store.id)}"><header><h4>${escapeHTML(store.name)}</h4>${status(health.state)}</header>
+    <small><span class="tag">${escapeHTML(store.kind === "internal" ? "Internal" : "External")}</span> ${escapeHTML(store.provider)} · ${escapeHTML(store.location || "")}</small>
+    <small>Projects: ${escapeHTML(accessibleProjects(store))}</small>
+    <p class="field-help">${escapeHTML(health.detail || "Not checked yet.")}${health.checked_at ? ` · checked ${timeTag(health.checked_at)}` : ""}</p>${actions}</article>`;
+}
 function renderFeatures(query = "") {
   const lowered = query.toLowerCase();
   const filtered = featureCache.filter(view => !lowered || view.name.toLowerCase().includes(lowered) || (view.tags || []).some(tag => tag.toLowerCase().includes(lowered)));
   document.querySelector("#feature-grid").innerHTML = filtered.length ? filtered.map(view => {
-    const store = view.store || {kind: "internal", location: "Redis online · Parquet offline"};
-    return `<article class="card feature-card interactive-card" role="button" tabindex="0" data-feature-detail="${escapeHTML(view.id)}" aria-label="Open feature view ${escapeHTML(view.name)}"><span class="kind">${escapeHTML(store.kind === "external" ? `external · ${store.provider || "adapter"}` : "internal store")} · entity ${escapeHTML(view.entity)}</span><h3>${escapeHTML(view.name)}</h3><div class="table-wrap"><table class="schema"><thead><tr><th>Field</th><th>Type</th></tr></thead><tbody>${(view.fields || []).map(field => `<tr><td>${escapeHTML(field.name)}</td><td>${escapeHTML(field.type)}</td></tr>`).join("")}</tbody></table></div><div class="tags">${(view.tags || []).map(tag => `<span class="tag">${escapeHTML(tag)}</span>`).join("")}${view.ttl_seconds ? `<span class="tag">TTL ${view.ttl_seconds}s</span>` : ""}</div><footer>${status(view.status)}<span class="tag">${view.online_entity_count || 0} entities online</span>${view.materialized_at ? `<small>Fresh ${timeTag(view.materialized_at)}</small>` : `<small>Never materialized</small>`}</footer></article>`;
+    const store = view.store || {kind: "internal", provider: "internal", location: "Redis online · Parquet offline"};
+    const freshness = view.freshness || {state: view.materialized_at ? "fresh" : "never"};
+    return `<article class="card feature-card interactive-card" role="button" tabindex="0" data-feature-detail="${escapeHTML(view.id)}" aria-label="Open feature view ${escapeHTML(view.name)}"><span class="kind">${escapeHTML(store.kind === "external" ? `external · ${store.provider || "adapter"}` : "internal store")} · entity ${escapeHTML(view.entity)}${view.version ? ` · v${view.version}` : ""}</span><h3>${escapeHTML(view.name)}</h3><p class="feature-store-line" title="${escapeHTML(store.location || "")}">${escapeHTML(store.location || "")}</p><div class="table-wrap"><table class="schema"><thead><tr><th>Field</th><th>Type</th></tr></thead><tbody>${(view.fields || []).map(field => `<tr><td>${escapeHTML(field.name)}</td><td>${escapeHTML(field.type)}</td></tr>`).join("")}</tbody></table></div><div class="tags">${(view.tags || []).map(tag => `<span class="tag">${escapeHTML(tag)}</span>`).join("")}${view.ttl_seconds ? `<span class="tag">TTL ${view.ttl_seconds}s</span>` : ""}</div>${view.failure_count ? `<p class="form-error">Last ${plural(view.failure_count, "run")} failed: ${escapeHTML(view.latest_failure || "see lineage")}</p>` : ""}<footer>${status(freshness.state)}<span class="tag">${view.online_entity_count || 0} entities online</span><small class="freshness">${escapeHTML(freshnessLabel(freshness))}</small></footer></article>`;
   }).join("") : emptyState(query ? "No feature views match your search" : "No feature views applied yet", query ? "Try another name or tag." : "Apply definitions with the SDK, then run the materializer to fill the online store.");
 }
+function renderFeatureStores() {
+  document.querySelector("#feature-store-list").innerHTML = featureStoreCache.length
+    ? featureStoreCache.map(store => storeItem(store)).join("")
+    : emptyState("No feature stores visible", "Ask an administrator to share a store with your project.");
+}
 async function loadFeatures() {
-  const data = await api("/api/v1/features");
-  featureCache = data.items || [];
+  const [views, stores] = await Promise.all([
+    api("/api/v1/features/views").catch(error => error.status === 404 ? api("/api/v1/features") : Promise.reject(error)),
+    api("/api/v1/features/stores").catch(error => ({items: [], error: error.message})),
+  ]);
+  featureCache = views.items || [];
+  featureStoreCache = stores.items || [];
+  renderFeatureStores();
+  if (stores.error) document.querySelector("#feature-store-list").innerHTML = emptyState("Feature stores unavailable", escapeHTML(stores.error));
   renderFeatures(document.querySelector("#feature-search").value);
 }
 document.querySelector("#feature-search").addEventListener("input", event => renderFeatures(event.target.value));
-onClick("[data-feature-detail]", node => {
+onClick("[data-feature-detail]", async node => {
   const item = featureCache.find(feature => feature.id === node.dataset.featureDetail);
   if (!item) return;
-  showMetadata("FEATURE VIEW", item.name, item, metaList([["Entity", escapeHTML(item.entity)], ["Status", status(item.status)], ["Online entities", String(item.online_entity_count || 0)], ["Last materialized", timeTag(item.materialized_at)], ["TTL", item.ttl_seconds ? `${item.ttl_seconds}s` : "None"]]));
+  const [versions, lineage] = await Promise.all([
+    api(`/api/v1/features/${encodeURIComponent(item.name)}/versions`).catch(() => ({items: []})),
+    api(`/api/v1/features/${encodeURIComponent(item.name)}/lineage`).catch(() => ({items: []})),
+  ]);
+  const store = item.store || {};
+  const runs = (lineage.items || []).slice(0, 5).map(run => `<li>${status(run.status)} <code>${escapeHTML(run.run_id)}</code> · v${escapeHTML(run.view_version || "?")} · ${escapeHTML(run.source_dataset)}${run.offline_uri ? ` → <code>${escapeHTML(run.offline_uri)}</code>` : ""} · ${run.entity_count} entities · ${timeTag(run.created_at)}${run.error ? ` <span class="form-error">${escapeHTML(run.error)}</span>` : ""}</li>`).join("");
+  showMetadata("FEATURE VIEW", item.name, item, `${metaList([
+    ["Entity", escapeHTML(item.entity)], ["Store", `${escapeHTML(store.name || "internal")} · ${escapeHTML(store.location || "")}`],
+    ["Freshness", `${status((item.freshness || {}).state || "never")} ${escapeHTML(freshnessLabel(item.freshness))}`],
+    ["Version", item.version ? `v${item.version} of ${(versions.items || []).length}` : "—"],
+    ["Online entities", String(item.online_entity_count || 0)], ["TTL", item.ttl_seconds ? `${item.ttl_seconds}s` : "None"],
+  ])}<h3>Lineage</h3>${runs ? `<ul class="file-list">${runs}</ul>` : `<p class="field-help">No materialization runs recorded yet.</p>`}`);
 }, {ignoreControls: true});
 
 const storageState = {bucket: "", prefix: ""};
