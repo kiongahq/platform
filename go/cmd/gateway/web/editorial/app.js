@@ -86,6 +86,11 @@
   }
 
   async function start() {
+    try {
+      const saved = sessionStorage.getItem("kionga.editorial.return");
+      sessionStorage.removeItem("kionga.editorial.return");
+      if (saved && !location.hash) history.replaceState(null, "", saved);
+    } catch (_) { /* storage unavailable */ }
     session = await openSession();
     if (!session) return;
     const member = session.member;

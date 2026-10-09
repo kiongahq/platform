@@ -30,6 +30,8 @@
       throw error;
     }
     if (response.status === 401) {
+      // The login round-trip drops URL fragments; remember the route.
+      try { sessionStorage.setItem("kionga.editorial.return", location.hash); } catch (_) { /* private mode */ }
       location.assign(`/auth/login?return_to=${encodeURIComponent(location.pathname + location.hash)}`);
       throw new APIError(401, {message: "Sign in to continue."});
     }

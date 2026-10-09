@@ -81,7 +81,7 @@
       this.wrapper.className = `kimg kimg-${this.data.alignment || "center"}`;
       this.wrapper.innerHTML = `<figure class="kimg-figure"><img src="${esc(url)}" alt="${esc(this.data.alt)}" loading="lazy"></figure>
         <div class="kimg-fields">
-          <label class="kimg-alt">Alt text <small>(required to publish — describe what the image shows)</small><input data-kimg-alt value="${esc(this.data.alt)}" ${this.readOnly ? "disabled" : ""} maxlength="300" placeholder="e.g. Diagram of the gateway routing a request to a model server"></label>
+          <label class="kimg-alt" title="Required to publish: describe what the image shows">Alt text (required)<input data-kimg-alt value="${esc(this.data.alt)}" ${this.readOnly ? "disabled" : ""} maxlength="300" placeholder="e.g. Diagram of the gateway routing a request to a model server"></label>
           <label>Caption<input data-kimg-caption value="${esc(this.plainCaption())}" ${this.readOnly ? "disabled" : ""} maxlength="300" placeholder="Optional caption"></label>
           <label>Alignment<select data-kimg-align ${this.readOnly ? "disabled" : ""}>
             <option value="center">Centered</option><option value="wide">Wide</option><option value="full">Full width</option></select></label>
