@@ -41,7 +41,7 @@ format:
 
 build:
 	mkdir -p bin
-	cd go && for cmd in gateway operator integration-worker trace-proxy feature-gateway storage-proxy metrics-collector serving-manager cli; do \
+	cd go && for cmd in gateway operator integration-worker trace-proxy feature-gateway storage-proxy metrics-collector serving-manager log-exporter cli; do \
 		go build -buildvcs=false -o ../bin/mlaiops-$$cmd ./cmd/$$cmd; \
 	done
 

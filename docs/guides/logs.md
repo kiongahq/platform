@@ -10,7 +10,7 @@ tenant, project, flow, run, node, attempt and workload.
 | `runner` | the pipeline runner, streamed while a container runs | container stdout and stderr, one entry per line |
 | `platform` | the gateway | every node transition (`train → failed: ValueError: …`) with attempt, exit code and workload |
 | `engine` | reserved for orchestrator messages | |
-| `k8s` | reserved for Kubernetes Pod and Job events | not produced yet: there is no Kubernetes executor |
+| `k8s` | the Kubernetes executor (opt-in, see [Pipelines](pipelines.md#kubernetes)) | Pod and Job events such as `FailedScheduling`, `OOMKilled` or a deadline; container stdout is not streamed yet |
 
 Each entry has a timestamp, source, severity (`debug`, `info`, `warn`, `error`),
 message and structured context. Container lines from stderr are `warn` unless the
