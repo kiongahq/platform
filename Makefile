@@ -46,15 +46,19 @@ build:
 	done
 
 verify: test lint build
-	node --check go/cmd/gateway/web/app.js
-	node --check go/cmd/gateway/web/workspace.js
+	for f in go/cmd/gateway/web/js/*.js go/cmd/gateway/web/js/views/*.js go/cmd/gateway/web/*.js; do node --check $$f || exit 1; done
 	python -m compileall -q python/mlaiops_sdk
 	! rg -i '\b(mlrun|nuclio|v3io|iguazio)\b' go config
 
-.PHONY: test-ui
+.PHONY: test-ui test-browser
 test-ui:
 	npm ci --ignore-scripts
 	npm run test:ui
+
+# Browser acceptance against a running stack (make local-up first). Uses the
+# installed Chrome; screenshots land in artifacts/screenshots/<viewport>/.
+test-browser:
+	KIONGA_URL=$${KIONGA_URL:-http://localhost:$${GATEWAY_PORT:-8080}} npx playwright test
 
 local: local-up
 

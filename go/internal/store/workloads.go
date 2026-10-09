@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"github.com/ml-ai-ops/platform/internal/pipelinespec"
 	"net/url"
 	"regexp"
 	"strings"
@@ -289,101 +290,21 @@ func (s *Store) PipelineDefinition(definitionID string) (api.PipelineDefinition,
 func pipelineDefinitionFrom(values []api.PipelineDefinition, definitionID string) (api.PipelineDefinition, error) {
 	for _, definition := range values {
 		if definition.ID == definitionID {
-			return definition, nil
+			return cloneDefinition(definition), nil
 		}
 	}
 	return api.PipelineDefinition{}, ErrNotFound
 }
 
 // ValidatePipelineDefinition normalizes and validates the portable pipeline
-// contract before either persistence or resource-authorization checks.
+// contract before persistence or resource-authorization checks. The error is
+// a pipelinespec.Issues listing every problem.
 func ValidatePipelineDefinition(req api.UpsertPipelineDefinitionRequest) (api.UpsertPipelineDefinitionRequest, error) {
-	req.Name, req.Version = strings.TrimSpace(req.Name), strings.TrimSpace(req.Version)
-	if req.ProjectID == "" || req.Name == "" || req.Version == "" || len(req.Jobs) == 0 {
-		return req, errors.New("project_id, name, version and at least one job are required")
+	normalized, issues := pipelinespec.Validate(req)
+	if len(issues) > 0 {
+		return normalized, issues
 	}
-	if req.ExecutionMode == "" {
-		req.ExecutionMode = "prefect"
-	}
-	if req.ExecutionMode != "prefect" && req.ExecutionMode != "functions" {
-		return req, errors.New("execution_mode must be prefect or functions")
-	}
-	known := make(map[string]bool, len(req.Jobs))
-	for i := range req.Jobs {
-		job := &req.Jobs[i]
-		job.Name, job.Kind = strings.TrimSpace(job.Name), strings.TrimSpace(job.Kind)
-		if job.Name == "" || known[job.Name] {
-			return req, errors.New("job names must be non-empty and unique")
-		}
-		known[job.Name] = true
-		if job.Kind != "function" && job.Kind != "container" {
-			return req, errors.New("job kind must be function or container")
-		}
-		if job.Kind == "function" && strings.TrimSpace(job.Function) == "" {
-			return req, errors.New("function jobs require function")
-		}
-		if job.Kind == "container" && strings.TrimSpace(job.Image) == "" {
-			return req, errors.New("container jobs require image")
-		}
-		if job.Kind == "container" {
-			if job.Resources.CPU == "" {
-				job.Resources.CPU = "500m"
-			}
-			if job.Resources.Memory == "" {
-				job.Resources.Memory = "1Gi"
-			}
-		}
-		if req.ExecutionMode == "functions" && job.Kind != "function" {
-			return req, errors.New("functions execution mode only accepts function jobs")
-		}
-		if req.ExecutionMode == "prefect" && job.Kind != "container" {
-			return req, errors.New("prefect execution mode only accepts container jobs")
-		}
-		if job.Resources.CPU != "" && !resourceQuantity.MatchString(job.Resources.CPU) {
-			return req, errors.New("job CPU must be a Kubernetes quantity such as 500m or 2")
-		}
-		if job.Resources.Memory != "" && !resourceQuantity.MatchString(job.Resources.Memory) {
-			return req, errors.New("job memory must be a quantity such as 512Mi or 2Gi")
-		}
-		if job.Retries < 0 || job.Retries > 10 || job.Resources.GPU < 0 {
-			return req, errors.New("job retries must be between 0 and 10 and GPU count cannot be negative")
-		}
-	}
-	for _, job := range req.Jobs {
-		for _, dependency := range job.DependsOn {
-			if dependency == job.Name || !known[dependency] {
-				return req, errors.New("job dependencies must reference another job")
-			}
-		}
-	}
-	visiting, visited := map[string]bool{}, map[string]bool{}
-	byName := map[string]api.PipelineJob{}
-	for _, job := range req.Jobs {
-		byName[job.Name] = job
-	}
-	var visit func(string) bool
-	visit = func(name string) bool {
-		if visiting[name] {
-			return false
-		}
-		if visited[name] {
-			return true
-		}
-		visiting[name] = true
-		for _, parent := range byName[name].DependsOn {
-			if !visit(parent) {
-				return false
-			}
-		}
-		visiting[name], visited[name] = false, true
-		return true
-	}
-	for name := range byName {
-		if !visit(name) {
-			return req, errors.New("pipeline graph contains a cycle")
-		}
-	}
-	return req, nil
+	return normalized, nil
 }
 
 func (s *Store) UpsertPipelineDefinition(definitionID string, req api.UpsertPipelineDefinitionRequest, actor string) (api.PipelineDefinition, error) {
@@ -391,25 +312,42 @@ func (s *Store) UpsertPipelineDefinition(definitionID string, req api.UpsertPipe
 	if err != nil {
 		return api.PipelineDefinition{}, err
 	}
+	definition, yamlText, changed, err := s.upsertPipelineDefinition(definitionID, req, actor)
+	if err != nil || !changed {
+		return definition, err
+	}
+	return definition, recordRevision(s, definition, yamlText, req, actor)
+}
+
+func (s *Store) upsertPipelineDefinition(definitionID string, req api.UpsertPipelineDefinitionRequest, actor string) (api.PipelineDefinition, string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !hasProject(s.data.Projects, req.ProjectID) {
-		return api.PipelineDefinition{}, ErrNotFound
+		return api.PipelineDefinition{}, "", false, ErrNotFound
 	}
 	now := time.Now().UTC()
 	for i := range s.data.Definitions {
 		if s.data.Definitions[i].ID == definitionID || (definitionID == "" && s.data.Definitions[i].ProjectID == req.ProjectID && s.data.Definitions[i].Name == req.Name && s.data.Definitions[i].Version == req.Version) {
 			definition := &s.data.Definitions[i]
-			definition.Name, definition.Version, definition.ExecutionMode, definition.Jobs = req.Name, req.Version, req.ExecutionMode, req.Jobs
-			definition.RepositoryURL, definition.CommitSHA, definition.UpdatedAt = req.RepositoryURL, req.CommitSHA, now
+			yamlText, changed, err := applyDefinitionRequest(definition, req, now)
+			if err != nil {
+				return api.PipelineDefinition{}, "", false, err
+			}
 			s.record("pipeline_definition.updated", "pipeline_definition", definition.ID, actor, nil)
-			return *definition, s.persist()
+			return cloneDefinition(*definition), yamlText, changed, s.persist()
 		}
 	}
-	definition := api.PipelineDefinition{ID: id("pipe"), ProjectID: req.ProjectID, Name: req.Name, Version: req.Version, ExecutionMode: req.ExecutionMode, Jobs: req.Jobs, RepositoryURL: req.RepositoryURL, CommitSHA: req.CommitSHA, CreatedAt: now, UpdatedAt: now}
+	if definitionID != "" {
+		return api.PipelineDefinition{}, "", false, ErrNotFound
+	}
+	definition := api.PipelineDefinition{ID: id("pipe"), OwnerSubject: actor, CreatedAt: now}
+	yamlText, _, err := applyDefinitionRequest(&definition, req, now)
+	if err != nil {
+		return api.PipelineDefinition{}, "", false, err
+	}
 	s.data.Definitions = append([]api.PipelineDefinition{definition}, s.data.Definitions...)
 	s.record("pipeline_definition.created", "pipeline_definition", definition.ID, actor, nil)
-	return definition, s.persist()
+	return definition, yamlText, true, s.persist()
 }
 
 func stepsFromDefinition(definition api.PipelineDefinition) []api.PipelineStep {
@@ -501,23 +439,40 @@ func (p *Postgres) UpsertPipelineDefinition(definitionID string, req api.UpsertP
 	if !p.exists("project", req.ProjectID) {
 		return api.PipelineDefinition{}, ErrNotFound
 	}
+	if definitionID == "" {
+		for _, existing := range p.PipelineDefinitions() {
+			if existing.ProjectID == req.ProjectID && existing.Name == req.Name && existing.Version == req.Version {
+				definitionID = existing.ID
+				break
+			}
+		}
+	}
 	now := time.Now().UTC()
-	if definitionID != "" {
-		definition, getErr := p.PipelineDefinition(definitionID)
-		if getErr != nil {
-			return definition, getErr
-		}
-		definition.Name, definition.Version, definition.ExecutionMode, definition.Jobs, definition.RepositoryURL, definition.CommitSHA, definition.UpdatedAt = req.Name, req.Version, req.ExecutionMode, req.Jobs, req.RepositoryURL, req.CommitSHA, now
-		return definition, p.write("pipeline_definition", definition.ID, definition, "pipeline_definition.updated", actor, nil)
+	var yamlText string
+	var changed bool
+	action := "pipeline_definition.updated"
+	if definitionID == "" {
+		definitionID, action = id("pipe"), "pipeline_definition.created"
 	}
-	for _, existing := range p.PipelineDefinitions() {
-		if existing.ProjectID == req.ProjectID && existing.Name == req.Name && existing.Version == req.Version {
-			return p.UpsertPipelineDefinition(existing.ID, req, actor)
+	// UpdateDoc locks the row so concurrent saves cannot both claim the same
+	// next revision number.
+	definition, err := UpdateDoc(p, "pipeline_definition", definitionID, func(current api.PipelineDefinition, exists bool) (api.PipelineDefinition, error) {
+		if !exists {
+			if action == "pipeline_definition.updated" {
+				return current, ErrNotFound
+			}
+			current = api.PipelineDefinition{ID: definitionID, OwnerSubject: actor, CreatedAt: now}
 		}
+		var applyErr error
+		yamlText, changed, applyErr = applyDefinitionRequest(&current, req, now)
+		return current, applyErr
+	}, action, actor)
+	if err != nil || !changed {
+		return definition, err
 	}
-	definition := api.PipelineDefinition{ID: id("pipe"), ProjectID: req.ProjectID, Name: req.Name, Version: req.Version, ExecutionMode: req.ExecutionMode, Jobs: req.Jobs, RepositoryURL: req.RepositoryURL, CommitSHA: req.CommitSHA, CreatedAt: now, UpdatedAt: now}
-	return definition, p.write("pipeline_definition", definition.ID, definition, "pipeline_definition.created", actor, nil)
+	return definition, recordRevision(p, definition, yamlText, req, actor)
 }
+
 func (p *Postgres) UpsertFunction(req api.DeployFunctionRequest, owner, actor string) (api.Function, error) {
 	if err := ValidateFunctionRequest(req); err != nil {
 		return api.Function{}, err

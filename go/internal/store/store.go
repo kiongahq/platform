@@ -35,6 +35,8 @@ type state struct {
 	Sessions       []api.AgentSession       `json:"sessions"`
 	Traces         []api.AgentTrace         `json:"traces"`
 	Features       []api.FeatureView        `json:"features"`
+	// Documents holds generic resources by kind then id (see documents.go).
+	Documents map[string]map[string]storedDocument `json:"documents,omitempty"`
 }
 
 func (s *Store) UserAccess() []api.UserAccess {
@@ -121,7 +123,25 @@ func (s *Store) Projects() []api.Project {
 func (s *Store) PipelineDefinitions() []api.PipelineDefinition {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return clone(s.data.Definitions)
+	out := make([]api.PipelineDefinition, len(s.data.Definitions))
+	for i, definition := range s.data.Definitions {
+		out[i] = cloneDefinition(definition)
+	}
+	return out
+}
+
+// cloneDefinition deep-copies a definition. Callers (the scheduler, HTTP
+// encoders) must never alias slices the store mutates under its lock.
+func cloneDefinition(definition api.PipelineDefinition) api.PipelineDefinition {
+	raw, err := json.Marshal(definition)
+	if err != nil {
+		return definition
+	}
+	var copied api.PipelineDefinition
+	if json.Unmarshal(raw, &copied) != nil {
+		return definition
+	}
+	return copied
 }
 func (s *Store) Functions() []api.Function {
 	s.mu.RLock()
@@ -198,14 +218,16 @@ func (s *Store) SubmitPipeline(req api.SubmitPipelineRequest, actor ...string) (
 		return api.PipelineRun{}, ErrNotFound
 	}
 	steps, mode := defaultSteps("pending"), "prefect"
+	var definition *api.PipelineDefinition
 	if req.DefinitionID != "" {
-		definition, err := pipelineDefinitionFrom(s.data.Definitions, req.DefinitionID)
-		if err != nil || definition.ProjectID != req.ProjectID {
+		found, err := pipelineDefinitionFrom(s.data.Definitions, req.DefinitionID)
+		if err != nil || found.ProjectID != req.ProjectID {
 			return api.PipelineRun{}, ErrNotFound
 		}
-		steps, mode = stepsFromDefinition(definition), definition.ExecutionMode
+		definition = &found
+		steps, mode = stepsFromDefinition(found), found.ExecutionMode
 		if strings.TrimSpace(req.Name) == "" {
-			req.Name = definition.Name
+			req.Name = found.Name
 		}
 	}
 	if strings.TrimSpace(req.Name) == "" {
@@ -213,6 +235,7 @@ func (s *Store) SubmitPipeline(req api.SubmitPipelineRequest, actor ...string) (
 	}
 	now := time.Now().UTC()
 	run := api.PipelineRun{ID: id("run"), ProjectID: req.ProjectID, Name: strings.TrimSpace(req.Name), Status: "queued", Progress: 0, CreatedAt: now, UpdatedAt: now, DefinitionID: req.DefinitionID, ExecutionMode: mode, Parameters: req.Parameters, Steps: steps, Logs: []api.RunLog{{Timestamp: now, Level: "info", Message: "Run accepted by control plane"}}}
+	applyRunProvenance(&run, definition, req, first(actor))
 	s.data.Runs = append([]api.PipelineRun{run}, s.data.Runs...)
 	s.record("pipeline.submitted", "pipeline_run", run.ID, first(actor), nil)
 	err := s.persist()
@@ -256,6 +279,7 @@ func (s *Store) RetryRun(runID, actor string) (api.PipelineRun, error) {
 			now := time.Now().UTC()
 			steps := resetSteps(previous.Steps)
 			run := api.PipelineRun{ID: id("run"), ProjectID: previous.ProjectID, Name: previous.Name, ParentRunID: previous.ID, Status: "queued", CreatedAt: now, UpdatedAt: now, DefinitionID: previous.DefinitionID, ExecutionMode: previous.ExecutionMode, Parameters: previous.Parameters, Steps: steps, Logs: []api.RunLog{{Timestamp: now, Level: "info", Message: "Retry created from " + previous.ID}}}
+			run.Trigger, run.Provenance, run.OwnerSubject = "retry", previous.Provenance, actor
 			s.data.Runs = append([]api.PipelineRun{run}, s.data.Runs...)
 			s.record("pipeline.retried", "pipeline_run", run.ID, actor, map[string]any{"parent_run_id": previous.ID})
 			err := s.persist()
@@ -296,23 +320,37 @@ func (s *Store) UpdateRunStep(runID string, req api.UpdateRunStepRequest, actor 
 			continue
 		}
 		run := &s.data.Runs[i]
-		now := time.Now().UTC()
-		level := "info"
-		if req.Status == "failed" {
-			level = "error"
-		}
-		run.Logs = append(run.Logs, api.RunLog{Timestamp: now, Step: req.Step, Level: level, Message: stepMessage(req)})
-		if run.Status == "cancelled" || run.Status == "failed" || run.Status == "succeeded" {
-			// Terminal runs keep their state; late reports are only logged.
-			err := s.persist()
-			return clonePipelineRun(*run), err
-		}
-		applyStepTransition(run, req)
-		run.UpdatedAt = now
+		recordStepReport(run, req, time.Now().UTC())
 		err := s.persist()
 		return clonePipelineRun(*run), err
 	}
 	return api.PipelineRun{}, ErrNotFound
+}
+
+// recordStepReport logs a step report and applies it. Step-level facts are
+// always recorded, even after the run turned terminal, so siblings of a
+// failed node still show how they ended; the run's own status is sticky once
+// cancelled, failed or succeeded.
+func recordStepReport(run *api.PipelineRun, req api.UpdateRunStepRequest, now time.Time) {
+	level := "info"
+	if req.Status == "failed" {
+		level = "error"
+	}
+	run.Logs = appendBoundedLog(run.Logs, api.RunLog{Timestamp: now, Step: req.Step, Level: level, Message: stepMessage(req)})
+	applyStepTransition(run, req, now)
+	run.UpdatedAt = now
+}
+
+// maxRunLogs bounds the inline run log; full node logs live in the log store.
+const maxRunLogs = 500
+
+func appendBoundedLog(logs []api.RunLog, entry api.RunLog) []api.RunLog {
+	logs = append(logs, entry)
+	if len(logs) > maxRunLogs {
+		trimmed := append([]api.RunLog{{Timestamp: entry.Timestamp, Level: "warning", Message: fmt.Sprintf("earlier log lines truncated; showing the last %d", maxRunLogs-1)}}, logs[len(logs)-(maxRunLogs-1):]...)
+		return trimmed
+	}
+	return logs
 }
 
 func validStepStatus(status string) bool {
@@ -333,24 +371,54 @@ func stepMessage(req api.UpdateRunStepRequest) string {
 // applyStepTransition upserts the step and recomputes run status/progress:
 // any failed step fails the run, any running step keeps it running, and the
 // run succeeds only when every step has finished.
-func applyStepTransition(run *api.PipelineRun, req api.UpdateRunStepRequest) {
-	found := false
+func applyStepTransition(run *api.PipelineRun, req api.UpdateRunStepRequest, now time.Time) {
+	at := now
+	if req.At != nil {
+		at = req.At.UTC()
+	}
+	index := -1
 	for i := range run.Steps {
 		if run.Steps[i].Name == req.Step {
-			run.Steps[i].Status = req.Status
-			if req.Status == "succeeded" || req.Status == "skipped" {
-				run.Steps[i].Progress = 100
-			}
-			found = true
+			index = i
 			break
 		}
 	}
-	if !found {
-		step := api.PipelineStep{Name: req.Step, Status: req.Status}
-		if req.Status == "succeeded" || req.Status == "skipped" {
-			step.Progress = 100
+	if index < 0 {
+		run.Steps = append(run.Steps, api.PipelineStep{Name: req.Step})
+		index = len(run.Steps) - 1
+	}
+	step := &run.Steps[index]
+	step.Status = req.Status
+	if req.Message != "" {
+		step.Message = truncate(req.Message, 2000)
+	}
+	if req.Attempt > 0 {
+		step.Attempt = req.Attempt
+	}
+	if req.ExitCode != nil {
+		code := *req.ExitCode
+		step.ExitCode = &code
+	}
+	if req.WorkloadKind != "" {
+		step.WorkloadKind, step.WorkloadID = req.WorkloadKind, req.WorkloadID
+	}
+	if req.ImageDigest != "" {
+		step.ImageDigest = req.ImageDigest
+	}
+	switch req.Status {
+	case "running":
+		if step.StartedAt == nil {
+			step.StartedAt = &at
 		}
-		run.Steps = append(run.Steps, step)
+		step.EndedAt = nil
+	case "succeeded", "failed", "skipped":
+		if step.StartedAt == nil && req.Status != "skipped" {
+			step.StartedAt = &at
+		}
+		step.EndedAt = &at
+	}
+	if req.Status == "succeeded" || req.Status == "skipped" {
+		step.Progress = 100
 	}
 	completed, failed, running := 0, 0, 0
 	for _, step := range run.Steps {
@@ -366,6 +434,9 @@ func applyStepTransition(run *api.PipelineRun, req api.UpdateRunStepRequest) {
 	if len(run.Steps) > 0 {
 		run.Progress = completed * 100 / len(run.Steps)
 	}
+	if run.Status == "cancelled" || run.Status == "failed" || run.Status == "succeeded" {
+		return
+	}
 	switch {
 	case failed > 0:
 		run.Status = "failed"
@@ -374,6 +445,13 @@ func applyStepTransition(run *api.PipelineRun, req api.UpdateRunStepRequest) {
 	case running > 0 || completed > 0:
 		run.Status = "running"
 	}
+}
+
+func truncate(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	return value[len(value)-limit:]
 }
 
 func (s *Store) RegisterModel(req api.RegisterModelRequest, actor string) (api.Model, error) {

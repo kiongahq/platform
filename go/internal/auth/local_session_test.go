@@ -109,3 +109,62 @@ func TestLocalAPIAllowsServiceCredentialButRejectsInvalidBearer(t *testing.T) {
 		}
 	}
 }
+
+type fakeAccounts struct{ passwords map[string]string }
+
+func (f *fakeAccounts) VerifyLocalAccount(subject, password string) bool {
+	expected, ok := f.passwords[subject]
+	return ok && expected == password
+}
+func (f *fakeAccounts) LocalAccountActive(subject string) bool {
+	_, ok := f.passwords[subject]
+	return ok
+}
+
+func localLogin(t *testing.T, handler http.Handler, username, password string) []*http.Cookie {
+	t.Helper()
+	form := url.Values{"username": {username}, "password": {password}, "return_to": {"/console.html"}}
+	request := httptest.NewRequest(http.MethodPost, "/auth/local/login", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if strings.Contains(response.Header().Get("Location"), "error=invalid") {
+		return nil
+	}
+	return response.Result().Cookies()
+}
+
+func TestProvisionedLocalAccountsSignInAsNormalUsers(t *testing.T) {
+	accounts := &fakeAccounts{passwords: map[string]string{"alice": "alice-password-123"}}
+	var seen Principal
+	handler := NewLocalSessionManager("admin", "admin-password", accounts).Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen, _ = PrincipalFrom(r.Context())
+	}))
+	if localLogin(t, handler, "alice", "wrong") != nil {
+		t.Fatal("wrong password accepted")
+	}
+	// An account named like the bootstrap admin must never be honored.
+	accounts.passwords["admin"] = "account-password-1"
+	if localLogin(t, handler, "admin", "account-password-1") != nil {
+		t.Fatal("account shadowing the bootstrap administrator was accepted")
+	}
+	cookies := localLogin(t, handler, "alice", "alice-password-123")
+	if cookies == nil {
+		t.Fatal("provisioned account rejected")
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	for _, cookie := range cookies {
+		request.AddCookie(cookie)
+	}
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+	if seen.Subject != "alice" || len(seen.Roles) != 1 || seen.Roles[0] != RoleUser {
+		t.Fatalf("account principal: %+v", seen)
+	}
+	// Removing the password login ends existing sessions.
+	delete(accounts.passwords, "alice")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("revoked account session still valid: %d", response.Code)
+	}
+}

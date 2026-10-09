@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	// Distroless images ship no zoneinfo; schedules need IANA timezones.
+	_ "time/tzdata"
 
 	"github.com/ml-ai-ops/platform/internal/auth"
 	"github.com/ml-ai-ops/platform/internal/httpapi"
@@ -75,6 +77,7 @@ func main() {
 		log.Printf("using local file repository at %s", dataPath)
 	}
 	handler := httpapi.New(repository, static)
+	httpapi.StartScheduler(ctx, repository)
 	if issuer := os.Getenv("OIDC_ISSUER"); issuer != "" {
 		jwksURL := os.Getenv("OIDC_JWKS_URL")
 		if jwksURL == "" {
@@ -104,7 +107,7 @@ func main() {
 		if password == "" {
 			password = "mlaiops-local"
 		}
-		handler = auth.NewLocalSessionManager(username, password).Handler(handler)
+		handler = auth.NewLocalSessionManager(username, password, httpapi.LocalAccountStore{Docs: repository}).Handler(handler)
 		log.Printf("WARNING: OIDC authentication disabled; local development mode only")
 	}
 	handler = auth.APITokenMiddleware(repository.ResolveAPIToken, handler)

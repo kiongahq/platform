@@ -366,14 +366,16 @@ func (p *Postgres) SubmitPipeline(req api.SubmitPipelineRequest, actors ...strin
 		return api.PipelineRun{}, ErrNotFound
 	}
 	steps, mode := defaultSteps("pending"), "prefect"
+	var definition *api.PipelineDefinition
 	if req.DefinitionID != "" {
-		definition, err := p.PipelineDefinition(req.DefinitionID)
-		if err != nil || definition.ProjectID != req.ProjectID {
+		found, err := p.PipelineDefinition(req.DefinitionID)
+		if err != nil || found.ProjectID != req.ProjectID {
 			return api.PipelineRun{}, ErrNotFound
 		}
-		steps, mode = stepsFromDefinition(definition), definition.ExecutionMode
+		definition = &found
+		steps, mode = stepsFromDefinition(found), found.ExecutionMode
 		if strings.TrimSpace(req.Name) == "" {
-			req.Name = definition.Name
+			req.Name = found.Name
 		}
 	}
 	if strings.TrimSpace(req.Name) == "" {
@@ -381,6 +383,7 @@ func (p *Postgres) SubmitPipeline(req api.SubmitPipelineRequest, actors ...strin
 	}
 	now := time.Now().UTC()
 	run := api.PipelineRun{ID: id("run"), ProjectID: req.ProjectID, Name: req.Name, Status: "queued", CreatedAt: now, UpdatedAt: now, DefinitionID: req.DefinitionID, ExecutionMode: mode, Parameters: req.Parameters, Steps: steps, Logs: []api.RunLog{{Timestamp: now, Level: "info", Message: "Run accepted by control plane"}}}
+	applyRunProvenance(&run, definition, req, first(actors))
 	return run, p.write("pipeline_run", run.ID, run, "pipeline.submitted", first(actors), nil)
 }
 
@@ -388,16 +391,14 @@ func (p *Postgres) Run(runID string) (api.PipelineRun, error) {
 	return get[api.PipelineRun](p, "pipeline_run", runID)
 }
 func (p *Postgres) CancelRun(runID, actor string) (api.PipelineRun, error) {
-	run, err := p.Run(runID)
-	if err != nil {
-		return run, err
-	}
-	if run.Status == "succeeded" || run.Status == "failed" {
-		return run, errors.New("completed runs cannot be cancelled")
-	}
-	run.Status, run.UpdatedAt = "cancelled", time.Now().UTC()
-	run.Logs = append(run.Logs, api.RunLog{Timestamp: run.UpdatedAt, Level: "warning", Message: "Run cancelled by " + actor})
-	return run, p.write("pipeline_run", run.ID, run, "pipeline.cancelled", actor, nil)
+	return mutate(p, "pipeline_run", runID, func(run *api.PipelineRun) error {
+		if run.Status == "succeeded" || run.Status == "failed" || run.Status == "cancelled" {
+			return errors.New("completed runs cannot be cancelled")
+		}
+		run.Status, run.UpdatedAt = "cancelled", time.Now().UTC()
+		run.Logs = append(run.Logs, api.RunLog{Timestamp: run.UpdatedAt, Level: "warning", Message: "Run cancelled by " + actor})
+		return nil
+	}, "pipeline.cancelled", actor, nil)
 }
 func (p *Postgres) RetryRun(runID, actor string) (api.PipelineRun, error) {
 	previous, err := p.Run(runID)
@@ -406,21 +407,20 @@ func (p *Postgres) RetryRun(runID, actor string) (api.PipelineRun, error) {
 	}
 	now := time.Now().UTC()
 	run := api.PipelineRun{ID: id("run"), ProjectID: previous.ProjectID, Name: previous.Name, ParentRunID: previous.ID, Status: "queued", CreatedAt: now, UpdatedAt: now, DefinitionID: previous.DefinitionID, ExecutionMode: previous.ExecutionMode, Parameters: previous.Parameters, Steps: resetSteps(previous.Steps), Logs: []api.RunLog{{Timestamp: now, Level: "info", Message: "Retry created from " + previous.ID}}}
+	run.Trigger, run.Provenance, run.OwnerSubject = "retry", previous.Provenance, actor
 	return run, p.write("pipeline_run", run.ID, run, "pipeline.retried", actor, map[string]any{"parent_run_id": previous.ID})
 }
 
 // SetRunEngine links a control-plane run to its execution engine run id.
 func (p *Postgres) SetRunEngine(runID, engineRunID string) (api.PipelineRun, error) {
-	run, err := p.Run(runID)
-	if err != nil {
-		return run, err
-	}
-	run.EngineRunID, run.UpdatedAt = engineRunID, time.Now().UTC()
-	return run, p.write("pipeline_run", run.ID, run, "pipeline.engine_linked", "system", map[string]any{"engine_run_id": engineRunID})
+	return mutate(p, "pipeline_run", runID, func(run *api.PipelineRun) error {
+		run.EngineRunID, run.UpdatedAt = engineRunID, time.Now().UTC()
+		return nil
+	}, "pipeline.engine_linked", "system", map[string]any{"engine_run_id": engineRunID})
 }
 
-// UpdateRunStep applies a reported step transition; shares the deterministic
-// transition logic with the file store.
+// UpdateRunStep applies a reported step transition under a row lock; it
+// shares the deterministic transition logic with the file store.
 func (p *Postgres) UpdateRunStep(runID string, req api.UpdateRunStepRequest, actor string) (api.PipelineRun, error) {
 	if req.Step == "" || req.Status == "" {
 		return api.PipelineRun{}, errors.New("step and status are required")
@@ -428,21 +428,10 @@ func (p *Postgres) UpdateRunStep(runID string, req api.UpdateRunStepRequest, act
 	if !validStepStatus(req.Status) {
 		return api.PipelineRun{}, fmt.Errorf("invalid step status %q", req.Status)
 	}
-	run, err := p.Run(runID)
-	if err != nil {
-		return run, err
-	}
-	now := time.Now().UTC()
-	level := "info"
-	if req.Status == "failed" {
-		level = "error"
-	}
-	run.Logs = append(run.Logs, api.RunLog{Timestamp: now, Step: req.Step, Level: level, Message: stepMessage(req)})
-	if run.Status != "cancelled" && run.Status != "failed" && run.Status != "succeeded" {
-		applyStepTransition(&run, req)
-		run.UpdatedAt = now
-	}
-	return run, p.write("pipeline_run", run.ID, run, "pipeline.step_reported", actor, map[string]any{"step": req.Step, "status": req.Status})
+	return mutate(p, "pipeline_run", runID, func(run *api.PipelineRun) error {
+		recordStepReport(run, req, time.Now().UTC())
+		return nil
+	}, "pipeline.step_reported", actor, map[string]any{"step": req.Step, "status": req.Status})
 }
 
 func (p *Postgres) RegisterModel(req api.RegisterModelRequest, actor string) (api.Model, error) {
@@ -677,6 +666,44 @@ func (p *Postgres) write(kind, resourceID string, value any, action, actor strin
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := p.writeTx(ctx, tx, kind, resourceID, value, action, actor, metadata); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// mutate is write with a row lock: fn sees the current value and returns
+// the next one, so concurrent reporters (parallel pipeline nodes) cannot
+// overwrite each other's changes.
+func mutate[T any](p *Postgres, kind, resourceID string, fn func(*T) error, action, actor string, metadata map[string]any) (T, error) {
+	var value T
+	ctx := context.Background()
+	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return value, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var raw []byte
+	err = tx.QueryRow(ctx, `SELECT payload FROM platform_resources WHERE tenant_id=$1 AND kind=$2 AND id=$3 FOR UPDATE`, p.tenant, kind, resourceID).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return value, ErrNotFound
+	}
+	if err != nil {
+		return value, err
+	}
+	if value, err = decodeStoredValue[T](raw); err != nil {
+		return value, err
+	}
+	if err = fn(&value); err != nil {
+		return value, err
+	}
+	if err = p.writeTx(ctx, tx, kind, resourceID, value, action, actor, metadata); err != nil {
+		return value, err
+	}
+	return value, tx.Commit(ctx)
+}
+
+func (p *Postgres) writeTx(ctx context.Context, tx pgx.Tx, kind, resourceID string, value any, action, actor string, metadata map[string]any) error {
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -711,7 +738,7 @@ func (p *Postgres) write(kind, resourceID string, value any, action, actor strin
 			return err
 		}
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 func (p *Postgres) PendingOutbox(ctx context.Context, limit int) ([]OutboxEvent, error) {

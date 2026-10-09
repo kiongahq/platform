@@ -3,135 +3,163 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Kionga Console — ML work without the maze</title>
+  <meta name="color-scheme" content="light dark">
+  <title>Kionga Console</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="app-bar">
-    <button class="icon-button" id="sidebar-toggle" aria-label="Collapse navigation" aria-expanded="true" title="Collapse navigation">☰</button>
-    <a class="app-brand" href="#" data-view-target="overview"><span class="brand-mark">K</span><b>Kionga</b></a>
-    <label class="project-context-label" for="project-context">Project <select id="project-context" aria-label="Current project"><option value="">All assigned projects</option></select></label>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="app-bar">
+    <button class="icon-button quiet" id="sidebar-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true" aria-controls="sidebar"><span aria-hidden="true">☰</span></button>
+    <a class="app-brand" href="/console.html" data-view-target="overview"><span class="brand-mark" aria-hidden="true">K</span><b>Kionga</b></a>
     <span class="app-spacer"></span>
-    <button class="app-action" id="refresh-view">Refresh</button>
-    <button class="app-action" id="open-help">Help</button>
-    <button class="account-button" id="account-button" type="button" aria-label="Open profile settings"><span class="account-avatar" id="account-avatar">U</span><span class="account-copy"><b id="menu-user">User</b><small>Profile &amp; settings</small></span><span>⌄</span></button>
-    <span class="menu-status" id="live-indicator" role="status">Updates disconnected</span>
-  </div>
+    <span class="menu-status" id="live-indicator" role="status" data-state="off" title="Live updates off"><span class="label">Live updates off</span></span>
+    <span class="sr-only" id="refresh-status" role="status" aria-live="polite"></span>
+    <button class="icon-button" id="refresh-view" type="button" aria-label="Refresh this page" title="Refresh this page" aria-describedby="refresh-status"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
+    <button class="icon-button" id="open-help" type="button" aria-label="About Kionga and help" title="About and help"><span aria-hidden="true">?</span></button>
+    <button class="account-button" id="account-button" type="button" aria-label="Open profile settings"><span class="account-avatar" id="account-avatar" aria-hidden="true">U</span><span class="account-copy"><b id="menu-user">User</b><small>Profile &amp; settings</small></span></button>
+  </header>
   <div class="shell">
-    <aside>
-      <a class="brand" href="#"><span class="brand-mark">K</span><span>Kionga</span></a>
+    <aside id="sidebar">
       <nav aria-label="Main navigation">
-        <button class="nav-item active" data-view="overview"><span>⌂</span> Overview</button>
-        <button class="nav-item" data-view="projects"><span>◇</span> Projects</button>
-        <button class="nav-item" data-view="pipelines"><span>↯</span> Pipelines</button>
-        <button class="nav-item" data-view="functions"><span>ƒ</span> Functions</button>
-        <button class="nav-item" data-view="models"><span>◉</span> Models</button>
-        <button class="nav-item" data-view="agents"><span>✦</span> Agents</button>
-        <button class="nav-item" data-view="features"><span>▤</span> Features</button>
-        <button class="nav-item" data-view="storage"><span>▣</span> Storage</button>
-        <button class="nav-item" data-view="realtime"><span>≈</span> Real-Time</button>
-        <button class="nav-item" data-view="catalog"><span>▦</span> Catalog</button>
-        <button class="nav-item" data-view="platform"><span>◎</span> Platform</button>
-        <button class="nav-item" data-view="profile"><span>♙</span> My access</button>
-        <button class="nav-item" data-view="settings"><span>⚙</span> Settings</button>
-        <button class="nav-item" data-view="blogs" data-admin-only hidden><span>✎</span> Engineering blog</button>
-        <button class="nav-item" data-view="access" data-admin-only hidden><span>◈</span> Users &amp; access</button>
+        <p class="nav-group-label">Build</p>
+        <button class="nav-item" type="button" data-view="overview"><span aria-hidden="true">⌂</span>Overview</button>
+        <button class="nav-item" type="button" data-view="projects"><span aria-hidden="true">◇</span>Projects</button>
+        <button class="nav-item" type="button" data-view="pipelines"><span aria-hidden="true">↯</span>Pipelines</button>
+        <button class="nav-item" type="button" data-view="functions"><span aria-hidden="true">ƒ</span>Functions</button>
+        <p class="nav-group-label">Models &amp; data</p>
+        <button class="nav-item" type="button" data-view="models"><span aria-hidden="true">◉</span>Models</button>
+        <button class="nav-item" type="button" data-view="agents"><span aria-hidden="true">✦</span>Agents</button>
+        <button class="nav-item" type="button" data-view="features"><span aria-hidden="true">▤</span>Features</button>
+        <button class="nav-item" type="button" data-view="storage"><span aria-hidden="true">▣</span>Storage</button>
+        <button class="nav-item" type="button" data-view="realtime"><span aria-hidden="true">≈</span>Real-time</button>
+        <button class="nav-item" type="button" data-view="catalog"><span aria-hidden="true">▦</span>Catalog</button>
+        <p class="nav-group-label">Operate</p>
+        <button class="nav-item" type="button" data-view="platform"><span aria-hidden="true">◎</span>Platform</button>
+        <button class="nav-item" type="button" data-view="access" data-admin-only hidden><span aria-hidden="true">◈</span>Users &amp; access</button>
+        <p class="nav-group-label">Account</p>
+        <button class="nav-item" type="button" data-view="profile"><span aria-hidden="true">♙</span>My access</button>
+        <button class="nav-item" type="button" data-view="settings"><span aria-hidden="true">⚙</span>Settings</button>
+        <button class="nav-item" type="button" data-view="blogs" data-admin-only hidden><span aria-hidden="true">✎</span>Engineering blog</button>
       </nav>
       <div class="sidebar-footer">
-        <div class="cluster user-chip"><i id="user-dot"></i><span><b id="user-name">…</b><small id="user-role">resolving identity</small></span></div>
+        <div class="cluster user-chip"><i id="user-dot" aria-hidden="true"></i><span><b id="user-name">…</b><small id="user-role">Resolving identity</small></span></div>
         <div class="cluster"><span><b>Developer workspaces</b><small id="workspace-status">Checking availability…</small></span></div>
-        <a href="/">Kionga home</a>
-        <a href="/api-docs.html" target="_blank">API reference ↗</a>
         <a href="/workspaces/workbench/" id="workbench-link" target="_blank" rel="noopener" aria-disabled="true">Jupyter workbench ↗</a>
         <a href="/workspaces/ide/" id="ide-link" target="_blank" rel="noopener" aria-disabled="true">IDE workspace ↗</a>
-        <a class="sidebar-logout logout-action" href="/auth/logout" hidden>Log out <span>↗</span></a>
+        <a href="/api-docs.html" target="_blank" rel="noopener">API reference ↗</a>
+        <a href="/">Kionga home</a>
+        <a class="sidebar-logout logout-action" href="/auth/logout" hidden>Log out <span aria-hidden="true">↗</span></a>
       </div>
     </aside>
 
-    <main>
+    <main id="main" tabindex="-1">
       <div id="view-feedback" class="view-feedback" role="status" aria-live="polite" hidden><span id="view-feedback-message"></span><button id="retry-view" type="button" hidden>Retry</button></div>
-      <header>
-        <div><p class="eyebrow">ML WORKSPACE</p><h1 id="page-title">Good morning, builder.</h1></div>
-        <button class="primary" id="new-project" data-perm="projects_write">＋ New project</button>
-      </header>
+      <div class="page-header">
+        <div><p class="eyebrow" id="page-eyebrow">ML WORKSPACE</p><h1 id="page-title">Overview</h1></div>
+        <div class="page-context" id="project-context-wrap" hidden>
+          <label class="project-context-label" for="project-context">Project <select id="project-context"><option value="">All assigned projects</option></select></label>
+        </div>
+      </div>
 
-      <section id="overview" class="view active">
+      <section id="overview" class="view active" aria-labelledby="page-title">
+        <div data-intro="overview"></div>
         <div class="hero">
-          <div><span class="pill">YOUR GOLDEN PATH</span><h2>From idea to a reliable model,<br>without the platform archaeology.</h2>
+          <div><span class="pill">Your golden path</span><h2>From idea to a reliable model, without platform archaeology.</h2>
           <p>Start with a proven project shape. Kionga wires the workflow together and tells you exactly what is real, missing, or next.</p></div>
-          <div class="progress-ring" id="progress-ring"><strong>0%</strong><span>ready</span></div>
+          <div class="progress-ring" id="progress-ring" role="img" aria-label="Onboarding progress"><strong>0%</strong><span>ready</span></div>
         </div>
-
         <div class="stat-grid">
-          <article class="summary-link" role="button" tabindex="0" data-view-target="projects"><span>Projects</span><strong id="stat-projects">—</strong><small>in this workspace</small></article>
-          <article class="summary-link" role="button" tabindex="0" data-view-target="pipelines"><span>Active runs</span><strong id="stat-runs">—</strong><small>queued or running</small></article>
-          <article class="summary-link" role="button" tabindex="0" data-view-target="platform"><span>Platform health</span><strong id="stat-health">—</strong><small>components connected</small></article>
+          <article class="summary-link" role="button" tabindex="0" data-view-target="projects"><span>Projects</span><strong id="stat-projects">—</strong><small>Open projects →</small></article>
+          <article class="summary-link" role="button" tabindex="0" data-view-target="pipelines"><span>Active runs</span><strong id="stat-runs">—</strong><small>Queued or running →</small></article>
+          <article class="summary-link" role="button" tabindex="0" data-view-target="platform"><span>Platform health</span><strong id="stat-health">—</strong><small>Components healthy →</small></article>
         </div>
-
         <div class="split">
           <article class="panel">
             <div class="panel-heading"><div><p class="eyebrow">QUICK START</p><h3>Keep your momentum</h3></div></div>
             <ol class="checklist">
-              <li class="done"><span>✓</span><div><b>Create a workspace</b><small>Your local control plane is running.</small></div></li>
-              <li class="done"><span>✓</span><div><b>Choose a project template</b><small>Start with sane conventions, not an empty folder.</small></div></li>
-              <li><span>3</span><div><b>Connect your infrastructure</b><small>Bring Kubernetes, MLflow, Feast and object storage online.</small></div><button data-view-target="platform">Configure</button></li>
-              <li><span>4</span><div><b>Ship your first real run</b><small>Submit the sample pipeline to your connected engine.</small></div><button data-view-target="pipelines">Run</button></li>
+              <li class="done"><span aria-hidden="true">✓</span><div><b>Start the control plane</b><small>Your gateway and console are running.</small></div></li>
+              <li><span aria-hidden="true">2</span><div><b>Create a project from a template</b><small>Get a scaffold, a namespace and an optional Git binding.</small></div><button type="button" class="btn-sm" data-view-target="projects">Projects</button></li>
+              <li><span aria-hidden="true">3</span><div><b>Connect your infrastructure</b><small>Check MLflow, object storage, Prefect and serving.</small></div><button type="button" class="btn-sm" data-view-target="platform">Platform</button></li>
+              <li><span aria-hidden="true">4</span><div><b>Ship your first real run</b><small>Define a flow and run it on the pipeline engine.</small></div><button type="button" class="btn-sm" data-view-target="pipelines">Pipelines</button></li>
             </ol>
           </article>
           <article class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">RECENT ACTIVITY</p><h3>Pipeline runs</h3></div><button class="link" data-view-target="pipelines">View all</button></div>
+            <div class="panel-heading"><div><p class="eyebrow">RECENT ACTIVITY</p><h3>Pipeline runs</h3></div><button type="button" class="quiet btn-sm" data-view-target="pipelines">View all</button></div>
             <div id="recent-runs" class="run-list loading">Loading runs…</div>
           </article>
         </div>
       </section>
 
-      <section id="projects" class="view"><div class="section-heading"><div><p class="eyebrow">GIT-NATIVE WORKSPACES</p><h2>Your projects</h2><p>Every project can bind to a Git repository shared by Jupyter, the IDE, CI, and distributed teammates.</p></div></div><div id="project-grid" class="card-grid"></div></section>
-
-      <section id="pipelines" class="view">
-        <div class="section-heading"><div><p class="eyebrow">ORCHESTRATION</p><h2>Pipeline flows</h2><p>Compose reusable container jobs and event-driven functions into versioned DAGs, then run the whole flow or invoke one function independently.</p></div><div class="heading-actions"><button id="new-pipeline-definition" data-perm="pipelines_write">＋ Define flow</button><button class="primary" id="run-pipeline" data-perm="pipelines_write">▶ Run pipeline</button></div></div>
-        <div class="pipeline-definition-grid" id="pipeline-definition-grid"></div>
-        <div class="panel table-wrap"><table><thead><tr><th>Run</th><th>Project</th><th>Status</th><th>Progress</th><th>Started</th></tr></thead><tbody id="run-table"></tbody></table></div>
+      <section id="projects" class="view" aria-labelledby="page-title">
+        <div id="project-list-panel">
+          <div class="section-heading"><div><p>Every project can bind to a Git repository shared by Jupyter, the IDE, CI and your teammates.</p></div><div class="heading-actions"><button class="primary" type="button" id="new-project" data-perm="projects_write">＋ New project</button></div></div>
+          <div data-intro="projects"></div>
+          <div id="project-grid" class="card-grid"></div>
+        </div>
+        <div id="project-detail-panel" hidden></div>
       </section>
 
-      <section id="functions" class="view">
-        <div class="section-heading"><div><p class="eyebrow">EVENT-DRIVEN COMPUTE</p><h2>Functions</h2><p>Deploy OCI-packaged jobs to OpenFaaS, assign explicit CPU and memory, invoke them directly, or compose them into pipeline flows.</p></div><button class="primary" id="deploy-function" data-perm="functions_write">＋ Deploy function</button></div>
+      <section id="pipelines" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Compose reusable container jobs and functions into versioned DAGs, then run them on demand, by API, or on a schedule.</p></div><div class="heading-actions"><button type="button" id="run-pipeline" data-perm="pipelines_write">▶ Run pipeline</button><button class="primary" type="button" id="new-pipeline-definition" data-perm="pipelines_write">＋ Define flow</button></div></div>
+        <div data-intro="pipelines"></div>
+        <h2 class="eyebrow">Flows</h2>
+        <div class="pipeline-definition-grid" id="pipeline-definition-grid"></div>
+        <article class="panel table-wrap">
+          <div class="panel-heading table-heading"><div><p class="eyebrow">HISTORY</p><h3>Runs</h3></div><span class="tag" id="run-count">0 runs</span></div>
+          <table class="data-table runs-table">
+            <caption class="sr-only">Pipeline runs, newest first</caption>
+            <colgroup><col class="c-run"><col class="c-project"><col class="c-trigger"><col class="c-status"><col class="c-progress"><col class="c-started"></colgroup>
+            <thead><tr><th scope="col">Run</th><th scope="col">Project</th><th scope="col">Trigger</th><th scope="col">Status</th><th scope="col">Progress</th><th scope="col">Started</th></tr></thead>
+            <tbody id="run-table"></tbody>
+          </table>
+        </article>
+      </section>
+
+      <section id="functions" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Deploy OCI-packaged jobs to OpenFaaS with explicit CPU and memory, invoke them directly, or compose them into flows.</p></div><div class="heading-actions"><button class="primary" type="button" id="deploy-function" data-perm="functions_write">＋ Deploy function</button></div></div>
+        <div data-intro="functions"></div>
         <div class="function-summary" id="function-summary"></div>
         <div id="functions-grid" class="card-grid"></div>
       </section>
 
-      <section id="models" class="view">
+      <section id="models" class="view" aria-labelledby="page-title">
+        <div data-intro="models"></div>
         <article class="panel hub-panel">
           <div class="panel-heading"><div><p class="eyebrow">HUGGING FACE HUB</p><h3>Start with a ready model</h3><p>Search the Hub, pin a revision, and download it in your workspace.</p></div><button type="button" id="hf-settings">Connect account</button></div>
           <form id="hf-search-form" class="hub-controls"><label>Model or organization<input id="hf-search" maxlength="200" placeholder="e.g. sentence-transformers"></label><label>Task<select id="hf-task"><option value="">All tasks</option><option>text-generation</option><option>sentence-similarity</option><option>text-classification</option><option>image-classification</option><option>automatic-speech-recognition</option><option>text-to-image</option></select></label><button type="submit">Search Hub</button></form>
           <p id="hf-search-status" role="status">Public models work without an account. Connect in Settings for private and gated repositories.</p>
           <div class="hub-controls"><label>Destination project<select id="hf-project"></select></label><label>Revision<input id="hf-revision" value="main" maxlength="200" placeholder="branch, tag, or commit"></label></div>
           <div id="hf-results" class="card-grid"></div>
-          <div id="hf-next" hidden><h4>Registered · ready to download</h4><p>Weights have not been downloaded or deployed. Run this code in Jupyter or your IDE. For private/gated models, first run <code>from mlaiops_sdk.huggingface import connect; connect()</code> in that workspace. Review the model license, storage needs, and repository code before using it.</p><pre id="hf-code" tabindex="0"></pre><div class="form-actions"><button type="button" id="hf-copy">Copy code</button><button type="button" id="hf-notebook">Download notebook</button><a id="hf-workspace" class="button-like" hidden>Open Jupyter</a></div></div>
+          <div id="hf-next" hidden><h4>Registered · ready to download</h4><p class="field-help">Weights have not been downloaded or deployed. Run this code in Jupyter or your IDE. For private or gated models, first run <code>from mlaiops_sdk.huggingface import connect; connect()</code> in that workspace. Review the model license, storage needs, and repository code before using it.</p><pre id="hf-code" tabindex="0"></pre><div class="form-actions"><button type="button" id="hf-copy">Copy code</button><button type="button" id="hf-notebook">Download notebook</button><a id="hf-workspace" class="button-link" hidden>Open Jupyter</a></div></div>
         </article>
-        <div class="section-heading"><div><p class="eyebrow">MODEL LIFECYCLE</p><h2>Registry and deployments</h2><p>Evaluation gates, promotion, live serving, canary traffic and rollback.</p></div></div>
-        <div class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">EXPERIMENT PORTAL</p><h3>Model quality by version</h3></div><select id="metric-select"></select></div><canvas id="metric-chart" height="160"></canvas></div>
+        <div class="section-heading"><div><h2>Registry and deployments</h2><p>Evaluation gates, promotion, live serving, canary traffic and rollback.</p></div></div>
+        <div class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">EXPERIMENT PORTAL</p><h3>Model quality by version</h3></div><label class="inline-check" style="margin:0">Metric <select id="metric-select" aria-label="Metric"></select></label></div><canvas id="metric-chart" height="160" role="img" aria-label="Model metrics"></canvas></div>
         <div id="model-grid" class="card-grid"></div>
       </section>
 
-      <section id="agents" class="view">
-        <div class="section-heading"><div><p class="eyebrow">AGENT OPERATIONS</p><h2>Agents and live sessions</h2><p>Deployments, tools, live sessions, traces, prompts, token usage and cost.</p></div><button class="primary" id="deploy-agent" data-perm="agents_write">＋ Deploy agent</button></div>
+      <section id="agents" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Deployments, tools, live sessions, traces, prompts, token usage and cost.</p></div><div class="heading-actions"><button class="primary" type="button" id="deploy-agent" data-perm="agents_write">＋ Deploy agent</button></div></div>
+        <div data-intro="agents"></div>
         <div id="agent-summary" class="stat-grid"></div>
         <div id="agent-grid" class="card-grid"></div>
         <div class="split">
-          <article class="panel table-wrap agent-traces"><div class="panel-heading"><div><p class="eyebrow">SESSION MONITOR</p><h3>Live sessions</h3></div></div><table><thead><tr><th>Session</th><th>Agent</th><th>Node</th><th>Status</th><th>Turns</th><th>Tokens</th><th>Cost</th></tr></thead><tbody id="session-table"></tbody></table></article>
+          <article class="panel table-wrap agent-traces"><div class="panel-heading table-heading"><div><p class="eyebrow">SESSION MONITOR</p><h3>Live sessions</h3></div></div><table><thead><tr><th scope="col">Session</th><th scope="col">Agent</th><th scope="col">Node</th><th scope="col">Status</th><th scope="col">Turns</th><th scope="col">Tokens</th><th scope="col">Cost</th></tr></thead><tbody id="session-table"></tbody></table></article>
           <article class="panel"><div class="panel-heading"><div><p class="eyebrow">PROMPT LIBRARY</p><h3>Langfuse prompts</h3></div></div><div id="prompt-list" class="prompt-list"></div></article>
         </div>
       </section>
 
-      <section id="features" class="view">
-        <div class="section-heading"><div><p class="eyebrow">FEATURE STORE</p><h2>Feature catalog</h2><p>Version-controlled definitions, online materialization status, and schemas.</p></div><input type="search" id="feature-search" placeholder="Search feature views…"></div>
+      <section id="features" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Version-controlled definitions, online materialization status, freshness and schemas.</p></div><div class="heading-actions"><label class="sr-only" for="feature-search">Search feature views</label><input type="search" id="feature-search" placeholder="Search feature views…"></div></div>
+        <div data-intro="features"></div>
         <div id="feature-grid" class="card-grid"></div>
       </section>
 
-      <section id="storage" class="view">
-        <div class="section-heading"><div><p class="eyebrow">ARTIFACTS &amp; ENDPOINTS</p><h2>Storage and endpoint explorer</h2><p>Browse the object store, live inference endpoints, and serverless functions.</p></div></div>
+      <section id="storage" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Browse the object store, live inference endpoints, and serverless functions.</p></div></div>
+        <div data-intro="storage"></div>
         <div class="split storage-layout">
-          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">OBJECT STORE</p><h3 id="storage-title">Buckets</h3></div><button class="link" id="storage-up" hidden>← Back</button></div><div id="storage-browser" class="storage-browser"></div></article>
+          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">OBJECT STORE</p><h3 id="storage-title">Buckets</h3></div><button type="button" class="quiet btn-sm" id="storage-up" hidden>← Back</button></div><div id="storage-browser" class="storage-browser"></div></article>
           <div class="endpoint-stack">
             <article class="panel"><div class="panel-heading"><div><p class="eyebrow">LIVE ENDPOINTS</p><h3>Model endpoints</h3></div></div><div id="endpoint-list" class="endpoint-list"></div></article>
             <article class="panel"><div class="panel-heading"><div><p class="eyebrow">SERVERLESS</p><h3>Functions</h3></div></div><div id="function-list" class="endpoint-list"></div></article>
@@ -139,99 +167,107 @@
         </div>
       </section>
 
-      <section id="realtime" class="view">
-        <div class="section-heading"><div><p class="eyebrow">STREAM PROCESSING</p><h2>Real-time AI</h2><p>Live event scoring through Kafka, the feature store, and served models and agents.</p></div></div>
+      <section id="realtime" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Live event scoring through Kafka, the feature store, and served models and agents.</p></div></div>
+        <div data-intro="realtime"></div>
         <div id="realtime-grid" class="card-grid realtime-grid"></div>
-        <article class="panel"><div class="panel-heading"><div><p class="eyebrow">TRY IT</p><h3>Produce demo events</h3></div></div><pre class="hint">python -m realtime.produce --demo fraud --count 5
+        <article class="panel"><div class="panel-heading"><div><p class="eyebrow">TRY IT</p><h3>Produce demo events</h3><p>Run these in a Jupyter or IDE terminal.</p></div></div><div class="command-block"><code>python -m realtime.produce --demo fraud --count 5
 python -m realtime.produce --demo callcenter --count 2
-python -m realtime.produce --demo recommendations --count 2</pre></article>
+python -m realtime.produce --demo recommendations --count 2</code><button type="button" class="copy-button" data-copy="python -m realtime.produce --demo fraud --count 5">Copy first</button></div></article>
       </section>
 
-      <section id="catalog" class="view"><div class="section-heading"><div><p class="eyebrow">DISCOVERABILITY</p><h2>Shared catalog</h2><p>Models, features, agents, and tools—searchable and understandable.</p></div><div class="filters"><button class="active" data-kind="">All</button><button data-kind="model">Models</button><button data-kind="feature">Features</button><button data-kind="agent">Agents</button><button data-kind="tool">Tools</button></div></div><div id="catalog-grid" class="card-grid"></div></section>
+      <section id="catalog" class="view" aria-labelledby="page-title"><div class="section-heading"><div><p>Models, features, agents and tools, searchable and understandable.</p></div><div class="filters" role="group" aria-label="Filter catalog by kind"><button type="button" class="active" aria-pressed="true" data-kind="">All</button><button type="button" aria-pressed="false" data-kind="model">Models</button><button type="button" aria-pressed="false" data-kind="feature">Features</button><button type="button" aria-pressed="false" data-kind="agent">Agents</button><button type="button" aria-pressed="false" data-kind="tool">Tools</button></div></div><div data-intro="catalog"></div><div id="catalog-grid" class="card-grid"></div></section>
 
-      <section id="platform" class="view"><div class="section-heading"><div><p class="eyebrow">HONEST INFRASTRUCTURE</p><h2>Platform connections</h2><p>Nothing green by wishful thinking. Every connection is actively checked.</p></div><button class="primary" id="add-connection" data-perm="connections_write">＋ Add connection</button></div><div class="platform-layout"><div class="panel"><div class="panel-heading"><div><p class="eyebrow">ONBOARDING</p><h3>Production readiness</h3></div><strong id="readiness-percent">0%</strong></div><ol id="readiness-list" class="checklist"></ol></div><div><div id="connection-grid" class="card-grid connection-grid"></div><div id="component-grid" class="component-grid"></div></div></div></section>
+      <section id="platform" class="view" aria-labelledby="page-title"><div class="section-heading"><div><p>Nothing is green by wishful thinking. Every connection is actively checked.</p></div><div class="heading-actions"><button class="primary" type="button" id="add-connection" data-perm="connections_write">＋ Add connection</button></div></div><div data-intro="platform"></div><div class="platform-layout"><div class="panel"><div class="panel-heading"><div><p class="eyebrow">ONBOARDING</p><h3>Production readiness</h3></div><strong id="readiness-percent">0%</strong></div><ol id="readiness-list" class="checklist"></ol></div><div><div id="connection-grid" class="card-grid connection-grid"></div><div id="component-grid" class="component-grid"></div></div></div></section>
 
-      <section id="profile" class="view">
-        <div class="section-heading"><div><p class="eyebrow">YOUR AUTHORIZATION</p><h2>My access</h2><p>Your effective role, assigned services, project scope, and resource allocation.</p></div><button class="primary" id="request-access">Request access</button></div>
+      <section id="profile" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Your effective role, assigned services, project scope, and resource allocation.</p></div><div class="heading-actions"><button class="primary" type="button" id="request-access">Request access</button></div></div>
+        <div data-intro="profile"></div>
         <div id="my-access-summary"></div>
       </section>
 
-      <section id="settings" class="view">
-        <div class="section-heading"><div><p class="eyebrow">ACCOUNT &amp; PLATFORM</p><h2>Settings</h2><p>Manage your identity, API access, console behavior, and workspace entry points.</p></div></div>
+      <section id="settings" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Manage your identity, API access, console behavior, and workspace entry points.</p></div></div>
         <div class="settings-layout">
-          <article class="panel settings-card"><div class="settings-card-heading"><div><h3>Hugging Face account</h3><p>A personal connection for browsing and registering public, private, and gated models.</p></div></div><p id="hf-account-status" role="status">Loading account…</p><form id="hf-account-form"><label>Read or fine-grained token<input id="hf-token" type="password" autocomplete="off" placeholder="hf_…" maxlength="1024" required></label><p><a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener noreferrer">Create a Hugging Face token ↗</a>. Use the minimum repository read permissions. The token is encrypted on the gateway and never displayed again.</p><div class="form-actions"><button type="submit">Connect account</button><button type="button" id="hf-disconnect" hidden>Disconnect</button></div></form><p>Workspace downloads use a separate local Hub login or <code>HF_TOKEN</code>. Disconnecting here does not revoke that token on Hugging Face or log out a workspace.</p></article>
-          <article class="panel settings-card profile-settings-card"><div class="settings-card-heading"><span class="settings-icon">♙</span><div><h3>Profile</h3><p>Your verified platform identity.</p></div></div><div id="settings-profile"></div></article>
-          <article class="panel settings-card api-token-card"><div class="settings-card-heading"><span class="settings-icon">⌁</span><div><h3>Personal API keys</h3><p>Authenticate the CLI, SDKs, scripts, and local development tools.</p></div><button class="primary" id="create-api-token">＋ Create key</button></div><div class="security-note"><b>Keys are shown once.</b> Store them in your OS keychain or secret manager—never in source control.</div><div id="api-token-list" class="settings-list"></div></article>
-          <article class="panel settings-card"><div class="settings-card-heading"><span class="settings-icon">◫</span><div><h3>Console preferences</h3><p>Customize how this browser opens and presents Kionga.</p></div></div><div class="setting-rows"><label class="setting-row"><span><b>Compact interface</b><small>Reduce spacing in tables and navigation.</small></span><input type="checkbox" id="setting-compact"></label><label class="setting-row"><span><b>Reduce motion</b><small>Disable decorative transitions and movement.</small></span><input type="checkbox" id="setting-motion"></label><label class="setting-row"><span><b>Live updates</b><small>Refresh active views when platform events arrive.</small></span><input type="checkbox" id="setting-live" checked></label><label class="setting-row"><span><b>Opening view</b><small>Choose the first page after signing in.</small></span><select id="setting-start-view"><option value="overview">Overview</option><option value="projects">Projects</option><option value="pipelines">Pipelines</option><option value="profile">My access</option><option value="settings">Settings</option></select></label></div></article>
-          <article class="panel settings-card"><div class="settings-card-heading"><span class="settings-icon">◇</span><div><h3>Developer workspaces</h3><p>Open the tools attached to your persistent workspace.</p></div></div><div class="workspace-actions"><a class="button-like" id="settings-jupyter" href="#" target="_blank"><span>J</span><div><b>JupyterLab</b><small>Notebooks and natural-language coding</small></div><i>↗</i></a><a class="button-like" id="settings-ide" href="#" target="_blank"><span>⌘</span><div><b>Browser IDE</b><small>Full workspace editor and terminal</small></div><i>↗</i></a><a class="button-like" href="/api-docs.html" target="_blank"><span>{ }</span><div><b>API reference</b><small>Endpoints, schemas, and examples</small></div><i>↗</i></a></div></article>
-          <article class="panel settings-card danger-settings"><div class="settings-card-heading"><span class="settings-icon">⇥</span><div><h3>Session</h3><p>Authentication and current browser session.</p></div></div><div class="session-row"><div><b id="settings-auth-mode">Authenticated</b><small id="settings-session-identity"></small></div><a class="secondary logout-action" href="/auth/logout">Log out</a></div></article>
+          <article class="panel settings-card"><div class="settings-card-heading"><span class="settings-icon" aria-hidden="true">♙</span><div><h3>Profile</h3><p>Your verified platform identity.</p></div></div><div class="settings-body" id="settings-profile"></div></article>
+          <article class="panel settings-card"><div class="settings-card-heading"><span class="settings-icon" aria-hidden="true">⇥</span><div><h3>Session</h3><p>How this browser is signed in.</p></div></div><div class="settings-body"><div class="session-row"><div><b id="settings-auth-mode">Signed in</b><small id="settings-session-identity"></small></div><a class="button-link danger logout-action" href="/auth/logout">Log out</a></div></div></article>
+          <article class="panel settings-card"><div class="settings-card-heading"><span class="settings-icon" aria-hidden="true">🤗</span><div><h3>Hugging Face account</h3><p>A personal connection for private and gated models.</p></div></div>
+            <div class="settings-body">
+              <p id="hf-account-status" role="status">Loading account…</p>
+              <form id="hf-account-form"><label>Read or fine-grained token<input id="hf-token" type="password" autocomplete="off" placeholder="hf_…" maxlength="1024" required><small><a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener noreferrer">Create a token ↗</a> with the minimum read permissions. It is encrypted on the gateway and never displayed again.</small></label><div class="form-actions"><button type="submit" class="primary">Connect account</button><button type="button" class="danger" id="hf-disconnect" hidden>Disconnect</button></div></form>
+              <p>Workspace downloads use a separate Hub login or <code>HF_TOKEN</code>. Disconnecting here does not revoke that token on Hugging Face.</p>
+            </div>
+          </article>
+          <article class="panel settings-card"><div class="settings-card-heading"><span class="settings-icon" aria-hidden="true">◇</span><div><h3>Developer workspaces</h3><p>Tools attached to your persistent workspace.</p></div></div><div class="settings-body workspace-actions"><a class="workspace-tile" id="settings-jupyter" href="#" target="_blank" rel="noopener"><span aria-hidden="true">J</span><div><b>JupyterLab</b><small>Checking availability…</small></div><i aria-hidden="true">↗</i></a><a class="workspace-tile" id="settings-ide" href="#" target="_blank" rel="noopener"><span aria-hidden="true">⌘</span><div><b>Browser IDE</b><small>Checking availability…</small></div><i aria-hidden="true">↗</i></a><a class="workspace-tile" href="/api-docs.html" target="_blank" rel="noopener"><span aria-hidden="true">{ }</span><div><b>API reference</b><small>Endpoints, schemas, and examples</small></div><i aria-hidden="true">↗</i></a></div></article>
+          <article class="panel settings-card wide"><div class="settings-card-heading"><span class="settings-icon" aria-hidden="true">⌁</span><div><h3>Personal API keys</h3><p>Authenticate the CLI, SDKs, scripts, and local tools.</p></div><button class="primary" type="button" id="create-api-token">＋ Create key</button></div><div class="settings-body"><div class="security-note"><b>Keys are shown once.</b> Store them in your OS keychain or a secret manager, never in source control.</div><div id="api-token-list" class="settings-list"></div></div></article>
+          <article class="panel settings-card wide"><div class="settings-card-heading"><span class="settings-icon" aria-hidden="true">◫</span><div><h3>Console preferences</h3><p>How this browser opens and presents Kionga.</p></div><small class="field-help" id="preferences-status" role="status"></small></div><div class="settings-body setting-rows"><label class="setting-row"><span><b>Theme</b><small>Follow the system or choose light or dark.</small></span><select id="setting-theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label><label class="setting-row"><span><b>Compact interface</b><small>Reduce spacing in tables and cards.</small></span><input type="checkbox" id="setting-compact"></label><label class="setting-row"><span><b>Reduce motion</b><small>Disable transitions and animation.</small></span><input type="checkbox" id="setting-motion"></label><label class="setting-row"><span><b>Live updates</b><small>Refresh the active page when platform events arrive.</small></span><input type="checkbox" id="setting-live" checked></label><label class="setting-row"><span><b>Opening view</b><small>The first page after signing in.</small></span><select id="setting-start-view"><option value="overview">Overview</option><option value="projects">Projects</option><option value="pipelines">Pipelines</option><option value="profile">My access</option><option value="settings">Settings</option></select></label></div></article>
         </div>
       </section>
 
-      <section id="blogs" class="view">
-        <div class="section-heading"><div><p class="eyebrow">PUBLICATION</p><h2>Engineering blog</h2><p>Write, review, and publish durable engineering guides backed by the platform repository.</p></div><button class="primary" id="new-blog-post">＋ New post</button></div>
-        <article class="panel table-wrap"><table><thead><tr><th>Post</th><th>Author</th><th>Tags</th><th>Status</th><th>Updated</th><th></th></tr></thead><tbody id="blog-admin-table"></tbody></table></article>
+      <section id="blogs" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Published articles on the public engineering blog.</p></div><div class="heading-actions"><a class="button-link" href="/blogs.html" target="_blank" rel="noopener">Open blog ↗</a><button class="primary" type="button" id="new-blog-post">＋ New post</button></div></div>
+        <article class="panel table-wrap"><table class="data-table"><thead><tr><th scope="col">Post</th><th scope="col">Author</th><th scope="col">Tags</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="blog-admin-table"></tbody></table></article>
       </section>
 
-      <section id="access" class="view">
-        <div class="section-heading"><div><p class="eyebrow">IDENTITY &amp; CAPACITY</p><h2>Users &amp; access</h2><p>Assign services, projects, storage, and workspace compute. Unassigned access is denied.</p></div><button class="primary" id="add-user-access" data-perm="access_manage">＋ Provision user</button></div>
+      <section id="access" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Assign services, projects, storage, and workspace compute. Unassigned access is denied.</p></div><div class="heading-actions"><button class="primary" type="button" id="add-user-access" data-perm="access_manage">＋ Provision user</button></div></div>
+        <div data-intro="access"></div>
         <div class="access-admin-stack">
-          <article class="panel table-wrap"><div class="panel-heading table-heading"><div><p class="eyebrow">APPROVAL QUEUE</p><h3>Access requests</h3></div><span class="tag" id="access-request-count">0 pending</span></div><table><thead><tr><th>Requester</th><th>Requested services</th><th>Reason</th><th>Submitted</th><th>Status</th><th></th></tr></thead><tbody id="access-request-table"></tbody></table></article>
-          <article class="panel table-wrap"><div class="panel-heading table-heading"><div><p class="eyebrow">PROVISIONED IDENTITIES</p><h3>Users</h3></div></div><table><thead><tr><th>User</th><th>Role</th><th>Services</th><th>Compute</th><th>Storage</th><th>Status</th><th></th></tr></thead><tbody id="access-table"></tbody></table></article>
+          <article class="panel table-wrap"><div class="panel-heading table-heading"><div><p class="eyebrow">APPROVAL QUEUE</p><h3>Access requests</h3></div><span class="tag" id="access-request-count">0 pending</span></div><table class="data-table"><thead><tr><th scope="col">Requester</th><th scope="col">Requested services</th><th scope="col">Reason</th><th scope="col">Submitted</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="access-request-table"></tbody></table></article>
+          <article class="panel table-wrap"><div class="panel-heading table-heading"><div><p class="eyebrow">PROVISIONED IDENTITIES</p><h3>Users</h3></div></div><table class="data-table"><thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Services</th><th scope="col">Compute</th><th scope="col">Storage</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody id="access-table"></tbody></table></article>
         </div>
       </section>
     </main>
   </div>
 
-  <dialog id="project-dialog">
+  <dialog id="project-dialog" aria-labelledby="project-dialog-title">
     <form id="project-form" class="provisioning-form project-builder-form">
-      <header class="modal-header"><p class="eyebrow">NEW PROJECT</p><h2>What are you building?</h2><p>Choose a production-shaped starting point, then tune its framework and compute intent.</p></header>
+      <header class="modal-header"><p class="eyebrow">NEW PROJECT</p><h2 id="project-dialog-title">What are you building?</h2><p>Choose a production-shaped starting point, then tune its framework and compute intent. Creating the project stores its record; files are written when you run its scaffold command.</p></header>
       <div class="modal-scroll">
         <section class="form-section"><div class="form-grid"><label>Project name<input name="name" required minlength="3" placeholder="e.g. churn-prediction"></label><label>What is it for?<textarea name="description" rows="2" placeholder="A short, useful description"></textarea></label></div></section>
-        <section class="form-section"><div class="form-section-title"><span>1</span><div><h3>Starting architecture</h3><p>The catalog is versioned by the control plane.</p></div></div><input type="hidden" name="template" id="project-template-id"><input type="hidden" name="template_version" id="project-template-version"><div class="project-template-catalog" id="project-template-catalog" role="radiogroup" aria-label="Project template"><p class="empty">Loading project templates…</p></div></section>
-        <section class="form-section"><div class="form-section-title"><span>2</span><div><h3>Runtime shape</h3><p>These choices are stored with the project and guide its scaffold.</p></div></div><div class="quota-grid"><label>Framework<select name="framework" id="project-framework"></select></label><label>Accelerator<select name="accelerator" id="project-accelerator"></select></label><label>Requested profile<select name="requested_profile" id="project-requested-profile"><option value="starter">Starter</option><option value="team">Team</option><option value="power">Power</option><option value="gpu">GPU</option><option value="custom">Custom</option></select></label></div><div id="project-template-preview" class="project-template-preview" aria-live="polite"></div></section>
-        <section class="form-section" id="new-project-git-fields"><div class="form-section-title"><span>3</span><div><h3>Source control</h3><p>Optionally bind the workspace to an existing repository.</p></div></div><div class="form-grid"><label>Git repository <input name="repository_url" type="text" placeholder="https://github.com/team/project.git or git@github.com:team/project.git"></label><label>Default branch <input name="default_branch" value="main" placeholder="main"></label></div></section>
+        <section class="form-section"><div class="form-section-title"><span aria-hidden="true">1</span><div><h3>Starting architecture</h3><p>The catalog is versioned by the control plane.</p></div></div><input type="hidden" name="template" id="project-template-id"><input type="hidden" name="template_version" id="project-template-version"><div class="project-template-catalog" id="project-template-catalog" role="radiogroup" aria-label="Project template"><p class="field-help">Loading project templates…</p></div></section>
+        <section class="form-section"><div class="form-section-title"><span aria-hidden="true">2</span><div><h3>Runtime shape</h3><p>These choices are stored with the project and guide its scaffold.</p></div></div><div class="quota-grid"><label>Framework<select name="framework" id="project-framework"></select></label><label>Accelerator<select name="accelerator" id="project-accelerator"></select></label><label>Requested profile<select name="requested_profile" id="project-requested-profile"><option value="starter">Starter</option><option value="team">Team</option><option value="power">Power</option><option value="gpu">GPU</option><option value="custom">Custom</option></select></label></div><div id="project-template-preview" class="project-template-preview" aria-live="polite"></div></section>
+        <section class="form-section" id="new-project-git-fields"><div class="form-section-title"><span aria-hidden="true">3</span><div><h3>Source control</h3><p>Optionally bind the workspace to an existing repository.</p></div></div><div class="form-grid"><label>Git repository <input name="repository_url" type="text" placeholder="https://github.com/team/project.git"></label><label>Default branch <input name="default_branch" value="main" placeholder="main"></label></div></section>
       </div>
-      <footer class="modal-footer"><p class="form-error" id="form-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Create project</button></div></footer>
+      <footer class="modal-footer"><p class="form-error" id="form-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Create project</button></div></footer>
     </form>
   </dialog>
 
-  <dialog id="submit-dialog">
+  <dialog id="submit-dialog" aria-labelledby="submit-dialog-title">
     <form id="submit-form">
-      <p class="eyebrow">RUN PIPELINE</p><h2>Submit a real run</h2><p>The engine executes each step in a container and reports back live.</p>
-      <label>Project<select name="project_id" id="submit-project"></select></label>
+      <p class="eyebrow">RUN PIPELINE</p><h2 id="submit-dialog-title">Submit a run</h2><p>The run is recorded, then handed to the execution engine. Each job runs in its own container and reports back live.</p>
+      <label>Project<select name="project_id" id="submit-project" required></select></label>
       <label>Pipeline definition<select name="definition_id" id="submit-definition"><option value="">Built-in training pipeline</option></select></label>
-      <label>Run name<input name="name" placeholder="Uses the definition name"></label>
-      <label>Parameters (JSON)<textarea name="parameters" rows="4">{}</textarea></label>
-      <p class="form-error" id="submit-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Submit run</button></div>
+      <label>Run name<input name="name" placeholder="Defaults to the definition name"></label>
+      <label>Parameters (JSON)<textarea name="parameters" rows="4" spellcheck="false">{}</textarea><small>Passed to the flow as run parameters.</small></label>
+      <p class="form-error" id="submit-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Submit run</button></div>
     </form>
   </dialog>
 
-  <dialog id="connection-dialog">
+  <dialog id="connection-dialog" aria-labelledby="connection-dialog-title">
     <form id="connection-form">
-      <p class="eyebrow">CONNECT SERVICE</p><h2>Add infrastructure</h2><p>Test availability first. Prefect and OpenFaaS can then be activated for new operations. Other connections monitor services configured in your deployment.</p>
+      <p class="eyebrow">CONNECT SERVICE</p><h2 id="connection-dialog-title">Add infrastructure</h2><p>Kionga tests the endpoint right away. Prefect and OpenFaaS can then be activated for new operations; other connections monitor services configured in your deployment.</p>
       <label>Service<select name="type"><option value="kubernetes">Kubernetes</option><option value="mlflow">MLflow</option><option value="s3">S3 / MinIO</option><option value="kafka">Kafka REST</option><option value="langfuse">Langfuse</option><option value="prefect">Prefect</option><option value="openfaas">OpenFaaS</option><option value="redis">Redis / Feast</option></select></label>
       <label>Connection name<input name="name" required placeholder="e.g. production-mlflow"></label>
-      <label>Service address<input name="endpoint" required type="url" placeholder="https://prefect.example.com/api"></label>
-      <p class="hint">For Prefect, use its API base address; for OpenFaaS, its gateway address. For monitored services, use a health endpoint.</p>
-      <label>Credential reference<input name="secret_ref" required value="none" placeholder="none or env:PREFECT_API_KEY"></label>
-      <p class="hint">Use none for a service without authentication, or env:VARIABLE to reference a secret set on the gateway. For OpenFaaS, the variable contains its gateway password. Never paste a secret here.</p>
-      <p class="form-error" id="connection-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save and test</button></div>
+      <label>Service address<input name="endpoint" required type="url" placeholder="https://prefect.example.com/api"><small>Prefect: its API base address. OpenFaaS: its gateway address. Others: a health endpoint.</small></label>
+      <label>Credential reference<input name="secret_ref" required value="none" placeholder="none or env:PREFECT_API_KEY"><small>Use <code>none</code>, or <code>env:VARIABLE</code> for a secret set on the gateway. Never paste a secret here.</small></label>
+      <p class="form-error" id="connection-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save and test</button></div>
     </form>
   </dialog>
 
-  <dialog id="access-dialog">
+  <dialog id="access-dialog" aria-labelledby="access-dialog-title">
     <form id="access-form" class="provisioning-form">
-      <header class="modal-header"><p class="eyebrow">USER PROVISIONING</p><h2>Assign platform access</h2><p>The subject must exactly match the identity provider's <code>sub</code> claim.</p></header>
+      <header class="modal-header"><p class="eyebrow">USER PROVISIONING</p><h2 id="access-dialog-title">Assign platform access</h2><p>With OIDC, the subject must exactly match the identity provider's <code>sub</code> claim. In local sign-in mode it is the username.</p></header>
       <div class="modal-scroll">
         <input name="original_subject" type="hidden"><input name="request_id" type="hidden">
-        <section class="form-section"><div class="form-section-title"><span>1</span><div><h3>Identity</h3><p>Who receives this access?</p></div></div>
-          <div class="form-grid"><label>Identity subject<input name="subject" required placeholder="e.g. 00u123abc"></label><label>Email<input name="email" type="email" placeholder="user@example.com"></label><label>Role<select name="role"><option value="user">Normal user</option><option value="admin">Administrator</option></select></label></div>
+        <section class="form-section"><div class="form-section-title"><span aria-hidden="true">1</span><div><h3>Identity</h3><p>Who receives this access?</p></div></div>
+          <div class="form-grid"><label>Identity subject<input name="subject" required placeholder="e.g. alice or 00u123abc"></label><label>Email<input name="email" type="email" placeholder="user@example.com"></label><label>Role<select name="role"><option value="user">Normal user</option><option value="engineer">Engineer</option><option value="viewer">Viewer (read-only)</option><option value="admin">Administrator</option></select></label></div>
+          <div id="local-password-section" hidden><label>Local password<input name="local_password" type="password" minlength="12" autocomplete="new-password" placeholder="Leave blank to keep the current password"><small>Local sign-in only. At least 12 characters. Share it with the user through a secure channel.</small></label></div>
         </section>
-        <section class="form-section"><div class="form-section-title"><span>2</span><div><h3>Services and projects</h3><p>Apply least privilege; users can request more later.</p></div></div>
-          <div class="checkbox-grid" id="service-grants"></div><label>Assigned project IDs<input name="project_ids" placeholder="prj-a, prj-b"></label>
+        <section class="form-section"><div class="form-section-title"><span aria-hidden="true">2</span><div><h3>Services and projects</h3><p>Apply least privilege; users can request more later.</p></div></div>
+          <div class="checkbox-grid" id="service-grants"></div><label>Assigned project IDs<input name="project_ids" placeholder="prj-a, prj-b"><small>Users always see projects they own.</small></label>
         </section>
-        <section class="form-section"><div class="form-section-title"><span>3</span><div><h3>Resource allocation</h3><p>Choose a clear preset or switch to Custom for exact limits.</p></div></div>
+        <section class="form-section"><div class="form-section-title"><span aria-hidden="true">3</span><div><h3>Resource allocation</h3><p>Choose a preset or switch to Custom for exact limits.</p></div></div>
           <label>Resource profile<select name="profile" id="resource-profile"><option value="starter">Starter</option><option value="team">Team</option><option value="power">Power</option><option value="gpu">GPU</option><option value="custom">Custom</option></select><small id="resource-profile-description"></small></label>
           <div class="resource-profile-summary" id="resource-profile-summary"></div>
           <div class="quota-grid" id="custom-resource-fields"><label>vCPUs<input name="vcpus" type="number" min="0" value="2"></label><label>Memory (GB)<input name="memory_gb" type="number" min="0" value="4"></label><label>GPUs<input name="gpus" type="number" min="0" value="0"></label><label>GPU resource<input name="gpu_type" value="nvidia.com/gpu"></label><label>Maximum VMs<input name="max_vms" type="number" min="0" value="1"></label><label>Maximum projects<input name="max_projects" type="number" min="0" value="2"></label><label>Concurrent runs<input name="max_runs" type="number" min="0" value="1"></label><label>Maximum functions<input name="max_functions" type="number" min="0" value="3"></label><label>Storage (GB)<input name="storage_gb" type="number" min="0" value="25"></label></div>
@@ -239,128 +275,168 @@ python -m realtime.produce --demo recommendations --count 2</pre></article>
         </section>
         <section class="form-section form-section-warning"><label class="inline-check"><input name="disabled" type="checkbox"> Suspend this user immediately</label></section>
       </div>
-      <footer class="modal-footer"><p class="form-error" id="access-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save access</button></div></footer>
+      <footer class="modal-footer"><p class="form-error" id="access-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save access</button></div></footer>
     </form>
   </dialog>
 
-  <dialog id="access-request-dialog">
+  <dialog id="access-request-dialog" aria-labelledby="access-request-title">
     <form id="access-request-form" class="provisioning-form compact-modal">
-      <header class="modal-header"><p class="eyebrow">ACCESS REQUEST</p><h2>Request platform access</h2><p>Tell your platform administrators what you need and why.</p></header>
-      <div class="modal-scroll"><section class="form-section"><div class="form-section-title"><span>1</span><div><h3>Services</h3><p>Select only the capabilities needed for your work.</p></div></div><div class="checkbox-grid" id="request-service-grants"></div></section><section class="form-section"><div class="form-section-title"><span>2</span><div><h3>Business reason</h3><p>Include the project, team, and expected usage.</p></div></div><label>Reason<textarea name="reason" required minlength="10" rows="5" placeholder="I need pipelines and models for the customer churn project…"></textarea></label></section></div>
-      <footer class="modal-footer"><p class="form-error" id="access-request-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Submit request</button></div></footer>
+      <header class="modal-header"><p class="eyebrow">ACCESS REQUEST</p><h2 id="access-request-title">Request platform access</h2><p>Tell your platform administrators what you need and why.</p></header>
+      <div class="modal-scroll"><section class="form-section"><div class="form-section-title"><span aria-hidden="true">1</span><div><h3>Services</h3><p>Select only the capabilities needed for your work.</p></div></div><div class="checkbox-grid" id="request-service-grants"></div></section><section class="form-section"><div class="form-section-title"><span aria-hidden="true">2</span><div><h3>Business reason</h3><p>Include the project, team, and expected usage.</p></div></div><label>Reason<textarea name="reason" required minlength="10" rows="5" placeholder="I need pipelines and models for the customer churn project…"></textarea></label></section></div>
+      <footer class="modal-footer"><p class="form-error" id="access-request-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Submit request</button></div></footer>
     </form>
   </dialog>
 
-  <dialog id="api-token-dialog">
+  <dialog id="api-token-dialog" aria-labelledby="api-token-title">
     <form id="api-token-form" class="provisioning-form compact-modal">
-      <header class="modal-header"><p class="eyebrow">PERSONAL API KEY</p><h2>Create a scoped key</h2><p>Use the smallest scope and shortest lifetime your tool needs.</p></header>
-      <div class="modal-scroll"><section class="form-section"><label>Key name<input name="name" required minlength="3" placeholder="e.g. laptop CLI"></label><label>Expires after<select name="expires_in_days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></label></section><section class="form-section"><div class="form-section-title"><span>✓</span><div><h3>Service scopes</h3><p>The key cannot exceed your current access.</p></div></div><div class="checkbox-grid" id="token-service-scopes"></div></section><section class="form-section"><label>Project IDs <input name="project_ids" placeholder="Optional: prj-a, prj-b"></label></section></div>
-      <footer class="modal-footer"><p class="form-error" id="api-token-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Create key</button></div></footer>
+      <header class="modal-header"><p class="eyebrow">PERSONAL API KEY</p><h2 id="api-token-title">Create a scoped key</h2><p>Use the smallest scope and shortest lifetime your tool needs.</p></header>
+      <div class="modal-scroll"><section class="form-section"><label>Key name<input name="name" required minlength="3" placeholder="e.g. laptop CLI"></label><label>Expires after<select name="expires_in_days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></label></section><section class="form-section"><div class="form-section-title"><span aria-hidden="true">✓</span><div><h3>Service scopes</h3><p>The key can never exceed your current access.</p></div></div><div class="checkbox-grid" id="token-service-scopes"></div></section><section class="form-section"><label>Project IDs <input name="project_ids" placeholder="Optional: prj-a, prj-b"></label></section></div>
+      <footer class="modal-footer"><p class="form-error" id="api-token-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Create key</button></div></footer>
     </form>
   </dialog>
 
-  <dialog id="api-token-secret-dialog"><div class="detail-sheet token-secret-sheet"><p class="eyebrow">KEY CREATED</p><h2>Copy your key now</h2><p>This secret will not be shown again.</p><div class="token-secret"><code id="api-token-secret"></code><button id="copy-api-token">Copy</button></div><pre class="hint">export MLAIOPS_TOKEN="your-key"
+  <dialog id="api-token-secret-dialog" aria-labelledby="api-token-secret-title"><div class="detail-sheet token-secret-sheet"><p class="eyebrow">KEY CREATED</p><h2 id="api-token-secret-title">Copy your key now</h2><p>This secret will not be shown again.</p><div class="token-secret"><code id="api-token-secret"></code><button type="button" id="copy-api-token">Copy</button></div><pre class="hint">export MLAIOPS_TOKEN="your-key"
 mlaiops projects list</pre><div class="form-actions"><button class="primary" type="button" data-dialog-close>I have saved it</button></div></div></dialog>
 
-  <dialog id="blog-editor-dialog">
+  <dialog id="blog-editor-dialog" aria-labelledby="blog-editor-title">
     <form id="blog-editor-form" class="provisioning-form blog-editor-form">
-      <header class="modal-header"><p class="eyebrow">ENGINEERING BLOG</p><h2 id="blog-editor-title">New post</h2><p>Markdown is stored in the control-plane repository and rendered safely on the public site.</p></header>
-      <div class="modal-scroll"><input type="hidden" name="id"><div class="blog-editor-grid"><section class="form-section"><div class="form-grid"><label>Title<input name="title" required minlength="5" placeholder="A useful engineering title"></label><label>Slug<input name="slug" placeholder="generated-from-title"></label><label>Status<select name="status"><option value="draft">Draft</option><option value="published">Published</option></select></label></div><div class="form-grid"><label>Author<input name="author" value="Kionga Engineering"></label><label>Tags<input name="tags" placeholder="Jupyter, S3, Infrastructure"></label></div><label>Summary<textarea name="summary" required minlength="20" rows="3" placeholder="What will a reader learn?"></textarea></label></section><section class="form-section"><label>Article Markdown<textarea class="blog-content-editor" name="content" required minlength="100" rows="24" placeholder="# Article title&#10;&#10;Write a detailed, practical engineering guide…"></textarea></label></section></div></div>
-      <footer class="modal-footer"><p class="form-error" id="blog-editor-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save post</button></div></footer>
+      <header class="modal-header"><p class="eyebrow">ENGINEERING BLOG</p><h2 id="blog-editor-title">New post</h2><p>Markdown is stored in the control plane and rendered safely on the public site.</p></header>
+      <div class="modal-scroll"><input type="hidden" name="id"><section class="form-section"><div class="form-grid"><label>Title<input name="title" required minlength="5" placeholder="A useful engineering title"></label><label>Slug<input name="slug" placeholder="generated-from-title"></label><label>Status<select name="status"><option value="draft">Draft</option><option value="published">Published</option></select></label><label>Author<input name="author" value="Kionga Engineering"></label><label>Tags<input name="tags" placeholder="Jupyter, S3, Infrastructure"></label></div><label>Summary<textarea name="summary" required minlength="20" rows="3" placeholder="What will a reader learn?"></textarea></label></section><section class="form-section"><label>Article Markdown<textarea class="blog-content-editor" name="content" required minlength="100" rows="20" placeholder="## Section title&#10;&#10;Write a detailed, practical engineering guide…"></textarea></label></section></div>
+      <footer class="modal-footer"><p class="form-error" id="blog-editor-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save post</button></div></footer>
     </form>
   </dialog>
 
-  <dialog id="chat-dialog">
+  <dialog id="chat-dialog" aria-labelledby="chat-agent-name">
     <div class="detail-sheet chat-sheet">
       <p class="eyebrow">AGENT TEST CONSOLE</p><h2 id="chat-agent-name">Agent</h2>
-      <div id="chat-log" class="chat-log"><p class="empty">Ask something — the turn runs through the real agent runtime.</p></div>
-      <form id="chat-form"><input id="chat-input" placeholder="e.g. When are invoices issued?" autocomplete="off" required><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Send</button></form>
+      <div id="chat-log" class="chat-log" role="log" aria-live="polite"></div>
+      <form id="chat-form"><label class="sr-only" for="chat-input">Message</label><input id="chat-input" placeholder="e.g. When are invoices issued?" autocomplete="off" required><button type="button" data-dialog-close>Close</button><button class="primary" type="submit">Send</button></form>
     </div>
   </dialog>
 
-  <dialog id="deploy-agent-dialog">
+  <dialog id="deploy-agent-dialog" aria-labelledby="deploy-agent-title">
     <form id="deploy-agent-form" class="provisioning-form agent-deploy-form">
-      <header class="modal-header"><p class="eyebrow">DEPLOY AGENT</p><h2>Ship a governed AI agent</h2><p>Register an OCI runtime and an agent factory: LangGraph, Agno, NOOA, or your own framework adapter.</p></header>
+      <header class="modal-header"><p class="eyebrow">DEPLOY AGENT</p><h2 id="deploy-agent-title">Ship a governed AI agent</h2><p>Register an OCI runtime and an agent factory: LangGraph, Agno, NOOA, or your own framework adapter.</p></header>
       <div class="modal-scroll">
-        <section class="form-section"><label>Example entrypoint<select id="agent-framework-preset"><option value="">Keep my entrypoint</option><option value="langgraph">LangGraph</option><option value="agno">Agno</option><option value="nooa">NVIDIA OO-Agents (NOOA)</option><option value="custom">Custom framework adapter</option></select></label><p id="agent-framework-help" class="hint">Presets only populate the factory path. Build an image containing your code and dependencies; this does not install or start a runtime.</p></section>
-        <section class="form-section"><div class="form-section-title"><span>1</span><div><h3>Load a generated contract</h3><p>Optional: paste <code>platform/agent.json</code> from a Kionga agent project.</p></div></div><label>Agent deployment JSON<textarea id="agent-contract-json" rows="3" placeholder='{"name":"support-agent","image":"ghcr.io/team/agent:1.0.0",…}'></textarea></label><div class="form-actions"><button class="secondary" id="load-agent-contract" type="button">Load JSON</button></div></section>
-        <section class="form-section"><div class="form-section-title"><span>2</span><div><h3>Identity</h3><p>Agent versions remain independently deployable.</p></div></div><div class="form-grid"><label>Project<select name="project_id" id="agent-project" required></select></label><label>Agent name<input name="name" required value="support-agent" placeholder="support-agent"></label><label>Version<input name="version" required value="1.0.0" placeholder="1.0.0"></label></div></section>
-        <section class="form-section"><div class="form-section-title"><span>3</span><div><h3>Runtime and capacity</h3><p>The graph module uses the <code>package.module:attribute</code> contract. Requests and autoscaling remain inside the administrator's grant.</p></div></div><label>OCI image<input name="image" required value="mlaiops/agent-runtime:latest" placeholder="ghcr.io/team/agent:1.0.0"></label><label>Graph module<input name="graph_module" required value="agents.customer_support.graph:build" placeholder="agents.customer_support.graph:build"></label><div class="quota-grid"><label>LLM backend<select name="llm_backend"><option value="mock">Mock · no API key</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openai-compatible">OpenAI-compatible</option><option value="self-hosted">Self-hosted</option></select></label><label>Minimum replicas<input name="min_replicas" type="number" min="1" max="100" value="1"></label><label>Maximum replicas<input name="max_replicas" type="number" min="1" max="100" value="1"></label><label>CPU per replica<input name="agent_cpu" required value="500m" placeholder="500m"></label><label>Memory per replica<input name="agent_memory" required value="1Gi" placeholder="1Gi"></label><label>GPUs per replica<input name="agent_gpu" type="number" min="0" value="0"></label><label>GPU resource type<input name="agent_gpu_type" value="nvidia.com/gpu" placeholder="nvidia.com/gpu"></label></div><p class="hint" id="agent-capacity-hint">Capacity is checked against the administrator's grant.</p></section>
-        <section class="form-section"><div class="form-section-title"><span>4</span><div><h3>Tools</h3><p>Only registered platform tools can be attached here.</p></div></div><div class="checkbox-grid" id="agent-tool-options"><p class="empty">Loading tools…</p></div></section>
+        <section class="form-section"><label>Example entrypoint<select id="agent-framework-preset"><option value="">Keep my entrypoint</option><option value="langgraph">LangGraph</option><option value="agno">Agno</option><option value="nooa">NVIDIA OO-Agents (NOOA)</option><option value="custom">Custom framework adapter</option></select></label><p id="agent-framework-help" class="field-help">Presets only fill in the factory path. Build an image containing your code and dependencies; this does not install or start a runtime.</p></section>
+        <section class="form-section"><div class="form-section-title"><span aria-hidden="true">1</span><div><h3>Load a generated contract</h3><p>Optional: paste <code>platform/agent.json</code> from a Kionga agent project.</p></div></div><label>Agent deployment JSON<textarea id="agent-contract-json" rows="3" spellcheck="false" placeholder='{"name":"support-agent","image":"ghcr.io/team/agent:1.0.0",…}'></textarea></label><div class="form-actions"><button id="load-agent-contract" type="button">Load JSON</button></div></section>
+        <section class="form-section"><div class="form-section-title"><span aria-hidden="true">2</span><div><h3>Identity</h3><p>Agent versions remain independently deployable.</p></div></div><div class="form-grid"><label>Project<select name="project_id" id="agent-project" required></select></label><label>Agent name<input name="name" required value="support-agent"></label><label>Version<input name="version" required value="1.0.0"></label></div></section>
+        <section class="form-section"><div class="form-section-title"><span aria-hidden="true">3</span><div><h3>Runtime and capacity</h3><p>The graph module uses the <code>package.module:attribute</code> contract. Requests and autoscaling stay inside your grant.</p></div></div><label>OCI image<input name="image" required value="mlaiops/agent-runtime:latest"></label><label>Graph module<input name="graph_module" required value="agents.customer_support.graph:build"></label><div class="quota-grid"><label>LLM backend<select name="llm_backend"><option value="mock">Mock · no API key</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openai-compatible">OpenAI-compatible</option><option value="self-hosted">Self-hosted</option></select></label><label>Minimum replicas<input name="min_replicas" type="number" min="1" max="100" value="1"></label><label>Maximum replicas<input name="max_replicas" type="number" min="1" max="100" value="1"></label><label>CPU per replica<input name="agent_cpu" required value="500m"></label><label>Memory per replica<input name="agent_memory" required value="1Gi"></label><label>GPUs per replica<input name="agent_gpu" type="number" min="0" value="0"></label><label>GPU resource type<input name="agent_gpu_type" value="nvidia.com/gpu"></label></div><p class="field-help" id="agent-capacity-hint">Capacity is checked against the administrator's grant.</p></section>
+        <section class="form-section"><div class="form-section-title"><span aria-hidden="true">4</span><div><h3>Tools</h3><p>Only registered platform tools can be attached.</p></div></div><div class="checkbox-grid" id="agent-tool-options"></div></section>
       </div>
-      <footer class="modal-footer"><p class="form-error" id="deploy-agent-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Deploy agent</button></div></footer>
+      <footer class="modal-footer"><p class="form-error" id="deploy-agent-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Deploy agent</button></div></footer>
     </form>
   </dialog>
 
-  <dialog id="predict-dialog">
+  <dialog id="predict-dialog" aria-labelledby="predict-model-name">
     <div class="detail-sheet">
       <p class="eyebrow">INFERENCE TEST CONSOLE</p><h2 id="predict-model-name">Model</h2>
-      <form id="predict-form">
-        <label>Request payload (mlflow /invocations)<textarea id="predict-input" rows="5">{"inputs": [[0.1, -1.2, 0.5, 2.0, 0.3, -0.7, 1.1, 0.0, -0.4, 0.9, -1.5, 0.2]]}</textarea></label>
-        <div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Send prediction request</button></div>
+      <form id="predict-form" style="padding:0">
+        <label>Request payload (MLflow /invocations)<textarea id="predict-input" rows="5" spellcheck="false">{"inputs": [[0.1, -1.2, 0.5, 2.0, 0.3, -0.7, 1.1, 0.0, -0.4, 0.9, -1.5, 0.2]]}</textarea></label>
+        <div class="form-actions"><button type="button" data-dialog-close>Close</button><button class="primary" type="submit">Send prediction request</button></div>
       </form>
-      <pre id="predict-output" class="hint"></pre>
+      <pre id="predict-output" class="hint" role="status"></pre>
     </div>
   </dialog>
 
-  <dialog id="traffic-dialog">
+  <dialog id="traffic-dialog" aria-labelledby="traffic-title">
     <form id="traffic-form">
-      <p class="eyebrow">AGENT TRAFFIC</p><h2>Set canary traffic</h2><p>Choose the percentage of requests routed to the canary version.</p>
-      <label>Canary weight <span id="traffic-value">10%</span><input id="traffic-weight" name="canary_weight" type="range" min="0" max="100" value="10"></label>
-      <p class="form-error" id="traffic-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Update traffic</button></div>
+      <p class="eyebrow">AGENT TRAFFIC</p><h2 id="traffic-title">Set canary traffic</h2><p>The percentage of requests routed to the canary version.</p>
+      <label>Canary weight <output id="traffic-value">10%</output><input id="traffic-weight" name="canary_weight" type="range" min="0" max="100" value="10"></label>
+      <p class="form-error" id="traffic-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Update traffic</button></div>
     </form>
   </dialog>
 
-  <dialog id="function-dialog">
+  <dialog id="function-dialog" aria-labelledby="function-name">
     <form id="function-form">
       <p class="eyebrow">SERVERLESS FUNCTION</p><h2 id="function-name">Invoke function</h2>
-      <label>JSON payload<textarea id="function-payload" rows="6">{}</textarea></label>
-      <p class="form-error" id="function-error"></p><pre id="function-output" class="hint"></pre>
-      <div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Invoke function</button></div>
+      <label>JSON payload<textarea id="function-payload" rows="6" spellcheck="false">{}</textarea></label>
+      <p class="form-error" id="function-error" role="alert"></p><pre id="function-output" class="hint" role="status"></pre>
+      <div class="form-actions"><button type="button" data-dialog-close>Close</button><button class="primary" type="submit">Invoke function</button></div>
     </form>
   </dialog>
 
-  <dialog id="deploy-function-dialog">
+  <dialog id="deploy-function-dialog" aria-labelledby="deploy-function-title">
     <form id="deploy-function-form" class="provisioning-form">
-      <header class="modal-header"><p class="eyebrow">DEPLOY FUNCTION</p><h2>Ship an event-driven job</h2><p>The OCI image is deployed through OpenFaaS and remains reusable as a pipeline job.</p></header>
+      <header class="modal-header"><p class="eyebrow">DEPLOY FUNCTION</p><h2 id="deploy-function-title">Ship an event-driven job</h2><p>The OCI image is deployed through OpenFaaS and stays reusable as a pipeline job.</p></header>
       <div class="modal-scroll">
-        <section class="form-section"><label>Project<select name="project_id" id="function-project" required></select></label><label>Function name<input name="name" required pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?" placeholder="feature-transform"></label><label>OCI image<input name="image" required placeholder="ghcr.io/team/feature-transform:1.0.0"></label></section>
-        <section class="form-section"><div class="form-section-title"><span>2</span><div><h3>Runtime resources</h3><p>Kubernetes-style quantities keep deployment portable.</p></div></div><div class="quota-grid"><label>CPU<input name="cpu" value="500m" placeholder="500m"></label><label>Memory<input name="memory" value="512Mi" placeholder="512Mi"></label></div><label>Environment (JSON)<textarea name="env_vars" rows="4">{}</textarea></label></section>
-        <section class="form-section"><div class="form-section-title"><span>3</span><div><h3>Event trigger</h3><p>Expose HTTP, queue work asynchronously, or subscribe through an OpenFaaS connector.</p></div></div><label>Trigger<select name="trigger_type" id="function-trigger-type"><option value="http">HTTP / webhook</option><option value="async">Asynchronous queue</option><option value="cron">Cron schedule</option><option value="kafka">Kafka topic</option></select></label><label id="function-trigger-source-label" hidden><span id="function-trigger-source-title">Source</span><input name="trigger_source" id="function-trigger-source"></label><small id="function-trigger-help">Invoke synchronously over the governed API.</small></section>
+        <section class="form-section"><label>Project<select name="project_id" id="function-project" required></select></label><label>Function name<input name="name" required pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?" placeholder="feature-transform"><small>Lowercase letters, digits and hyphens.</small></label><label>OCI image<input name="image" required placeholder="ghcr.io/team/feature-transform:1.0.0"></label></section>
+        <section class="form-section"><div class="form-section-title"><span aria-hidden="true">2</span><div><h3>Runtime resources</h3><p>Kubernetes-style quantities keep deployment portable.</p></div></div><div class="quota-grid"><label>CPU<input name="cpu" value="500m"></label><label>Memory<input name="memory" value="512Mi"></label></div><label>Environment (JSON)<textarea name="env_vars" rows="4" spellcheck="false">{}</textarea></label></section>
+        <section class="form-section"><div class="form-section-title"><span aria-hidden="true">3</span><div><h3>Event trigger</h3><p>Expose HTTP, queue work asynchronously, or subscribe through an OpenFaaS connector.</p></div></div><label>Trigger<select name="trigger_type" id="function-trigger-type"><option value="http">HTTP / webhook</option><option value="async">Asynchronous queue</option><option value="cron">Cron schedule</option><option value="kafka">Kafka topic</option></select></label><label id="function-trigger-source-label" hidden><span id="function-trigger-source-title">Source</span><input name="trigger_source" id="function-trigger-source"></label><small class="field-help" id="function-trigger-help">Invoke synchronously over the governed API.</small></section>
       </div>
-      <footer class="modal-footer"><p class="form-error" id="deploy-function-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Deploy function</button></div></footer>
+      <footer class="modal-footer"><p class="form-error" id="deploy-function-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Deploy function</button></div></footer>
     </form>
   </dialog>
 
-  <dialog id="pipeline-definition-dialog">
-    <form id="pipeline-definition-form" class="provisioning-form pipeline-builder-form">
-      <header class="modal-header"><p class="eyebrow">PIPELINE DEFINITION</p><h2>Compose a reusable flow</h2><p>Dependencies form the DAG; Kionga rejects missing references and cycles before saving.</p></header>
-      <div class="modal-scroll"><section class="form-section"><div class="quota-grid"><label>Project<select name="project_id" id="definition-project" required></select></label><label>Execution<select name="execution_mode"><option value="functions">Functions · OpenFaaS</option><option value="prefect">Containers · Prefect / KFP</option></select></label><label>Name<input name="name" required value="event-pipeline"></label><label>Version<input name="version" required value="1"></label></div></section><section class="form-section"><label>Jobs (JSON)<textarea name="jobs" rows="14" spellcheck="false">[
-  {"name":"extract","kind":"function","function":"extract-fn","depends_on":[],"resources":{"cpu":"500m","memory":"512Mi"},"retries":1},
-  {"name":"score","kind":"function","function":"score-fn","depends_on":["extract"],"resources":{"cpu":"1","memory":"1Gi"},"retries":1}
-]</textarea></label></section><section class="form-section pipeline-preview-section"><div class="panel-heading"><div><p class="eyebrow">LIVE PREVIEW</p><h3>Dependency graph</h3></div><span class="tag" id="pipeline-preview-status">Waiting for jobs</span></div><div id="pipeline-definition-preview" aria-live="polite"></div></section></div>
-      <footer class="modal-footer"><p class="form-error" id="pipeline-definition-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save flow</button></div></footer>
+  <dialog id="pipeline-definition-dialog" aria-labelledby="pipeline-definition-title">
+    <form id="pipeline-definition-form" class="provisioning-form pipeline-builder-form" novalidate>
+      <header class="modal-header">
+        <p class="eyebrow">PIPELINE DEFINITION</p><h2 id="pipeline-definition-title">Compose a reusable flow</h2>
+        <p>Use the form or YAML; both edit the same versioned definition. Kionga validates every change, rejects cycles and missing dependencies, and saves each change as a new revision.</p>
+        <div class="editor-tabs" role="tablist" aria-label="Editor mode"><button type="button" role="tab" id="definition-tab-form" aria-selected="true" aria-controls="definition-form-panel">Form</button><button type="button" role="tab" id="definition-tab-yaml" aria-selected="false" aria-controls="definition-yaml-panel">YAML</button></div>
+      </header>
+      <div class="modal-scroll">
+        <div id="definition-form-panel" role="tabpanel" aria-labelledby="definition-tab-form">
+          <section class="form-section"><div class="form-section-title"><span aria-hidden="true">1</span><div><h3>Flow</h3><p>Name and version identify the flow inside its project.</p></div></div>
+            <div class="quota-grid"><label>Project<select name="project_id" id="definition-project" required></select></label><label>Execution<select name="execution_mode"><option value="prefect">Containers · pipeline runner</option><option value="functions">Functions · OpenFaaS</option></select></label><label>Name<input name="name" required value="event-pipeline"></label><label>Version<input name="version" required value="1"></label></div>
+            <label>Description<input name="description" placeholder="What this flow produces"></label>
+          </section>
+          <section class="form-section"><div class="form-section-title"><span aria-hidden="true">2</span><div><h3>Nodes</h3><p>Each node is a container image or a deployed function. Dependencies decide what runs in parallel.</p></div></div>
+            <div id="definition-nodes"></div>
+            <div class="button-row start" style="margin-top:var(--space-3)"><button type="button" id="definition-add-node">＋ Add node</button></div>
+          </section>
+          <section class="form-section"><div class="form-section-title"><span aria-hidden="true">3</span><div><h3>Schedule and parameters</h3><p>Optional. Scheduled runs execute as you, with your quotas.</p></div></div>
+            <div class="quota-grid"><label class="inline-check"><input type="checkbox" id="definition-schedule-enabled"> Run on a schedule</label><label>Cron (5 fields)<input id="definition-cron" placeholder="0 2 * * *"><small>Minute hour day month weekday.</small></label><label>Timezone<input id="definition-timezone" value="UTC" list="timezone-options"><small>An IANA name such as Africa/Nairobi.</small></label></div>
+            <label>Default parameters (JSON object)<textarea id="definition-parameters" rows="3" spellcheck="false">{}</textarea></label>
+            <label>Parameters a manual run may override<input id="definition-overridable" placeholder="e.g. window, dataset_version"><small>Comma-separated names declared above. Leave empty to lock all parameters.</small></label>
+            <div class="checkbox-grid"><label class="inline-check"><input type="checkbox" id="definition-override-resources"> Resources may be overridden</label><label class="inline-check"><input type="checkbox" id="definition-override-image"> Image may be overridden</label><label class="inline-check"><input type="checkbox" id="definition-override-nodes"> Runs may select nodes</label><label class="inline-check"><input type="checkbox" id="definition-override-retries"> Retries and timeouts may change</label></div>
+          </section>
+        </div>
+        <div id="definition-yaml-panel" role="tabpanel" aria-labelledby="definition-tab-yaml" hidden>
+          <section class="form-section"><label>Definition YAML<textarea class="yaml-editor" id="definition-yaml" rows="22" spellcheck="false" aria-describedby="definition-yaml-help"></textarea><small id="definition-yaml-help">Schema <code>kionga.dev/v1 Pipeline</code>. Kionga stores YAML in canonical form, so comments and ordering are not kept.</small></label></section>
+        </div>
+        <section class="form-section pipeline-preview-section"><div class="panel-heading"><div><p class="eyebrow">LIVE VALIDATION</p><h3>Dependency graph</h3></div><span class="tag" id="pipeline-preview-status" role="status">Waiting for nodes</span></div><ul class="issue-list" id="definition-issues" aria-live="polite"></ul><div id="pipeline-definition-preview"></div></section>
+        <label hidden id="definition-message-label">Change note<input id="definition-message" placeholder="What changed and why (shown in revision history)"></label>
+      </div>
+      <footer class="modal-footer"><p class="form-error" id="pipeline-definition-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save flow</button></div></footer>
     </form>
   </dialog>
 
-  <dialog id="project-repository-dialog">
+  <datalist id="timezone-options"><option value="UTC"><option value="Africa/Nairobi"><option value="Europe/London"><option value="Europe/Berlin"><option value="America/New_York"><option value="America/Los_Angeles"><option value="Asia/Kolkata"><option value="Asia/Singapore"><option value="Australia/Sydney"></datalist>
+
+  <dialog id="definition-detail-dialog" class="wide" aria-labelledby="definition-detail-title"><div class="detail-sheet"><div id="definition-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
+
+  <dialog id="project-repository-dialog" aria-labelledby="project-repository-title">
     <form id="project-repository-form">
       <input name="project_id" type="hidden">
-      <p class="eyebrow">GIT REPOSITORY</p><h2>Connect source control</h2><p>Credentials stay in your workspace Git credential helper; Kionga stores only repository metadata.</p>
+      <p class="eyebrow">GIT REPOSITORY</p><h2 id="project-repository-title">Connect source control</h2><p>Credentials stay in your workspace Git credential helper; Kionga stores only repository metadata.</p>
       <label>Repository URL<input name="url" required placeholder="https://github.com/team/project.git"></label>
       <label>Default branch<input name="default_branch" required value="main"></label>
-      <p class="form-error" id="project-repository-error"></p><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Connect repository</button></div>
+      <p class="form-error" id="project-repository-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Connect repository</button></div>
     </form>
   </dialog>
 
-  <dialog id="about-dialog"><div class="detail-sheet"><p class="eyebrow">ABOUT</p><h2>Kionga</h2><div id="about-detail"></div><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Close</button></div></div></dialog>
-  <dialog id="preview-dialog"><div class="detail-sheet"><div id="preview-detail"></div><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Close</button></div></div></dialog>
-  <dialog id="run-dialog"><div class="detail-sheet"><div id="run-detail"></div><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Close</button></div></div></dialog>
-  <dialog id="metadata-dialog"><div class="detail-sheet"><div id="metadata-detail"></div><div class="form-actions"><button class="secondary" type="button" data-dialog-close>Close</button></div></div></dialog>
-  <div id="toast" role="status"></div>
-  <script src="https://cdn.jsdelivr.net/npm/@dagrejs/dagre@2.0.0/dist/dagre.min.js" integrity="sha384-AzQ70cQk8D+zQhLIF5sw1ZNJprV/OYEvT65aRyn0VxZJxNdcsyLtfMheBEDhEfRM" crossorigin="anonymous"></script>
+  <dialog id="about-dialog" aria-labelledby="about-title"><div class="detail-sheet"><p class="eyebrow">ABOUT</p><h2 id="about-title">Kionga</h2><div id="about-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
+  <dialog id="preview-dialog" class="wide"><div class="detail-sheet"><div id="preview-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
+  <dialog id="run-dialog"><div class="detail-sheet"><div id="run-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
+  <dialog id="metadata-dialog" class="wide"><div class="detail-sheet"><div id="metadata-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/vendor/dagre.min.js" integrity="sha384-AzQ70cQk8D+zQhLIF5sw1ZNJprV/OYEvT65aRyn0VxZJxNdcsyLtfMheBEDhEfRM"></script>
   <script src="/pipeline-graph.js"></script>
-  <script src="/app.js"></script>
+  <script src="/js/core.js"></script>
+  <script src="/js/views/overview.js"></script>
+  <script src="/js/views/projects.js"></script>
+  <script src="/js/views/pipelines.js"></script>
+  <script src="/js/views/pipeline-editor.js"></script>
+  <script src="/js/views/functions.js"></script>
+  <script src="/js/views/models.js"></script>
+  <script src="/js/views/agents.js"></script>
+  <script src="/js/views/data.js"></script>
+  <script src="/js/views/platform.js"></script>
+  <script src="/js/views/access.js"></script>
+  <script src="/js/views/settings.js"></script>
+  <script src="/js/views/blogs.js"></script>
   <script src="/huggingface.js"></script>
+  <script src="/js/boot.js"></script>
 </body>
 </html>

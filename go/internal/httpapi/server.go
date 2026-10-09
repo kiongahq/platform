@@ -19,6 +19,7 @@ import (
 
 	"github.com/ml-ai-ops/platform/internal/auth"
 	"github.com/ml-ai-ops/platform/internal/integrations"
+	"github.com/ml-ai-ops/platform/internal/pipelinespec"
 	"github.com/ml-ai-ops/platform/internal/platform"
 	"github.com/ml-ai-ops/platform/internal/store"
 	"github.com/ml-ai-ops/platform/pkg/api"
@@ -122,6 +123,9 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/v1/connections/{id}/activate", server.activateConnection)
 	mux.HandleFunc("GET /api/v1/audit", server.audit)
 	mux.HandleFunc("GET /api/openapi.json", server.openapi)
+	for _, register := range routeRegistrars {
+		register(server, mux)
+	}
 	mux.Handle("/", http.FileServer(http.FS(static)))
 	resolver := func(subject string) (roles, services, projectIDs []string, disabled bool, ok bool) {
 		access, err := data.AccessFor(subject)
@@ -462,38 +466,12 @@ func (s *Server) upsertPipelineDefinition(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	var err error
-	req, err = store.ValidatePipelineDefinition(req)
-	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
+	normalized, issues := pipelinespec.Validate(req)
+	if len(issues) > 0 {
+		writeIssues(w, issues)
 		return
 	}
-	if !projectAllowed(s.store, principal(r), req.ProjectID) {
-		writeError(w, http.StatusForbidden, "access_denied", "project is not assigned to this user")
-		return
-	}
-	if err := enforcePipelineResources(s.store, principal(r), req.Jobs); err != nil {
-		writeError(w, http.StatusForbidden, "resource_not_provisioned", err.Error())
-		return
-	}
-	registered := map[string]bool{}
-	for _, function := range s.store.Functions() {
-		if function.ProjectID == req.ProjectID {
-			registered[function.Name] = true
-		}
-	}
-	for _, job := range req.Jobs {
-		if job.Kind == "function" && !registered[job.Function] {
-			writeError(w, http.StatusUnprocessableEntity, "validation_error", "function job references an undeployed project function: "+job.Function)
-			return
-		}
-	}
-	item, err := s.store.UpsertPipelineDefinition(r.PathValue("id"), req, actor(r))
-	status := http.StatusCreated
-	if r.PathValue("id") != "" {
-		status = http.StatusOK
-	}
-	writeMutation(w, item, err, status)
+	s.saveDefinition(w, r, normalized)
 }
 
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {

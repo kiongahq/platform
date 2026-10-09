@@ -3,6 +3,7 @@ package store
 import "github.com/ml-ai-ops/platform/pkg/api"
 
 type Repository interface {
+	Documents
 	HubAccount(string) (HubAccount, error)
 	SaveHubAccount(string, HubAccount) error
 	UserAccess() []api.UserAccess
@@ -28,6 +29,7 @@ type Repository interface {
 	PipelineDefinitions() []api.PipelineDefinition
 	PipelineDefinition(string) (api.PipelineDefinition, error)
 	UpsertPipelineDefinition(string, api.UpsertPipelineDefinitionRequest, string) (api.PipelineDefinition, error)
+	SetPipelineTriggerState(string, int, TriggerState) (api.PipelineDefinition, error)
 	Functions() []api.Function
 	UpsertFunction(api.DeployFunctionRequest, string, string) (api.Function, error)
 	DeleteFunction(string, string) error

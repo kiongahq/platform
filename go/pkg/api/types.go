@@ -209,6 +209,44 @@ type PipelineRun struct {
 	Parameters    map[string]any `json:"parameters,omitempty"`
 	Steps         []PipelineStep `json:"steps"`
 	Logs          []RunLog       `json:"logs,omitempty"`
+	// Trigger records how the run started: manual, schedule, api, event or retry.
+	Trigger string `json:"trigger,omitempty"`
+	// ScheduledFor is the schedule slot a scheduled run fills.
+	ScheduledFor *time.Time `json:"scheduled_for,omitempty"`
+	// Provenance pins exactly what executed (definition revision, YAML hash,
+	// image digests, overrides, policy decision). See RunProvenance.
+	Provenance   *RunProvenance `json:"provenance,omitempty"`
+	OwnerSubject string         `json:"owner_subject,omitempty"`
+}
+
+// RunProvenance is the immutable record of what a run executed.
+type RunProvenance struct {
+	DefinitionRevision int               `json:"definition_revision,omitempty"`
+	DefinitionSHA256   string            `json:"definition_sha256,omitempty"`
+	ImageDigests       map[string]string `json:"image_digests,omitempty"`
+	Overrides          *RunOverrides     `json:"overrides,omitempty"`
+	PolicyDecision     string            `json:"policy_decision,omitempty"`
+	Executor           string            `json:"executor,omitempty"`
+}
+
+// RunOverrides are one-run changes to a definition's defaults, applied only
+// where the definition marks the field overridable and policy allows it.
+type RunOverrides struct {
+	Parameters     map[string]any          `json:"parameters,omitempty"`
+	Nodes          map[string]NodeOverride `json:"nodes,omitempty"`
+	SelectedNodes  []string                `json:"selected_nodes,omitempty"`
+	RerunFromRunID string                  `json:"rerun_from_run_id,omitempty"`
+	Priority       string                  `json:"priority,omitempty"`
+	MaxParallelism int                     `json:"max_parallelism,omitempty"`
+}
+
+// NodeOverride changes one node for one run.
+type NodeOverride struct {
+	Image          string            `json:"image,omitempty"`
+	Resources      *JobResources     `json:"resources,omitempty"`
+	Retries        *int              `json:"retries,omitempty"`
+	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
+	Environment    map[string]string `json:"environment,omitempty"`
 }
 
 // UpdateRunStepRequest is sent by the executing pipeline itself (through the
@@ -217,14 +255,33 @@ type UpdateRunStepRequest struct {
 	Step    string `json:"step"`
 	Status  string `json:"status"`
 	Message string `json:"message,omitempty"`
+	// Execution facts reported by the runner; all optional for older runners.
+	Attempt      int        `json:"attempt,omitempty"`
+	ExitCode     *int       `json:"exit_code,omitempty"`
+	WorkloadKind string     `json:"workload_kind,omitempty"`
+	WorkloadID   string     `json:"workload_id,omitempty"`
+	ImageDigest  string     `json:"image_digest,omitempty"`
+	At           *time.Time `json:"at,omitempty"`
 }
 
 type PipelineStep struct {
-	Name      string   `json:"name"`
-	Status    string   `json:"status"`
-	Image     string   `json:"image"`
-	DependsOn []string `json:"depends_on,omitempty"`
-	Progress  int      `json:"progress"`
+	Name      string     `json:"name"`
+	Status    string     `json:"status"`
+	Image     string     `json:"image"`
+	DependsOn []string   `json:"depends_on,omitempty"`
+	Progress  int        `json:"progress"`
+	Kind      string     `json:"kind,omitempty"`
+	StartedAt *time.Time `json:"started_at,omitempty"`
+	EndedAt   *time.Time `json:"ended_at,omitempty"`
+	Attempt   int        `json:"attempt,omitempty"`
+	Attempts  int        `json:"attempts,omitempty"`
+	ExitCode  *int       `json:"exit_code,omitempty"`
+	Message   string     `json:"message,omitempty"`
+	// WorkloadKind is docker-container, k8s-job, k8s-pod or openfaas-call;
+	// the console never labels one kind as another.
+	WorkloadKind string `json:"workload_kind,omitempty"`
+	WorkloadID   string `json:"workload_id,omitempty"`
+	ImageDigest  string `json:"image_digest,omitempty"`
 }
 
 type RunLog struct {
@@ -239,6 +296,10 @@ type SubmitPipelineRequest struct {
 	Name         string         `json:"name"`
 	DefinitionID string         `json:"definition_id,omitempty"`
 	Parameters   map[string]any `json:"parameters,omitempty"`
+	Overrides    *RunOverrides  `json:"overrides,omitempty"`
+	Trigger      string         `json:"trigger,omitempty"`
+	// ScheduledFor is set only by the scheduler, never from request JSON.
+	ScheduledFor *time.Time `json:"-"`
 }
 
 type JobResources struct {
@@ -260,29 +321,87 @@ type PipelineJob struct {
 	Environment map[string]string `json:"environment,omitempty"`
 	Resources   JobResources      `json:"resources"`
 	Retries     int               `json:"retries"`
+	// TimeoutSeconds bounds one attempt; 0 uses the runner default (1h).
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+	// RetryBackoffSeconds waits between attempts.
+	RetryBackoffSeconds int      `json:"retry_backoff_seconds,omitempty"`
+	Description         string   `json:"description,omitempty"`
+	Inputs              []string `json:"inputs,omitempty"`
+	Outputs             []string `json:"outputs,omitempty"`
+	// ResourceProfile names an administrator preset; explicit resources win.
+	ResourceProfile string `json:"resource_profile,omitempty"`
+	// When skips the node unless a run parameter equals a value.
+	When *NodeCondition `json:"when,omitempty"`
+}
+
+// NodeCondition is the only conditional form the runner evaluates: run the
+// node when parameter Param equals Equals (compared as strings). Skipped
+// nodes report status "skipped"; their dependents still run.
+type NodeCondition struct {
+	Param  string `json:"param"`
+	Equals string `json:"equals"`
+}
+
+// PipelineTrigger declares how a definition starts. Schedule triggers use
+// five-field cron in an IANA timezone; the scheduler maintains NextRunAt,
+// LastRunAt and LastRunID.
+type PipelineTrigger struct {
+	Type      string     `json:"type"`
+	Cron      string     `json:"cron,omitempty"`
+	Timezone  string     `json:"timezone,omitempty"`
+	Paused    bool       `json:"paused,omitempty"`
+	Topic     string     `json:"topic,omitempty"`
+	NextRunAt *time.Time `json:"next_run_at,omitempty"`
+	LastRunAt *time.Time `json:"last_run_at,omitempty"`
+	LastRunID string     `json:"last_run_id,omitempty"`
+}
+
+// Overridable lists what a manual run may change for one execution.
+type Overridable struct {
+	Parameters  []string `json:"parameters,omitempty"`
+	Image       bool     `json:"image,omitempty"`
+	Resources   bool     `json:"resources,omitempty"`
+	Retries     bool     `json:"retries,omitempty"`
+	Timeout     bool     `json:"timeout,omitempty"`
+	Nodes       bool     `json:"nodes,omitempty"`
+	Parallelism bool     `json:"parallelism,omitempty"`
 }
 
 type PipelineDefinition struct {
-	ID            string        `json:"id"`
-	ProjectID     string        `json:"project_id"`
-	Name          string        `json:"name"`
-	Version       string        `json:"version"`
-	ExecutionMode string        `json:"execution_mode"`
-	Jobs          []PipelineJob `json:"jobs"`
-	RepositoryURL string        `json:"repository_url,omitempty"`
-	CommitSHA     string        `json:"commit_sha,omitempty"`
-	CreatedAt     time.Time     `json:"created_at"`
-	UpdatedAt     time.Time     `json:"updated_at"`
+	ID            string            `json:"id"`
+	ProjectID     string            `json:"project_id"`
+	Name          string            `json:"name"`
+	Version       string            `json:"version"`
+	ExecutionMode string            `json:"execution_mode"`
+	Jobs          []PipelineJob     `json:"jobs"`
+	RepositoryURL string            `json:"repository_url,omitempty"`
+	CommitSHA     string            `json:"commit_sha,omitempty"`
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+	Description   string            `json:"description,omitempty"`
+	Triggers      []PipelineTrigger `json:"triggers,omitempty"`
+	Overridable   *Overridable      `json:"overridable,omitempty"`
+	Parameters    map[string]any    `json:"parameters,omitempty"`
+	// Revision increments on every saved change; revisions are immutable.
+	Revision     int    `json:"revision,omitempty"`
+	SHA256       string `json:"sha256,omitempty"`
+	OwnerSubject string `json:"owner_subject,omitempty"`
 }
 
 type UpsertPipelineDefinitionRequest struct {
-	ProjectID     string        `json:"project_id"`
-	Name          string        `json:"name"`
-	Version       string        `json:"version"`
-	ExecutionMode string        `json:"execution_mode"`
-	Jobs          []PipelineJob `json:"jobs"`
-	RepositoryURL string        `json:"repository_url,omitempty"`
-	CommitSHA     string        `json:"commit_sha,omitempty"`
+	ProjectID     string            `json:"project_id"`
+	Name          string            `json:"name"`
+	Version       string            `json:"version"`
+	ExecutionMode string            `json:"execution_mode"`
+	Jobs          []PipelineJob     `json:"jobs"`
+	RepositoryURL string            `json:"repository_url,omitempty"`
+	CommitSHA     string            `json:"commit_sha,omitempty"`
+	Description   string            `json:"description,omitempty"`
+	Triggers      []PipelineTrigger `json:"triggers,omitempty"`
+	Overridable   *Overridable      `json:"overridable,omitempty"`
+	Parameters    map[string]any    `json:"parameters,omitempty"`
+	// Message describes the change for revision history.
+	Message string `json:"message,omitempty"`
 }
 
 type Function struct {

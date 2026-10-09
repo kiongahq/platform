@@ -57,7 +57,9 @@ func TestCreateProjectAndSubmitPipeline(t *testing.T) {
 	submit := httptest.NewRequest(http.MethodPost, "/api/v1/pipelines/submit", strings.NewReader(`{"project_id":"`+projectID+`","name":"train"}`))
 	submitted := httptest.NewRecorder()
 	server.ServeHTTP(submitted, submit)
-	if submitted.Code != http.StatusAccepted || !strings.Contains(submitted.Body.String(), `"status":"queued"`) {
+	// Without an engine the run is still recorded, but it must not pretend to
+	// be queued: it fails with a reason that names the missing engine.
+	if submitted.Code != http.StatusAccepted || !strings.Contains(submitted.Body.String(), `"status":"failed"`) || !strings.Contains(submitted.Body.String(), "PREFECT_API_URL") {
 		t.Fatalf("unexpected submit response: %d %s", submitted.Code, submitted.Body.String())
 	}
 }
