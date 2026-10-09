@@ -97,6 +97,7 @@ nav:
       - Connecting all services: connecting-services.md
       - Jupyter workbench: guides/workbench.md
       - Console navigation & service switching: guides/console-navigation.md
+      - Access control & policies: guides/access-control.md
       - AI coding & IDE workspace: guides/coding-workspace.md
       - Project templates: guides/project-templates.md
       - Engineering blog: guides/engineering-blog.md

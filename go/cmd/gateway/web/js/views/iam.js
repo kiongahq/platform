@@ -137,7 +137,7 @@ function statementRow(statement = {}, index = 0) {
         <label>Source networks<input name="ip_cidr" value="${escapeHTML(listText(c.ip_cidr))}" placeholder="10.0.0.0/8"></label>
         <label>UTC hours from<input name="utc_start" type="number" min="0" max="23" value="${c.utc_hours ? escapeHTML(c.utc_hours.start) : ""}" placeholder="9"></label>
         <label>UTC hours until<input name="utc_end" type="number" min="0" max="24" value="${c.utc_hours ? escapeHTML(c.utc_hours.end) : ""}" placeholder="17"></label>
-        <label>Resource tags<input name="resource_tags" value="${escapeHTML(tags)}" placeholder="template=llm-finetune"></label>
+        <label>Resource tags<input name="resource_tags" value="${escapeHTML(tags)}" placeholder="template=production-agent"></label>
         <label>Resource profiles<input name="resource_profile" value="${escapeHTML(listText(c.resource_profile))}" placeholder="starter, team"></label>
       </div>
     </details>
