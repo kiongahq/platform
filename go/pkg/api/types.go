@@ -300,6 +300,8 @@ type SubmitPipelineRequest struct {
 	Trigger      string         `json:"trigger,omitempty"`
 	// ScheduledFor is set only by the scheduler, never from request JSON.
 	ScheduledFor *time.Time `json:"-"`
+	// PolicyDecision is set by the server's preflight, never from JSON.
+	PolicyDecision string `json:"-"`
 }
 
 type JobResources struct {

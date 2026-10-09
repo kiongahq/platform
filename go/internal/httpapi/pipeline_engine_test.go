@@ -137,6 +137,15 @@ func TestSubmitPipelineFailsClosedWhenEngineRejects(t *testing.T) {
 }
 
 func TestStepReportEndpoint(t *testing.T) {
+	prefect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/create_flow_run") {
+			w.Write([]byte(`{"id":"flow-run-1"}`))
+			return
+		}
+		w.Write([]byte(`{"id":"dep-1"}`))
+	}))
+	defer prefect.Close()
+	t.Setenv("PREFECT_API_URL", prefect.URL)
 	server := testServer()
 	projectID := createTestProject(t, server)
 	submit := httptest.NewRequest(http.MethodPost, "/api/v1/pipelines/submit", strings.NewReader(`{"project_id":"`+projectID+`"}`))

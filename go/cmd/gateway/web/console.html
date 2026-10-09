@@ -35,6 +35,7 @@
         <button class="nav-item" type="button" data-view="realtime"><span aria-hidden="true">≈</span>Real-time</button>
         <button class="nav-item" type="button" data-view="catalog"><span aria-hidden="true">▦</span>Catalog</button>
         <p class="nav-group-label">Operate</p>
+        <button class="nav-item" type="button" data-view="logs"><span aria-hidden="true">☰</span>Logs</button>
         <button class="nav-item" type="button" data-view="platform"><span aria-hidden="true">◎</span>Platform</button>
         <button class="nav-item" type="button" data-view="access" data-admin-only hidden><span aria-hidden="true">◈</span>Users &amp; access</button>
         <p class="nav-group-label">Account</p>
@@ -178,7 +179,14 @@ python -m realtime.produce --demo recommendations --count 2</code><button type="
 
       <section id="catalog" class="view" aria-labelledby="page-title"><div class="section-heading"><div><p>Models, features, agents and tools, searchable and understandable.</p></div><div class="filters" role="group" aria-label="Filter catalog by kind"><button type="button" class="active" aria-pressed="true" data-kind="">All</button><button type="button" aria-pressed="false" data-kind="model">Models</button><button type="button" aria-pressed="false" data-kind="feature">Features</button><button type="button" aria-pressed="false" data-kind="agent">Agents</button><button type="button" aria-pressed="false" data-kind="tool">Tools</button></div></div><div data-intro="catalog"></div><div id="catalog-grid" class="card-grid"></div></section>
 
-      <section id="platform" class="view" aria-labelledby="page-title"><div class="section-heading"><div><p>Nothing is green by wishful thinking. Every connection is actively checked.</p></div><div class="heading-actions"><button class="primary" type="button" id="add-connection" data-perm="connections_write">＋ Add connection</button></div></div><div data-intro="platform"></div><div class="platform-layout"><div class="panel"><div class="panel-heading"><div><p class="eyebrow">ONBOARDING</p><h3>Production readiness</h3></div><strong id="readiness-percent">0%</strong></div><ol id="readiness-list" class="checklist"></ol></div><div><div id="connection-grid" class="card-grid connection-grid"></div><div id="component-grid" class="component-grid"></div></div></div></section>
+      <section id="logs" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Search and tail logs and events across pipeline runs you can access.</p></div></div>
+        <div data-intro="logs"></div>
+        <form id="logs-scope-form" class="panel log-scope"><div class="quota-grid"><label>Run ID<input id="logs-run" placeholder="Any run"></label><label>Node<input id="logs-node" placeholder="Any node"></label><label>Time range<select id="logs-window"><option value="1h">Last hour</option><option value="15m">Last 15 minutes</option><option value="24h">Last 24 hours</option><option value="7d">Last 7 days</option><option value="">All retained</option></select></label></div><div class="button-row start"><button type="submit" class="primary">Apply</button></div></form>
+        <article class="panel"><div id="logs-explorer"></div></article>
+      </section>
+
+      <section id="platform" class="view" aria-labelledby="page-title"><div class="section-heading"><div><p>Nothing is green by wishful thinking. Every connection is actively checked.</p></div><div class="heading-actions"><button class="primary" type="button" id="add-connection" data-perm="connections_write">＋ Add connection</button></div></div><div data-intro="platform"></div><div class="platform-layout"><div class="panel"><div class="panel-heading"><div><p class="eyebrow">ONBOARDING</p><h3>Production readiness</h3></div><strong id="readiness-percent">0%</strong></div><ol id="readiness-list" class="checklist"></ol></div><div><article class="panel" id="log-export-status" style="margin-bottom:var(--space-3)"></article><div id="connection-grid" class="card-grid connection-grid"></div><div id="component-grid" class="component-grid"></div></div></div></section>
 
       <section id="profile" class="view" aria-labelledby="page-title">
         <div class="section-heading"><div><p>Your effective role, assigned services, project scope, and resource allocation.</p></div><div class="heading-actions"><button class="primary" type="button" id="request-access">Request access</button></div></div>
@@ -233,14 +241,16 @@ python -m realtime.produce --demo recommendations --count 2</code><button type="
     </form>
   </dialog>
 
-  <dialog id="submit-dialog" aria-labelledby="submit-dialog-title">
-    <form id="submit-form">
-      <p class="eyebrow">RUN PIPELINE</p><h2 id="submit-dialog-title">Submit a run</h2><p>The run is recorded, then handed to the execution engine. Each job runs in its own container and reports back live.</p>
-      <label>Project<select name="project_id" id="submit-project" required></select></label>
-      <label>Pipeline definition<select name="definition_id" id="submit-definition"><option value="">Built-in training pipeline</option></select></label>
-      <label>Run name<input name="name" placeholder="Defaults to the definition name"></label>
-      <label>Parameters (JSON)<textarea name="parameters" rows="4" spellcheck="false">{}</textarea><small>Passed to the flow as run parameters.</small></label>
-      <p class="form-error" id="submit-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Submit run</button></div>
+  <dialog id="submit-dialog" class="wide" aria-labelledby="submit-dialog-title">
+    <form id="submit-form" class="provisioning-form" novalidate>
+      <header class="modal-header"><p class="eyebrow">RUN PIPELINE</p><h2 id="submit-dialog-title">Configure a run</h2><p>Defaults come from the flow's current revision. You can change only what the flow marks as overridable; locked fields show why. Check the run to see every rule before it starts.</p></header>
+      <div class="modal-scroll">
+        <section class="form-section"><div class="quota-grid"><label>Project<select name="project_id" id="submit-project" required></select></label><label>Flow<select name="definition_id" id="submit-definition"><option value="">Built-in training pipeline</option></select></label><label>Run name<input name="name" placeholder="Defaults to the flow name"></label></div><p class="field-help" id="submit-rerun-note" hidden></p></section>
+        <section class="form-section" id="submit-parameters-section"><div class="form-section-title"><span aria-hidden="true">1</span><div><h3>Parameters</h3><p>Values passed to every node of this run.</p></div></div><div id="submit-parameters"></div></section>
+        <section class="form-section" id="submit-nodes-section" hidden><div class="form-section-title"><span aria-hidden="true">2</span><div><h3>Nodes</h3><p>Per-run changes the flow allows. Images must be pinned by digest.</p></div></div><div id="submit-nodes"></div><label id="submit-parallelism-label" hidden>Maximum parallel nodes<input type="number" min="1" max="64" id="submit-parallelism" placeholder="Runner default (8)"></label></section>
+        <section class="form-section"><div class="panel-heading"><div><p class="eyebrow">PREFLIGHT</p><h3>Checks before starting</h3></div><button type="button" id="submit-check">Check run</button></div><ul class="checks" id="submit-checks" aria-live="polite"><li class="field-help">Run the checks to see quotas, capacity, image rules and what will change.</li></ul></section>
+      </div>
+      <footer class="modal-footer"><p class="form-error" id="submit-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit" id="submit-run" disabled title="Check the run first">Start run</button></div></footer>
     </form>
   </dialog>
 
@@ -428,6 +438,8 @@ mlaiops projects list</pre><div class="form-actions"><button class="primary" typ
   <script src="/js/views/projects.js"></script>
   <script src="/js/views/pipelines.js"></script>
   <script src="/js/views/pipeline-editor.js"></script>
+  <script src="/js/views/run-config.js"></script>
+  <script src="/js/views/logs.js"></script>
   <script src="/js/views/functions.js"></script>
   <script src="/js/views/models.js"></script>
   <script src="/js/views/agents.js"></script>

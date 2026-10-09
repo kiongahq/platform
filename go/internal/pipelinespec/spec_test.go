@@ -1,6 +1,7 @@
 package pipelinespec
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -175,5 +176,21 @@ func TestNextRunHonorsTimezone(t *testing.T) {
 	}
 	if _, err := NextRun("* * * * *", "Mars/Olympus", from); err == nil {
 		t.Fatal("bad timezone accepted")
+	}
+}
+
+// The shared example also validates against contracts/pipeline/v1.schema.json
+// (python/tests/test_pipeline_schema.py), keeping the two in step.
+func TestSharedExampleIsValid(t *testing.T) {
+	text, err := os.ReadFile("../../../contracts/pipeline/examples/branched.kionga.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, issues := ParseAndValidate(text)
+	if len(issues) > 0 {
+		t.Fatalf("example rejected: %+v", issues)
+	}
+	if len(req.Jobs) != 4 || len(Layers(req.Jobs)) != 3 {
+		t.Fatalf("example graph: %d nodes", len(req.Jobs))
 	}
 }

@@ -145,7 +145,7 @@ function applyPermissions() {
   document.querySelectorAll(".logout-action").forEach(link => { link.hidden = false; });
   document.querySelectorAll("[data-admin-only]").forEach(node => { node.hidden = !isAdmin(); });
   document.querySelectorAll(".nav-item[data-view]").forEach(node => {
-    if (!["access", "profile", "settings"].includes(node.dataset.view)) node.hidden = !hasService(node.dataset.view);
+    if (!["access", "profile", "settings"].includes(node.dataset.view)) node.hidden = !hasService(serviceForView(node.dataset.view));
   });
   document.querySelector("#workbench-link").hidden = !hasService("workbench");
   document.querySelector("#ide-link").hidden = !hasService("ide");
@@ -162,7 +162,7 @@ const viewLoaders = {};
 const viewMeta = {};
 /* Views whose data the project selector filters. Others hide the selector so
  * it never appears to do something it does not. */
-const projectScopedViews = new Set(["overview", "projects", "pipelines", "functions", "models", "agents"]);
+const projectScopedViews = new Set(["overview", "projects", "pipelines", "functions", "models", "agents", "logs"]);
 const adminViews = new Set(["access", "blogs"]);
 const ungatedViews = new Set(["access", "profile", "settings"]);
 
@@ -210,8 +210,10 @@ function routeURL(id, resource = selectedResource) {
   return url;
 }
 
+/* Views backed by another service's API (logs belong to pipelines). */
+const serviceForView = id => ({logs: "pipelines"})[id] || id;
 function canOpenView(id) {
-  if (!ungatedViews.has(id) && !hasService(id)) return "This service has not been assigned to you.";
+  if (!ungatedViews.has(id) && !hasService(serviceForView(id))) return "This service has not been assigned to you.";
   if (adminViews.has(id) && !isAdmin()) return "Administrator access is required.";
   return "";
 }

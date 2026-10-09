@@ -75,4 +75,5 @@ func TestPostgresPipelineRevisions(t *testing.T) {
 	}
 	storetest.PipelineRevisions(t, repository, project.ID)
 	storetest.ConcurrentStepReports(t, repository, project.ID)
+	storetest.Logs(t, repository, fmt.Sprintf("run-logs-%d", time.Now().UnixNano()))
 }

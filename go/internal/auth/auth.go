@@ -378,7 +378,7 @@ func Allowed(principal Principal, method, path string) bool {
 
 func machineReportingPath(path string) bool {
 	return path == "/api/v1/traces" ||
-		(strings.HasPrefix(path, "/api/v1/pipelines/runs/") && strings.HasSuffix(path, "/steps")) ||
+		(strings.HasPrefix(path, "/api/v1/pipelines/runs/") && (strings.HasSuffix(path, "/steps") || strings.HasSuffix(path, "/logs"))) ||
 		(strings.HasPrefix(path, "/api/v1/features/") && strings.HasSuffix(path, "/materialized")) ||
 		strings.HasPrefix(path, "/api/v1/realtime/")
 }
@@ -422,7 +422,7 @@ func serviceForPath(path string) string {
 		return "git"
 	case strings.HasPrefix(path, "/api/v1/projects"):
 		return "projects"
-	case strings.HasPrefix(path, "/api/v1/pipelines"):
+	case strings.HasPrefix(path, "/api/v1/pipelines"), strings.HasPrefix(path, "/api/v1/logs"):
 		return "pipelines"
 	case strings.HasPrefix(path, "/api/v1/models"):
 		return "models"
@@ -436,7 +436,7 @@ func serviceForPath(path string) string {
 		return "realtime"
 	case strings.HasPrefix(path, "/api/v1/catalog"), strings.HasPrefix(path, "/api/v1/tools"), strings.HasPrefix(path, "/api/v1/prompts"):
 		return "catalog"
-	case strings.HasPrefix(path, "/api/v1/components"), strings.HasPrefix(path, "/api/v1/connections"):
+	case strings.HasPrefix(path, "/api/v1/components"), strings.HasPrefix(path, "/api/v1/connections"), strings.HasPrefix(path, "/api/v1/observability"):
 		return "platform"
 	case strings.HasPrefix(path, "/api/v1/functions"):
 		return "functions"

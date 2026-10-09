@@ -1,195 +1,192 @@
 # Pipelines
 
-The bundled Kionga training flow **really executes** through Prefect, and function
-flows invoke deployed OpenFaaS jobs in dependency order. Both report the same
-persisted step graph and logs. Container-only definitions also execute through the
-bundled `pipeline-definition/mlaiops` Prefect deployment in the Compose profile:
-each ready DAG layer starts concurrently as resource-bounded OCI jobs.
+A **flow** is a versioned directed acyclic graph (DAG) of container jobs or deployed
+functions. A **run** is one execution of a flow (or of the built-in training
+pipeline). Every run records exactly what it executed: the definition revision and
+its SHA-256, the image digests the runner pulled, the parameters and overrides, the
+policy decision, and the workload that ran each node.
 
 Gateway examples assume `export MLAIOPS_URL=http://localhost:8080`.
 
 ## The moving parts
 
-- **prefect-server** — the engine (UI at <http://localhost:4200>).
-- **pipeline-runner** — serves the platform flows as Prefect deployments and runs
-  both the registered training flow and general container definitions; pins
-  `mlflow==3.1.1` + `scikit-learn==1.7.0`.
-- **gateway** — accepts submissions, creates flow runs, and recomputes run status
-  from the steps the flow reports.
-- **OpenFaaS** — runs independent function jobs and function-only DAGs, including
-  parallel ready jobs and configured retries.
+- **gateway** validates and stores definitions and their revisions, runs the
+  scheduler, enforces run preflight, dispatches runs, records step facts and logs.
+- **pipeline-runner** serves the Prefect deployments `training-pipeline/mlaiops`
+  and `pipeline-definition/mlaiops`. It runs one container per node through the
+  Docker socket (trusted local profile; see [Trust boundary](#trust-boundary)).
+- **prefect-server** is the engine for container flows (UI at <http://localhost:4200>).
+- **OpenFaaS** (optional) runs function nodes; function flows are orchestrated by the
+  gateway itself.
 
-## Submitting a run
+## Defining a flow
 
-=== "Console"
+Open **Pipelines → ＋ Define flow**. The editor has two tabs over **one** definition:
 
-    **Pipelines → ▶ Run pipeline**, pick a project and `training-pipeline`, submit.
-    The run appears immediately as `queued`, then the DAG animates as steps run.
+- **Form**: nodes, dependencies ("runs after"), resources, retries, timeouts, a
+  schedule, default parameters and what a manual run may override.
+- **YAML**: the same definition as `kionga.dev/v1 Pipeline`, for review in Git.
 
-=== "SDK"
+Every change is validated live by `POST /api/v1/pipelines/validate`, which returns
+the canonical YAML, its SHA-256, the dependency stages and every issue with the
+field, node and YAML line it belongs to. Switching tabs converts through that
+response, so the form and YAML never diverge. Kionga stores YAML in canonical form:
+comments and key order you type are not kept.
 
-    ```python
-    run = client.submit_pipeline(project.id, name="training-pipeline")
-    ```
-
-=== "API"
-
-    ```bash
-    curl -s -X POST "$MLAIOPS_URL/api/v1/pipelines/submit" \
-      -H 'Content-Type: application/json' \
-      -d '{"project_id":"<id>","name":"training-pipeline"}'
-    ```
-
-What happens under the hood:
-
-1. The gateway persists a `queued` run (+ audit + outbox).
-2. It creates a **Prefect flow run** carrying the platform run id and project id.
-3. If the engine rejects the submission, the run is marked **failed** (fail-closed).
-
-## The training flow
-
-`python/pipelines/training.py` defines `training_pipeline` with four steps:
-
+```yaml
+apiVersion: kionga.dev/v1
+kind: Pipeline
+metadata: {name: churn-training, project: prj-…, version: "3"}
+spec:
+  executionMode: prefect            # containers; "functions" for OpenFaaS nodes
+  parameters: {window: daily}
+  overridable: {parameters: [window], resources: true, nodes: true}
+  triggers:
+    - {type: schedule, cron: "30 2 * * *", timezone: Africa/Nairobi}
+  nodes:
+    - {id: extract, type: container, image: ghcr.io/acme/churn@sha256:…}
+    - {id: features, type: container, image: …, dependsOn: [extract]}
+    - {id: report, type: container, image: …, dependsOn: [extract],
+       when: {param: window, equals: daily}}
+    - {id: train, type: container, image: …, dependsOn: [features, report],
+       resources: {cpu: "4", memory: 8Gi, gpu: 1},
+       retry: {max: 2, backoffSeconds: 60}, timeoutSeconds: 7200}
 ```
-validate  →  train  →  evaluate  →  register
+
+The structural schema is published in the repository at
+`contracts/pipeline/v1.schema.json` (with `contracts/pipeline/examples/`) for editor
+tooling. The gateway additionally rejects what a schema cannot express: duplicate
+node ids, dependencies on missing nodes, cycles (reported as a path such as
+`a → b → c → a`), invalid cron or timezone, timeouts above 24 hours, retries above
+10, and overridable parameters that are not declared.
+
+### Revisions, diff and rollback
+
+Each saved change creates an immutable **revision** with author, message and hash;
+saving identical content does not. In a flow's detail view, **Revisions** lists
+them, **Compare with current** shows a line diff, and **Roll back** saves the old
+content as a new revision, so history is never rewritten and every run still points
+at what it actually executed.
+
+```bash
+curl -s "$MLAIOPS_URL/api/v1/pipelines/definitions/<id>/revisions"
+curl -s "$MLAIOPS_URL/api/v1/pipelines/definitions/<id>/yaml"
+curl -s -X POST "$MLAIOPS_URL/api/v1/pipelines/definitions/yaml" \
+  -H 'Content-Type: application/json' \
+  -d "{\"yaml\": $(jq -Rs . < flow.kionga.yaml), \"message\": \"tune train\"}"
 ```
 
-- **validate** — builds a deterministic synthetic dataset (fixed `random_state`), so
-  every environment produces identical metrics.
-- **train** — fits a scikit-learn classifier.
-- **evaluate** — computes metrics.
-- **register** — logs the run and model to **MLflow** and registers the model version
-  with the control plane against the submitting project.
+To review definitions in Git, commit the YAML from **Flow → YAML → Download** (or
+the API above) as `pipelines/<name>.kionga.yaml` in the project repository, and
+apply it with the YAML endpoint from CI. Kionga never commits to your repository.
 
-Each step is wrapped in `reported_step`, which posts `running → succeeded/failed` to
-`POST /api/v1/pipelines/runs/{id}/steps`. The gateway recomputes status and progress
-deterministically and pushes a digest change over SSE so the console's DAG updates.
+## Schedules
+
+A `schedule` trigger uses five-field cron in an IANA timezone. The flow list and
+detail show whether the schedule is active or paused, the next and last run, and
+**Pause** / **Resume** buttons.
+
+- One gateway replica fires schedules at a time (a lease held in the database).
+- Each schedule slot is claimed exactly once, so restarts never double-run a slot.
+- After downtime a schedule runs once for the most recent missed slot, not once per
+  missed slot.
+- Scheduled runs execute **as the flow's owner**, with the owner's project access
+  and run quota at the moment the slot fires. If the owner lost access or is
+  suspended, the slot is recorded as failed with that reason and the schedule
+  moves on.
+
+## Running a flow manually
+
+**Pipelines → ▶ Run pipeline** (or **Run** on a flow) opens the run configuration:
+
+- **Parameters**: each default beside a field for this run. Parameters not listed in
+  `spec.overridable.parameters` show a lock and the reason.
+- **Nodes** (when allowed): run a subset (Kionga adds every node they depend on),
+  replace an image (must be pinned by digest, and from an approved registry when
+  `KIONGA_IMAGE_REGISTRIES` is set), change CPU/memory within your grant, or change
+  retries and timeouts.
+- **Check run** shows the preflight: project access, concurrent-run quota, capacity
+  of the widest parallel stage, image rules, engine availability and exactly what
+  this run changes. **Start run** is enabled only after it passes.
+
+The gateway runs the same preflight on submit, so a hand-crafted request cannot
+apply overrides the flow, policy or quotas do not allow. The trigger is derived from
+how the request arrived (`manual` from the console, `api` from an API token), never
+from the request body. Priority is not offered: the bundled executor cannot honour
+it, so it would be a misleading control. Flows that declare no parameters pass run
+parameters through unchecked, with a preflight warning.
+
+**Rerun from failure** (on a failed run) starts a new run that reuses the recorded
+outputs of nodes that succeeded and runs the failed node and everything downstream
+again. Reused nodes are shown as skipped with the run they were reused from.
+
+## How execution works
+
+Both executors (Python for containers, Go for functions) use the same **ready-set**
+semantics:
+
+- a node starts as soon as **its own** dependencies have succeeded; independent
+  branches run in parallel (default at most 8 at once, overridable per run);
+- a node whose `when` condition is false is skipped, and its dependents still run;
+- nodes downstream of a failure are skipped with the reason, while unrelated
+  branches finish;
+- each attempt honours the node's timeout and retry backoff.
+
+The runner reports, per node: start and end time, attempt, exit code, workload kind
+and id (`docker-container` with the container id locally; function nodes report
+`openfaas-call`), and the image digest it actually ran. A local container is never
+labelled a Kubernetes Pod.
+
+Runs are dispatched with the **revision pinned at submission**, so editing a flow
+while a run is queued does not change what that run executes.
+
+If no engine is configured, submission is refused with the reason instead of
+leaving a run "queued" forever.
 
 ## Watching a run
 
-=== "Console"
+Click a run to open it: status, trigger, owner, definition revision and hash,
+policy decision and overrides, then the execution graph. The graph supports zoom,
+fit-to-view, panning (drag) and keyboard navigation (arrow keys between nodes,
+Enter to open one). Status is shown by colour, symbol and text.
 
-    Click a run row to open its detail sheet: a **DAG** laid out by the pinned
-    Dagre library with per-step status dots, plus a **live log tail**. Cancel and
-    retry buttons are there (engineer+).
+Selecting a node shows its timing, attempt, exit code, workload, image digest,
+dependencies and **logs and events** for that node, with severity and source
+filters, search, earlier pages and a live tail. See [Logs](logs.md).
 
-=== "API"
-
-    ```bash
-    curl -s "$MLAIOPS_URL/api/v1/pipelines/runs/<run-id>" | python -m json.tool
-    ```
-
-## How the DAG visualization works
-
-Kionga uses the open-source, MIT-licensed `@dagrejs/dagre` library to calculate a
-left-to-right layout for the graph returned by the API. The renderer shows:
-
-- one node per persisted step, including status and progress semantics;
-- one directed edge for every validated `depends_on` relationship;
-- parallel branches at the same rank when their dependencies are satisfied;
-- the live log tail alongside the graph; and
-- refreshed state from the platform SSE stream as jobs transition;
-- focusable nodes with accessible names containing job, target, and status; and
-- visible authoring warnings for duplicates, missing dependencies, self-edges, and
-  cycles before a definition reaches server admission.
-
-The **Define flow** modal renders this graph as jobs are edited, so parallelism and
-invalid edges are visible before save. Run detail re-renders from persisted live
-state rather than reusing the draft preview.
-
-The browser never decides execution order. The gateway validates references and
-cycles before saving a definition, and the execution adapter schedules only from
-that validated graph. Dagre receives a presentation copy. A compact renderer is
-available when the pinned browser asset cannot load, so logs and step state remain
-usable without changing backend behavior.
-
-This keeps the runtime independent of Graphviz binaries or a server-side rendering
-service while still using an established open-source DAG layout algorithm. The
-dependency analysis and SVG renderer live in `pipeline-graph.js` behind the
-testable `KiongaPipelineGraph.analyze()` and `.render()` interface.
-
-## Cancel & retry
-
-```bash
-curl -s -X POST "$MLAIOPS_URL/api/v1/pipelines/runs/<id>/cancel" -d '{}'
-curl -s -X POST "$MLAIOPS_URL/api/v1/pipelines/runs/<id>/retry" -d '{}'
-```
-
-Cancellation is authoritative in the control plane and also propagates to Prefect to
-stop the actual execution.
-
-## Reusable definitions and function flows
-
-Use **Pipelines → Define flow** to save a versioned DAG of container or function
-jobs. Function references must already exist in the same project. The gateway
-validates dependency references and rejects cycles before persisting the definition.
-Submitting with a `definition_id` preserves the definition, parameters, execution
-mode, Git repository, and commit lineage on the run.
-
-Ready function jobs execute concurrently, then pass their output to downstream jobs.
-For a container definition, the bundled runner starts the declared image and command,
-passes run parameters plus dependency outputs as bounded JSON environment values,
-applies admitted CPU/RAM/GPU limits, retries each job as configured, captures bounded
-logs, enforces a timeout/PID limit, and removes the container after every attempt.
-See [Distributed workspaces, functions, and Git](distributed-workspaces.md) for a
-complete example.
+## Trust boundary
 
 The Compose executor mounts the Docker socket into the pipeline runner. That is a
 deliberate root-equivalent trust boundary for a trusted laptop or single-operator VM,
 not hostile multi-tenant isolation. Child jobs never receive the socket and run with
-all capabilities dropped plus `no-new-privileges`. Distributed-team deployments
-should use Kubernetes-native workers/KFP and the cluster scheduler instead of
-exposing a node runtime socket.
-
-## Writing your own container flow
-
-For most jobs, define the image, command, dependencies, resources, retries, and
-environment through the console/API; no custom Prefect Python is required. For a
-specialized native flow, add it under `python/pipelines/`, wrap each step in
-`reported_step(run_id, "step-name")`, and serve it from `python/pipelines/serve.py`.
-Keep ML library pins aligned with the model-specific `serving_image` (or the generic
-fallback) so trained models load under serving. The SDK's `pipelines.py` compiler
-emits the same definition contract.
+all capabilities dropped, `no-new-privileges` and a PID limit.
 
 ## Heavy and distributed training
 
 Start with the [`distributed-training`](project-templates.md#create-a-heavyweight-ml-project)
-template for PyTorch DDP workloads. It establishes portable single-process tests,
-`torchrun` launch, mixed precision, rank-aware MLflow logging, and resumable
-checkpoint paths. Express orchestration as ordinary jobs around the distributed
-trainer, then deploy that flow to a matching executor, for example:
+template for PyTorch DDP workloads and express orchestration as ordinary nodes
+around the trainer. For normal users, the widest set of nodes that can run at the
+same time must fit the CPU, memory and GPU grant; definitions and manual overrides
+that exceed it are rejected before anything starts.
 
-```text
-validate-data ──► distributed-train ──► evaluate ──► register ──► deploy
-                         │
-                         └── checkpoints and artifacts ──► object storage
-```
-
-The project template records accelerator intent; the user's provisioned profile
-and each job's resource request remain the enforcement boundary. Compose is useful
-for CPU or single-device smoke tests. Multi-node/multi-GPU execution belongs on the
-Kubernetes scale path, where the scheduler can satisfy topology and capacity.
-
-For normal users, definition admission groups jobs by dependency depth and sums the
-CPU, memory, and GPU requests in each potentially concurrent layer. The definition
-is rejected with `resource_not_provisioned` if any layer exceeds the administrator's
-grant. This permits large sequential workflows without allowing a wide parallel
-branch to overcommit the user's allocation. Admin/operator principals bypass this
-admission check for platform operations.
-
-Keep these rules for large jobs:
-
-- pin the container image and Git commit;
+- pin images by digest and record the Git commit;
 - checkpoint at bounded intervals to provisioned object storage;
 - make retry/resume idempotent;
 - have only rank zero publish shared MLflow/model-registry results;
-- validate data and environment compatibility before allocating GPUs;
 - separate evaluation and registration so quality gates remain auditable.
 
-## Kubernetes fidelity path
+## Kubernetes
 
-On the scale path, pipelines integrate with KFP/Argo workflows and the operator reconciles
-`KiongaPipelineRun` CRDs. The KFP integration client stays wired for that path; it's
-not needed for local or single-VM use. Migrating an existing cluster to the renamed
-resource kinds requires the procedure in
-[Kionga identifier migration](../reference/kionga-migration.md).
+The control plane's executor contract (dispatch with a pinned revision, step facts,
+typed workload ids, ready-set semantics) is executor-neutral, but **the gateway does
+not yet create Kubernetes Jobs or Pods for pipeline nodes**. The operator contains a
+`KiongaPipelineRun` reconciler that targets KFP; the gateway does not create those
+resources. Multi-node and isolated multi-tenant execution therefore remain on the
+roadmap; see [Implementation status](../reference/implementation-status.md).
+
+## Writing a native Prefect flow
+
+For most jobs, a container node is enough. For a specialised native flow, add it
+under `python/pipelines/`, wrap each step in `reported_step(run_id, "step-name")`,
+and serve it from `python/pipelines/serve.py`. Keep ML library pins aligned with
+the serving image so trained models load under serving.

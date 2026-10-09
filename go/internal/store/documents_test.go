@@ -34,3 +34,7 @@ func TestStoreConcurrentStepReports(t *testing.T) {
 	}
 	storetest.ConcurrentStepReports(t, repo, project.ID)
 }
+
+func TestStoreLogs(t *testing.T) {
+	storetest.Logs(t, store.New(), "run-logs")
+}

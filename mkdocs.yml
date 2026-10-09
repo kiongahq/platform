@@ -101,6 +101,7 @@ nav:
       - Project templates: guides/project-templates.md
       - Engineering blog: guides/engineering-blog.md
       - Pipelines: guides/pipelines.md
+      - Logs and events: guides/logs.md
       - Distributed workspaces, functions & Git: guides/distributed-workspaces.md
       - Models & serving: guides/models-serving.md
       - Hugging Face models: guides/huggingface.md
@@ -115,6 +116,7 @@ nav:
       - RBAC & security: reference/rbac.md
       - CLI: reference/cli.md
       - Kionga identifier migration: reference/kionga-migration.md
+      - 'Decision: DAG layout library': reference/decisions/graph-library.md
   - Operations:
       - Local operations: operations/local.md
       - Public hosting: hosting.md
@@ -124,4 +126,5 @@ nav:
       - Azure AKS: operations/providers/azure-aks.md
       - Public VM: operations/public-vm.md
       - Production operations: operations/production-operations.md
+      - Log export: operations/log-export.md
       - Troubleshooting: operations/troubleshooting.md

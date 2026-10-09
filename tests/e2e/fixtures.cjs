@@ -47,12 +47,19 @@ async function assertLayout(page, label) {
     };
     const root = document.documentElement;
     const overflowX = root.scrollWidth - root.clientWidth;
-    const controls = [...document.querySelectorAll('main button, main a[href], main select, main input, .app-bar button')].filter(visible);
+    const controls = [...document.querySelectorAll('main button, main a[href], main select, main input, .app-bar button, dialog[open] button, dialog[open] a[href], dialog[open] select, dialog[open] input')].filter(visible);
     const unnamed = controls.filter(control => {
       const name = (control.getAttribute('aria-label') || control.textContent || control.getAttribute('title') || control.getAttribute('placeholder') || (control.labels && control.labels[0]?.textContent) || '').trim();
       return !name;
     }).map(control => control.outerHTML.slice(0, 120));
-    const boxes = controls.filter(control => control.matches('button, a[href]')).map(control => ({control, box: control.getBoundingClientRect()}));
+    // Only controls a user can actually hit count: one scrolled out of view
+    // inside a dialog or panel is clipped, not overlapping.
+    const hittable = control => {
+      const box = control.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return hit && (hit === control || control.contains(hit) || hit.contains(control));
+    };
+    const boxes = controls.filter(control => control.matches('button, a[href]') && hittable(control)).map(control => ({control, box: control.getBoundingClientRect()}));
     const overlaps = [];
     for (let i = 0; i < boxes.length; i++) {
       for (let j = i + 1; j < boxes.length; j++) {

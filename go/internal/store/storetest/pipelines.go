@@ -81,7 +81,7 @@ func ConcurrentStepReports(t *testing.T, repo store.Repository, projectID string
 			if i == 7 {
 				status, code = "failed", 3
 			}
-			if _, err := repo.UpdateRunStep(run.ID, api.UpdateRunStepRequest{Step: fmt.Sprintf("leaf-%02d", i), Status: status, Attempt: 1, ExitCode: &code, WorkloadKind: "docker-container", WorkloadID: fmt.Sprintf("c%02d", i)}, "engine"); err != nil {
+			if _, err := repo.UpdateRunStep(run.ID, api.UpdateRunStepRequest{Step: fmt.Sprintf("leaf-%02d", i), Status: status, Attempt: 1, ExitCode: &code, WorkloadKind: "docker-container", WorkloadID: fmt.Sprintf("c%02d", i), ImageDigest: fmt.Sprintf("busybox@sha256:%064d", i)}, "engine"); err != nil {
 				t.Error(err)
 			}
 		}(i)
@@ -90,6 +90,9 @@ func ConcurrentStepReports(t *testing.T, repo store.Repository, projectID string
 	final, err := repo.Run(run.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if final.Provenance == nil || len(final.Provenance.ImageDigests) != 20 {
+		t.Fatalf("image digests not recorded for every node: %+v", final.Provenance)
 	}
 	if final.Status != "failed" {
 		t.Fatalf("run status %q", final.Status)

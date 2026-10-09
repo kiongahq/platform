@@ -122,12 +122,12 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 	if run.ExecutionMode == "functions" {
 		definition, err := s.executionDefinition(run)
 		if err != nil {
-			failed, _ := s.store.UpdateRunStep(run.ID, api.UpdateRunStepRequest{Step: "load-definition", Status: "failed", Message: err.Error()}, "system")
+			failed, _ := s.reportStep(run.ID, api.UpdateRunStepRequest{Step: "load-definition", Status: "failed", Message: err.Error()}, "system")
 			return failed
 		}
 		if s.openfaas() == nil {
 			for _, job := range definition.Jobs {
-				run, _ = s.store.UpdateRunStep(run.ID, api.UpdateRunStepRequest{Step: job.Name, Status: "failed", Message: "Not run: OpenFaaS is not configured (set OPENFAAS_URL or activate an OpenFaaS connection)"}, "system")
+				run, _ = s.reportStep(run.ID, api.UpdateRunStepRequest{Step: job.Name, Status: "failed", Message: "Not run: OpenFaaS is not configured (set OPENFAAS_URL or activate an OpenFaaS connection)"}, "system")
 			}
 			return run
 		}
@@ -135,7 +135,7 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 		return run
 	}
 	if !s.prefectConfigured() {
-		failed, _ := s.store.UpdateRunStep(run.ID, api.UpdateRunStepRequest{Step: "submit-to-engine", Status: "failed", Message: "The pipeline engine is not configured (PREFECT_API_URL); the run was recorded but cannot execute."}, "system")
+		failed, _ := s.reportStep(run.ID, api.UpdateRunStepRequest{Step: "submit-to-engine", Status: "failed", Message: "The pipeline engine is not configured (PREFECT_API_URL); the run was recorded but cannot execute."}, "system")
 		return failed
 	}
 	parameters := map[string]any{"run_id": run.ID, "project_id": run.ProjectID, "parameters": run.Parameters}
@@ -144,10 +144,13 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 	if run.DefinitionID != "" {
 		definition, err := s.executionDefinition(run)
 		if err != nil {
-			failed, _ := s.store.UpdateRunStep(run.ID, api.UpdateRunStepRequest{Step: "load-definition", Status: "failed", Message: err.Error()}, "system")
+			failed, _ := s.reportStep(run.ID, api.UpdateRunStepRequest{Step: "load-definition", Status: "failed", Message: err.Error()}, "system")
 			return failed
 		}
 		payload := map[string]any{"id": definition.ID, "revision": definition.Revision, "sha256": definition.SHA256, "jobs": definition.Jobs}
+		if reuse := s.priorOutputs(run); len(reuse) > 0 {
+			payload["reuse"] = reuse
+		}
 		if run.Provenance != nil && run.Provenance.Overrides != nil && run.Provenance.Overrides.MaxParallelism > 0 {
 			payload["max_parallelism"] = run.Provenance.Overrides.MaxParallelism
 		}
@@ -156,7 +159,7 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 	}
 	engineID, err := s.prefectClient().CreateFlowRun(ctx, flowName, "mlaiops", run.Name, parameters)
 	if err != nil {
-		failed, _ := s.store.UpdateRunStep(run.ID, api.UpdateRunStepRequest{Step: "submit-to-engine", Status: "failed", Message: err.Error()}, "system")
+		failed, _ := s.reportStep(run.ID, api.UpdateRunStepRequest{Step: "submit-to-engine", Status: "failed", Message: err.Error()}, "system")
 		return failed
 	}
 	if linked, err := s.store.SetRunEngine(run.ID, engineID); err == nil {
@@ -173,13 +176,18 @@ func (s *Server) executeFunctionPipeline(ctx context.Context, run api.PipelineRu
 	report := func(req api.UpdateRunStepRequest) {
 		now := time.Now().UTC()
 		req.At = &now
-		_, _ = s.store.UpdateRunStep(run.ID, req, "system")
+		_, _ = s.reportStep(run.ID, req, "system")
 	}
 	maxParallel := 0
 	if run.Provenance != nil && run.Provenance.Overrides != nil {
 		maxParallel = run.Provenance.Overrides.MaxParallelism
 	}
+	reuse := s.priorOutputs(run)
 	start := func(ctx context.Context, job api.PipelineJob, dependencies map[string]any) (any, error) {
+		if output, ok := reuse[job.Name]; ok {
+			report(api.UpdateRunStepRequest{Step: job.Name, Status: "skipped", Message: "Reused the output of run " + run.Provenance.Overrides.RerunFromRunID})
+			return output, nil
+		}
 		payload, _ := json.Marshal(map[string]any{"run_id": run.ID, "project_id": run.ProjectID, "step": job.Name, "parameters": run.Parameters, "dependencies": dependencies})
 		timeout := defaultFunctionTimeout
 		if job.TimeoutSeconds > 0 {
@@ -221,4 +229,32 @@ func (s *Server) executeFunctionPipeline(ctx context.Context, run api.PipelineRu
 	if err, ok := failures["orchestrator"]; ok {
 		report(api.UpdateRunStepRequest{Step: "orchestrator", Status: "failed", Message: err.Error()})
 	}
+}
+
+// priorOutputs returns, for a rerun-from-failure, the recorded output of
+// every node that succeeded in the previous run. Outputs are the JSON a node
+// printed last (or its text), as recorded in the step message.
+func (s *Server) priorOutputs(run api.PipelineRun) map[string]any {
+	if run.Provenance == nil || run.Provenance.Overrides == nil || run.Provenance.Overrides.RerunFromRunID == "" {
+		return nil
+	}
+	previous, err := s.store.Run(run.Provenance.Overrides.RerunFromRunID)
+	if err != nil {
+		return nil
+	}
+	out := map[string]any{}
+	for _, step := range previous.Steps {
+		if step.Status != "succeeded" {
+			continue
+		}
+		var value any
+		if json.Unmarshal([]byte(step.Message), &value) != nil {
+			lines := strings.Split(strings.TrimSpace(step.Message), "\n")
+			if json.Unmarshal([]byte(lines[len(lines)-1]), &value) != nil {
+				value = step.Message
+			}
+		}
+		out[step.Name] = value
+	}
+	return out
 }

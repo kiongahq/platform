@@ -285,7 +285,7 @@ button[data-state="error"] { border-color: var(--danger); color: var(--danger); 
 .status.running::before { animation: pulse 1.2s ease-in-out infinite; }
 .status.queued, .status.pending, .status.not_configured, .status.degraded, .status.draft, .status.paused, .status.not_provisioned, .status.staging { color: var(--warning); background: var(--warning-soft); }
 .status.failed, .status.unavailable, .status.revoked, .status.suspended, .status.rejected, .status.offline, .status.error, .status.denied, .status.misrouted, .status.unauthorized { color: var(--danger); background: var(--danger-soft); }
-.status.cancelled, .status.skipped, .status.archived, .status.defined, .status.unpublished { color: var(--text-secondary); background: var(--neutral-soft); }
+.status.not_deployed, .status.cancelled, .status.skipped, .status.archived, .status.defined, .status.unpublished { color: var(--text-secondary); background: var(--neutral-soft); }
 .tag.live { color: var(--success); background: var(--success-soft); }
 @keyframes pulse { 50% { opacity: .35; } }
 
@@ -598,6 +598,8 @@ p.hint { font-family: var(--font-sans); white-space: normal; }
 .log-line .sev.error, .log-line .sev.fatal { color: #ff8a80; }
 .log-line .sev.warn, .log-line .sev.warning { color: #ffcc80; }
 .log-gap { color: #ffcc80; font-style: italic; }
+.log-scope { margin-bottom: var(--space-4); }
+.log-empty { color: #9a9aa3; margin: 0; }
 .log-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0 var(--space-3); align-items: end; }
 
 /* ---- pipeline graph ------------------------------------------------------- */
@@ -704,6 +706,16 @@ p.hint { font-family: var(--font-sans); white-space: normal; }
 .timeline { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .timeline li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); }
 
+.checks { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.checks li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: var(--space-2); align-items: start; font-size: var(--fs-sm); }
+.checks li::before { font-weight: 700; text-align: center; }
+.checks li.pass::before { content: "✓"; color: var(--success); }
+.checks li.warn::before { content: "!"; color: var(--warning); }
+.checks li.fail::before { content: "✕"; color: var(--danger); }
+.checks li.field-help { display: block; }
+.override-table input { min-height: var(--control-h-sm); }
+.override-table .lock { color: var(--text-tertiary); font-size: var(--fs-xs); }
+.override-table td.changed { background: var(--accent-soft); }
 .issue-list { display: grid; gap: var(--space-1); margin: 0 0 var(--space-3); padding: 0; list-style: none; }
 .issue-list:empty { display: none; }
 .issue-list li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--danger); border-radius: var(--radius-md); background: var(--danger-soft); font-size: var(--fs-sm); }

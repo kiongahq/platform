@@ -159,7 +159,7 @@ func applyRunProvenance(run *api.PipelineRun, definition *api.PipelineDefinition
 	}
 	run.OwnerSubject = actor
 	run.ScheduledFor = req.ScheduledFor
-	provenance := &api.RunProvenance{Overrides: req.Overrides}
+	provenance := &api.RunProvenance{Overrides: req.Overrides, PolicyDecision: req.PolicyDecision}
 	if definition != nil {
 		provenance.DefinitionRevision, provenance.DefinitionSHA256 = definition.Revision, definition.SHA256
 		// Merge definition parameter defaults under run parameters.

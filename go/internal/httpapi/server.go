@@ -544,7 +544,7 @@ func (s *Server) updateRunStep(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	item, err := s.store.UpdateRunStep(r.PathValue("id"), req, actor(r))
+	item, err := s.reportStep(r.PathValue("id"), req, actor(r))
 	writeMutation(w, item, err, http.StatusOK)
 }
 func (s *Server) retryRun(w http.ResponseWriter, r *http.Request) {
@@ -569,13 +569,24 @@ func (s *Server) submitPipeline(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	if !projectAllowed(s.store, principal(r), req.ProjectID) {
-		writeError(w, http.StatusForbidden, "access_denied", "project is not assigned to this user")
+	// The same preflight the console shows is enforced here, so a crafted
+	// request cannot apply overrides the flow or quotas do not allow.
+	check := s.preflight(principal(r), req)
+	if !check.Allowed {
+		status := http.StatusUnprocessableEntity
+		for _, item := range check.Checks {
+			if item.Status == "fail" && (item.Name == "project access" || item.Name == "concurrent runs" || item.Name == "capacity") {
+				status = http.StatusForbidden
+			}
+		}
+		writeJSON(w, status, map[string]any{"error": "preflight_failed", "message": firstFailure(check), "details": check.Checks})
 		return
 	}
-	if err := enforceRunQuota(s.store, principal(r)); err != nil {
-		writeError(w, http.StatusForbidden, "quota_exceeded", err.Error())
-		return
+	req.Parameters, req.PolicyDecision = check.Parameters, check.PolicyDecision
+	// The trigger is derived from how the request arrived, never trusted.
+	req.Trigger = "manual"
+	if principal(r).Credential == "api_token" {
+		req.Trigger = "api"
 	}
 	run, err := s.store.SubmitPipeline(req, actor(r))
 	if err != nil {
@@ -588,6 +599,15 @@ func (s *Server) submitPipeline(w http.ResponseWriter, r *http.Request) {
 	}
 	run = s.dispatchPipeline(r.Context(), run)
 	writeJSON(w, http.StatusAccepted, run)
+}
+
+func firstFailure(result PreflightResult) string {
+	for _, check := range result.Checks {
+		if check.Status == "fail" {
+			return check.Message
+		}
+	}
+	return "The run did not pass preflight checks."
 }
 
 func (s *Server) components(w http.ResponseWriter, _ *http.Request) {

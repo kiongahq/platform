@@ -225,3 +225,46 @@ test('line diff marks additions and deletions',async t=>{
  const parts=app.w.lineDiff?app.w.lineDiff('a\nb\nc','a\nc\nd'):app.w.eval('lineDiff')('a\nb\nc','a\nc\nd');
  assert.equal(JSON.stringify(parts.map(p=>p.type+':'+p.text)),JSON.stringify(['same:a','del:b','same:c','add:d']));
 });
+
+test('run configuration shows defaults beside overrides, locks fields with reasons, and requires a passing preflight',async t=>{
+ const definition={id:'pipe-1',project_id:'p1',name:'train',version:'1',execution_mode:'prefect',revision:2,parameters:{window:'daily',seed:7},overridable:{parameters:['window'],image:true,nodes:true},jobs:[{name:'extract',kind:'container',image:'x',depends_on:[]},{name:'train',kind:'container',image:'y',depends_on:['extract']}]};
+ const writer={subject:'user-1',roles:['user'],services:['pipelines'],mode:'local',permissions:{pipelines_write:true},project_ids:['p1'],provisioned:true,entitlements:null};
+ const app=consoleApp(['pipelines'],'pipelines',{'/api/v1/me':writer,'/api/v1/pipelines/definitions':{items:[definition]},
+   '/api/v1/pipelines/preflight':{allowed:true,checks:[{name:'capacity',status:'pass',message:'Fits'}],fields:[{field:'parameters.window',overridden:true}],parameters:{window:'weekly',seed:7},nodes:[]},
+   '/api/v1/pipelines/submit':{id:'run-9',status:'queued',engine_run_id:'f1'}});
+ t.after(()=>app.dom.window.close());await tick();
+ const d=app.w.document;
+ d.querySelector('[data-run-definition="pipe-1"]').click();await tick();await tick();
+ assert.equal(d.querySelector('#submit-dialog').open,true);
+ assert.ok(d.querySelector('[data-param="window"]'),'window is overridable');
+ assert.equal(d.querySelector('[data-param="seed"]'),null,'seed is locked');
+ assert.match(d.querySelector('#submit-parameters').textContent,/Not overridable in this flow/);
+ assert.equal(d.querySelector('#submit-run').disabled,true,'submit waits for preflight');
+ d.querySelector('[data-param="window"]').value='weekly';
+ d.querySelector('#submit-nodes tr[data-node="extract"] [data-node-run]').checked=false;
+ d.querySelector('#submit-form').dispatchEvent(new app.w.Event('input',{bubbles:true}));
+ d.querySelector('#submit-check').click();await tick();await tick();
+ assert.equal(d.querySelector('#submit-run').disabled,false);
+ assert.match(d.querySelector('#submit-checks').textContent,/This run changes: parameters.window/);
+ d.querySelector('#submit-form').dispatchEvent(new app.w.Event('submit',{cancelable:true}));await tick();await tick();
+ const sent=JSON.parse(app.w.__bodies.find(b=>b.path==='/api/v1/pipelines/submit').body);
+ assert.equal(sent.definition_id,'pipe-1');
+ assert.equal(sent.overrides.parameters.window,'weekly');
+ assert.equal(JSON.stringify(sent.overrides.selected_nodes),JSON.stringify(['train']));
+ assert.equal(d.querySelector('#submit-dialog').open,false);
+});
+
+test('a failed preflight keeps the run from starting and lists every failed rule',async t=>{
+ const definition={id:'pipe-1',project_id:'p1',name:'train',version:'1',parameters:{},overridable:{image:true},jobs:[{name:'a',kind:'container',image:'x'}]};
+ const writer={subject:'user-1',roles:['user'],services:['pipelines'],mode:'local',permissions:{pipelines_write:true},project_ids:['p1'],provisioned:true,entitlements:null};
+ const app=consoleApp(['pipelines'],'pipelines',{'/api/v1/me':writer,'/api/v1/pipelines/definitions':{items:[definition]},
+   '/api/v1/pipelines/preflight':{allowed:false,checks:[{name:'node overrides',status:'fail',node:'a',message:'Override images must be pinned by digest'},{name:'capacity',status:'pass',message:'Fits'}],fields:[],parameters:{}}});
+ t.after(()=>app.dom.window.close());await tick();
+ const d=app.w.document;
+ d.querySelector('[data-run-definition="pipe-1"]').click();await tick();await tick();
+ d.querySelector('[data-node-field="image"]').value='evil:latest';
+ d.querySelector('#submit-check').click();await tick();await tick();
+ assert.equal(d.querySelector('#submit-run').disabled,true);
+ assert.match(d.querySelector('#submit-checks .fail').textContent,/pinned by digest/);
+ assert.ok(!(app.w.__bodies||[]).some(b=>b.path==='/api/v1/pipelines/submit'));
+});

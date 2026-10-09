@@ -96,6 +96,8 @@ type Store struct {
 	mu   sync.RWMutex
 	path string
 	data state
+	// logBuffer holds operational logs in memory (bounded); see logs.go.
+	logBuffer memoryLogs
 }
 
 func New(path ...string) *Store {
@@ -404,6 +406,13 @@ func applyStepTransition(run *api.PipelineRun, req api.UpdateRunStepRequest, now
 	}
 	if req.ImageDigest != "" {
 		step.ImageDigest = req.ImageDigest
+		if run.Provenance == nil {
+			run.Provenance = &api.RunProvenance{}
+		}
+		if run.Provenance.ImageDigests == nil {
+			run.Provenance.ImageDigests = map[string]string{}
+		}
+		run.Provenance.ImageDigests[req.Step] = req.ImageDigest
 	}
 	switch req.Status {
 	case "running":
