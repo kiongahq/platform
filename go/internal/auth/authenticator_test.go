@@ -397,3 +397,15 @@ func TestNonBearerAuthorizationFallsBackToTheSessionButBadBearerFails(t *testing
 		t.Fatalf("an invalid Bearer token must not fall back to the session, got %d", denied.Code)
 	}
 }
+
+func TestProvidersEndpointReturnsAnEmptyListWithoutSSO(t *testing.T) {
+	authenticator, err := NewAuthenticator(nil, nil, NewLocalSessionManager("admin", "x"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	authenticator.Handler(http.NotFoundHandler()).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/auth/providers", nil))
+	if body := strings.TrimSpace(response.Body.String()); body != `{"local":true,"providers":[]}` {
+		t.Fatalf("providers without SSO = %s", body)
+	}
+}

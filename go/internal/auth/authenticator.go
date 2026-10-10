@@ -85,6 +85,9 @@ func NewAuthenticator(sso *SessionManager, verifier *Verifier, local *LocalSessi
 	if sso != nil && len(providers) == 0 {
 		providers = []Provider{{ID: "", Name: "Single sign-on", Type: "oidc"}}
 	}
+	if providers == nil {
+		providers = []Provider{} // serialize as [], not null
+	}
 	return &Authenticator{sso: sso, verifier: verifier, local: local, providers: providers}, nil
 }
 
