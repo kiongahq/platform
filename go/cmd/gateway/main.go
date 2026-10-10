@@ -109,37 +109,70 @@ func main() {
 	httpapi.StartScheduler(ctx, repository)
 	httpapi.StartLogRetention(ctx, repository)
 	httpapi.StartEditorialPublisher(ctx, repository)
-	if issuer := os.Getenv("OIDC_ISSUER"); issuer != "" {
+	// Sign-in: single sign-on through an OIDC broker (Dex: LDAP, SAML,
+	// GitHub, Google, Microsoft, ...), local accounts, or both. Local
+	// accounts next to SSO are break-glass access and need an explicit
+	// password; without SSO they are the development default.
+	issuer := os.Getenv("OIDC_ISSUER")
+	var sso *auth.SessionManager
+	var verifier *auth.Verifier
+	if issuer != "" {
 		jwksURL := os.Getenv("OIDC_JWKS_URL")
 		if jwksURL == "" {
 			log.Fatal("OIDC_JWKS_URL is required when OIDC_ISSUER is configured")
 		}
-		verifier := auth.New(auth.Config{Issuer: issuer, Audience: os.Getenv("OIDC_AUDIENCE"), JWKSURL: jwksURL, Tenant: os.Getenv("MLAIOPS_TENANT")})
+		groupRoles, err := auth.ParseGroupRoles(os.Getenv("KIONGA_SSO_GROUP_ROLES"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		verifier = auth.New(auth.Config{Issuer: issuer, Audience: os.Getenv("OIDC_AUDIENCE"), JWKSURL: jwksURL,
+			Tenant: os.Getenv("MLAIOPS_TENANT"), GroupRoles: groupRoles,
+			SingleTenantIssuer: os.Getenv("KIONGA_SSO_SINGLE_TENANT") == "true"})
 		var revokeWorkspaceSessions func(context.Context, string) error
 		if postgres != nil {
 			revokeWorkspaceSessions = postgres.RevokeWorkspaceEdgeSessionsForSubject
 		}
-		session, sessionErr := auth.NewSessionManager(auth.SessionConfig{
+		sso, err = auth.NewSessionManager(auth.SessionConfig{
 			ClientID: os.Getenv("OIDC_CLIENT_ID"), ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
 			AuthURL: os.Getenv("OIDC_AUTH_URL"), TokenURL: os.Getenv("OIDC_TOKEN_URL"),
-			RedirectURL: os.Getenv("OIDC_REDIRECT_URL"), Secure: true, OnLogout: revokeWorkspaceSessions,
+			RedirectURL: os.Getenv("OIDC_REDIRECT_URL"), Secure: true,
+			OnLogout: revokeWorkspaceSessions,
 		}, verifier)
-		if sessionErr != nil {
-			log.Fatalf("configure OIDC browser login: %v", sessionErr)
+		if err != nil {
+			log.Fatalf("configure single sign-on: %v", err)
 		}
-		handler = verifier.Middleware(session.Handler(handler))
-		log.Printf("OIDC authentication and browser login enabled")
-	} else {
+	}
+	var local *auth.LocalSessionManager
+	if issuer == "" || os.Getenv("KIONGA_LOCAL_LOGIN") == "true" {
 		username := os.Getenv("MLAIOPS_LOCAL_USERNAME")
 		if username == "" {
 			username = "admin"
 		}
 		password := os.Getenv("MLAIOPS_LOCAL_PASSWORD")
 		if password == "" {
+			if issuer != "" {
+				log.Fatal("KIONGA_LOCAL_LOGIN=true next to single sign-on requires MLAIOPS_LOCAL_PASSWORD (break-glass account)")
+			}
 			password = "mlaiops-local"
 		}
-		handler = auth.NewLocalSessionManager(username, password, httpapi.LocalAccountStore{Docs: repository}).Handler(handler)
-		log.Printf("WARNING: OIDC authentication disabled; local development mode only")
+		local = auth.NewLocalSessionManager(username, password, httpapi.LocalAccountStore{Docs: repository})
+	}
+	providers, err := auth.ParseProviders(os.Getenv("KIONGA_SSO_PROVIDERS"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	authenticator, err := auth.NewAuthenticator(sso, verifier, local, providers)
+	if err != nil {
+		log.Fatalf("configure sign-in: %v", err)
+	}
+	handler = authenticator.Handler(handler)
+	switch {
+	case sso != nil && local != nil:
+		log.Printf("sign-in: single sign-on (%d providers) and local break-glass accounts", len(providers))
+	case sso != nil:
+		log.Printf("sign-in: single sign-on (%d providers)", len(providers))
+	default:
+		log.Printf("WARNING: single sign-on is not configured; local accounts only (development mode)")
 	}
 	handler = auth.APITokenMiddleware(repository.ResolveAPIToken, handler)
 	if metricsPort := os.Getenv("METRICS_PORT"); metricsPort != "" {

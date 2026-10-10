@@ -31,9 +31,22 @@ func TestSessionLoginCreatesStateAndRedirects(t *testing.T) {
 		location.Query().Get("redirect_uri") != "https://kionga.example/auth/callback" {
 		t.Fatalf("unexpected authorization redirect: %s", location)
 	}
+	if location.Query().Get("code_challenge_method") != "S256" || location.Query().Get("code_challenge") == "" ||
+		location.Query().Get("nonce") == "" || location.Query().Has("connector_id") {
+		t.Fatalf("authorization redirect lacks PKCE/nonce or sets a connector: %s", location)
+	}
 	cookies := response.Result().Cookies()
-	if len(cookies) != 2 || !cookies[0].HttpOnly || !cookies[0].Secure {
-		t.Fatalf("state cookies are not hardened: %+v", cookies)
+	names := map[string]bool{}
+	for _, cookie := range cookies {
+		names[cookie.Name] = true
+		if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteLaxMode {
+			t.Fatalf("login cookie %s is not hardened: %+v", cookie.Name, cookie)
+		}
+	}
+	for _, name := range []string{stateCookieName, returnCookieName, verifierCookie, nonceCookieName} {
+		if !names[name] {
+			t.Fatalf("missing login cookie %s in %+v", name, cookies)
+		}
 	}
 }
 

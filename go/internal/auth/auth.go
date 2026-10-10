@@ -36,6 +36,7 @@ type Principal struct {
 	Email       string
 	Tenant      string
 	Roles       []string
+	Groups      []string // identity-provider groups, as asserted at login
 	Namespaces  []string
 	Services    []string
 	ProjectIDs  []string
@@ -61,6 +62,7 @@ type Claims struct {
 	Roles      []string `json:"roles"`
 	Groups     []string `json:"groups"`
 	Namespaces []string `json:"namespaces"`
+	Nonce      string   `json:"nonce"`
 	jwt.RegisteredClaims
 }
 
@@ -69,6 +71,13 @@ type Config struct {
 	Audience string
 	JWKSURL  string
 	Tenant   string
+	// GroupRoles maps identity-provider groups (LDAP groups, GitHub teams,
+	// SAML group attributes, via Dex's "groups" claim) to platform roles.
+	GroupRoles map[string]string
+	// SingleTenantIssuer declares that this issuer serves only Tenant, so a
+	// token without a tenant claim (Dex cannot add one) belongs to it. A
+	// token that names a different tenant is still rejected.
+	SingleTenantIssuer bool
 }
 
 type Verifier struct {
@@ -196,6 +205,18 @@ func RBACWithResolver(next http.Handler, resolve AccessResolver) http.Handler {
 }
 
 func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
+	claims, err := v.verifyClaims(ctx, raw)
+	if err != nil {
+		return Principal{}, err
+	}
+	return Principal{Subject: claims.Subject, Email: claims.Email, Tenant: claims.Tenant,
+		Roles: rolesFromClaims(claims, v.config.GroupRoles), Groups: claims.Groups,
+		Namespaces: claims.Namespaces}, nil
+}
+
+// verifyClaims checks signature, issuer, audience, expiry and tenant and
+// returns the raw claims (the browser login also needs the nonce).
+func (v *Verifier) verifyClaims(ctx context.Context, raw string) (*Claims, error) {
 	claims := &Claims{}
 	options := []jwt.ParserOption{jwt.WithExpirationRequired(), jwt.WithIssuedAt(), jwt.WithIssuer(v.config.Issuer)}
 	if v.config.Audience != "" {
@@ -209,18 +230,44 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 		return v.key(ctx, kid)
 	}, options...)
 	if err != nil || !token.Valid {
-		return Principal{}, errors.New("token validation failed")
+		return nil, errors.New("token validation failed")
+	}
+	if v.config.SingleTenantIssuer && claims.Tenant == "" {
+		claims.Tenant = v.config.Tenant
 	}
 	if v.config.Tenant != "" && claims.Tenant != v.config.Tenant {
-		return Principal{}, errors.New("tenant mismatch")
+		return nil, errors.New("tenant mismatch")
 	}
-	// Dex and most IdPs carry role membership in the "groups" claim; a
-	// dedicated "roles" claim wins when both are present.
-	roles := claims.Roles
-	if len(roles) == 0 {
-		roles = claims.Groups
+	return claims, nil
+}
+
+// rolesFromClaims: a dedicated "roles" claim wins. Otherwise groups map to
+// roles through groupRoles (e.g. "ml-admins" -> "admin"); a group already
+// named like a platform role still counts, as before. Duplicates are dropped.
+func rolesFromClaims(claims *Claims, groupRoles map[string]string) []string {
+	if len(claims.Roles) > 0 {
+		return claims.Roles
 	}
-	return Principal{Subject: claims.Subject, Email: claims.Email, Tenant: claims.Tenant, Roles: roles, Namespaces: claims.Namespaces}, nil
+	seen, roles := map[string]bool{}, []string{}
+	for _, group := range claims.Groups {
+		role, mapped := groupRoles[group]
+		if !mapped && knownRole(group) {
+			role, mapped = group, true
+		}
+		if mapped && !seen[role] {
+			seen[role] = true
+			roles = append(roles, role)
+		}
+	}
+	return roles
+}
+
+func knownRole(name string) bool {
+	switch name {
+	case RoleAdmin, RoleOperator, RoleEngineer, RoleUser, RoleViewer:
+		return true
+	}
+	return false
 }
 
 func (v *Verifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {

@@ -12,15 +12,17 @@
   <main class="login-shell">
     <section class="login-copy"><p class="kicker">YOUR CONTROL PLANE</p><h1>Welcome back.</h1><p>Sign in to projects, pipelines, models, agents, workspaces, and the infrastructure behind them.</p><div class="login-points"><span>Governed access</span><span>Audited operations</span><span>One workspace</span></div></section>
     <section class="login-card">
-      <p class="kicker">SIGN IN</p><h2>Open the Kionga console</h2><p>Use your local platform credentials.</p>
-      <form method="post" action="/auth/local/login">
+      <p class="kicker">SIGN IN</p><h2>Open the Kionga console</h2><p id="login-hint">Use your local platform credentials.</p>
+      <div class="sso-options" id="sso-options" hidden aria-label="Single sign-on"></div>
+      <p class="login-divider" id="login-divider" hidden><span>or use a local account</span></p>
+      <form method="post" action="/auth/local/login" id="local-login">
         <input type="hidden" name="return_to" id="return-to" value="/console.html">
         <label>Username<input name="username" autocomplete="username" required autofocus></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
         <p class="login-error" id="login-error" hidden>Those credentials were not accepted.</p>
         <button class="button primary" type="submit">Sign in <span>→</span></button>
       </form>
-      <small>For hosted deployments, your organization’s identity provider handles this step.</small>
+      <small id="login-note">For hosted deployments, your organization’s identity provider handles this step.</small>
     </section>
   </main>
   <script src="/login.js"></script>

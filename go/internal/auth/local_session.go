@@ -123,13 +123,18 @@ func (s *LocalSessionManager) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *LocalSessionManager) logout(w http.ResponseWriter, r *http.Request) {
+	s.endSession(w, r)
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// endSession forgets the caller's local session and clears its cookie.
+func (s *LocalSessionManager) endSession(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(localSessionCookie); err == nil {
 		s.mu.Lock()
 		delete(s.sessions, cookie.Value)
 		s.mu.Unlock()
 	}
 	http.SetCookie(w, &http.Cookie{Name: localSessionCookie, Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(1, 0), HttpOnly: true, SameSite: http.SameSiteLaxMode})
-	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 // authenticated returns the session subject. A provisioned account whose
