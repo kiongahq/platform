@@ -126,6 +126,9 @@ func newAuthSetup(t *testing.T, withLocal bool, providers []Provider) *authSetup
 }
 
 func (s *authSetup) do(method, target string, cookies []*http.Cookie, form url.Values) *httptest.ResponseRecorder {
+	if strings.HasPrefix(target, "/") {
+		target = "https://kionga.example" + target // the callback's host, like a browser on the right origin
+	}
 	var request *http.Request
 	if form != nil {
 		request = httptest.NewRequest(method, target, strings.NewReader(form.Encode()))
@@ -500,5 +503,50 @@ func TestProvidersFileIsFollowedAndABadWriteKeepsTheLastGoodList(t *testing.T) {
 	}
 	if err := setup.authenticator.UseProvidersFile(filepath.Join(t.TempDir(), "missing.json")); err == nil {
 		t.Fatal("a missing providers file must fail at startup")
+	}
+}
+
+func TestLoginMovesToTheCallbackHostBeforeSettingCookies(t *testing.T) {
+	setup := newAuthSetup(t, false, []Provider{{ID: "mock", Name: "Demo account", Type: "mockCallback"}})
+	// Started at 127.0.0.1 while the IdP returns to kionga.example: cookies set
+	// here would never reach the callback.
+	start := setup.do(http.MethodGet, "http://127.0.0.1:8080/auth/sso/login?connector=mock&return_to=%2Fconsole.html", nil, nil)
+	if start.Code != http.StatusFound || len(start.Result().Cookies()) != 0 {
+		t.Fatalf("want a cookie-free hop to the callback host, got %d with %d cookies", start.Code, len(start.Result().Cookies()))
+	}
+	hop, _ := url.Parse(start.Header().Get("Location"))
+	if hop.Scheme != "https" || hop.Host != "kionga.example" || hop.Path != "/auth/sso/login" ||
+		hop.Query().Get("connector") != "mock" || hop.Query().Get("return_to") != "/console.html" || hop.Query().Get("canonical") != "1" {
+		t.Fatalf("hop = %s", hop)
+	}
+	// On the callback host the login proceeds to the IdP with cookies.
+	login := setup.do(http.MethodGet, hop.String(), nil, nil)
+	if location, _ := url.Parse(login.Header().Get("Location")); login.Code != http.StatusFound || location.Query().Get("connector_id") != "mock" {
+		t.Fatalf("login on the callback host = %d %s", login.Code, login.Header().Get("Location"))
+	}
+	if cookieNamed(login.Result().Cookies(), stateCookieName) == nil {
+		t.Fatal("state cookie must be set on the callback host")
+	}
+	// A proxy that keeps rewriting the host cannot cause a redirect loop.
+	again := setup.do(http.MethodGet, "http://gateway:8080/auth/sso/login?connector=mock&canonical=1", nil, nil)
+	if location, _ := url.Parse(again.Header().Get("Location")); location == nil || location.Query().Get("connector_id") != "mock" {
+		t.Fatalf("second hop must go to the IdP, got %s", again.Header().Get("Location"))
+	}
+}
+
+func TestLoginCookiesAreSecureOnlyWhenTheCallbackIsHTTPS(t *testing.T) {
+	for redirect, want := range map[string]bool{"https://kionga.example/auth/callback": true, "http://localhost:8080/auth/callback": false} {
+		manager, err := NewSessionManager(SessionConfig{ClientID: "kionga", ClientSecret: "s", AuthURL: "https://idp/auth",
+			TokenURL: "https://idp/token", RedirectURL: redirect, Secure: strings.HasPrefix(redirect, "https://")}, &Verifier{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		callback, _ := url.Parse(redirect)
+		response := httptest.NewRecorder()
+		manager.loginWith(response, httptest.NewRequest(http.MethodGet, callback.Scheme+"://"+callback.Host+"/auth/login", nil), "")
+		state := cookieNamed(response.Result().Cookies(), stateCookieName)
+		if state == nil || state.Secure != want {
+			t.Errorf("%s: state cookie %+v, want Secure=%v", redirect, state, want)
+		}
 	}
 }

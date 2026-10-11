@@ -94,6 +94,14 @@ func (s *SessionManager) login(w http.ResponseWriter, r *http.Request) {
 // lets the broker show its own chooser. PKCE (S256) binds the code to this
 // browser and the nonce binds the ID token to this login attempt.
 func (s *SessionManager) loginWith(w http.ResponseWriter, r *http.Request, connector string) {
+	// The login cookies must be set on the host the identity provider sends
+	// the browser back to: started at 127.0.0.1 with a localhost callback,
+	// they would never reach the callback. Move to the callback's origin
+	// first (once; "canonical" stops a loop behind a host-rewriting proxy).
+	if target, ok := s.canonicalLogin(r); ok {
+		http.Redirect(w, r, target, http.StatusFound)
+		return
+	}
 	state, err := randomToken(32)
 	if err != nil {
 		deny(w, http.StatusInternalServerError, "could not start login")
@@ -116,6 +124,24 @@ func (s *SessionManager) loginWith(w http.ResponseWriter, r *http.Request, conne
 		options = append(options, oauth2.SetAuthURLParam("connector_id", connector))
 	}
 	http.Redirect(w, r, s.oauth.AuthCodeURL(state, options...), http.StatusFound)
+}
+
+func (s *SessionManager) canonicalLogin(r *http.Request) (string, bool) {
+	callback, err := url.Parse(s.config.RedirectURL)
+	if err != nil || callback.Host == "" || r.URL.Query().Get("canonical") != "" {
+		return "", false
+	}
+	host := r.Host
+	if forwarded := r.Header.Get("X-Forwarded-Host"); forwarded != "" {
+		host = strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	}
+	if strings.EqualFold(host, callback.Host) {
+		return "", false
+	}
+	query := r.URL.Query()
+	query.Set("canonical", "1")
+	target := url.URL{Scheme: callback.Scheme, Host: callback.Host, Path: r.URL.Path, RawQuery: query.Encode()}
+	return target.String(), true
 }
 
 func (s *SessionManager) callback(w http.ResponseWriter, r *http.Request) {

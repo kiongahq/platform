@@ -53,7 +53,8 @@ test.describe('single sign-on', () => {
     const cookies = await page.context().cookies();
     const session = cookies.find(cookie => cookie.name === 'kionga_session');
     expect(session?.httpOnly).toBe(true);
-    expect(session?.secure).toBe(true);
+    // Secure exactly when the site is https: Safari drops Secure cookies on http://localhost.
+    expect(session?.secure).toBe(new URL(page.url()).protocol === 'https:');
     expect(cookies.some(cookie => ['kionga_oauth_state', 'kionga_oauth_verifier', 'kionga_oauth_nonce'].includes(cookie.name))).toBe(false);
   });
 
@@ -96,6 +97,16 @@ test.describe('single sign-on', () => {
     const requests = (await adminRequests(page)).filter(item => item.email === 'kilgore@kilgore.trout');
     expect(requests).toHaveLength(1);
     expect(requests[0].reason).toBe('Signed up with mock');
+  });
+
+  test('signing in from 127.0.0.1 lands on the callback host and completes', async ({page, baseURL}) => {
+    const callbackHost = new URL(baseURL).hostname;
+    test.skip(callbackHost !== 'localhost', 'needs the stack at localhost (its OIDC_REDIRECT_URL)');
+    await page.goto(baseURL.replace('localhost', '127.0.0.1') + '/login.html?return_to=%2Fconsole.html');
+    await page.getByRole('link', {name: 'Sign in with Demo account (local only)'}).click();
+    await page.waitForURL(url => url.pathname === '/console.html');
+    expect(new URL(page.url()).hostname).toBe('localhost');
+    expect((await me(page)).connector).toBe('mock');
   });
 
   test('the local break-glass admin reports a local sign-in next to single sign-on', async ({page}) => {

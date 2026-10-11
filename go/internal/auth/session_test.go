@@ -17,7 +17,7 @@ func TestSessionLoginCreatesStateAndRedirects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "/auth/login?return_to=%2Fconsole.html%3Fview%3Dmodels", nil)
+	request := httptest.NewRequest(http.MethodGet, "https://kionga.example/auth/login?return_to=%2Fconsole.html%3Fview%3Dmodels", nil)
 	response := httptest.NewRecorder()
 	manager.Handler(http.NotFoundHandler()).ServeHTTP(response, request)
 	if response.Code != http.StatusFound {

@@ -141,10 +141,17 @@ func main() {
 			log.Fatal(err)
 		}
 		log.Printf("single sign-on sign-up mode: %s", signup.Mode)
+		redirectURL := os.Getenv("OIDC_REDIRECT_URL")
+		if os.Getenv("KIONGA_ENVIRONMENT") == "production" && !strings.HasPrefix(redirectURL, "https://") {
+			log.Fatal("OIDC_REDIRECT_URL must be https in production")
+		}
 		sso, err = auth.NewSessionManager(auth.SessionConfig{
 			ClientID: os.Getenv("OIDC_CLIENT_ID"), ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
 			AuthURL: os.Getenv("OIDC_AUTH_URL"), TokenURL: os.Getenv("OIDC_TOKEN_URL"),
-			RedirectURL: os.Getenv("OIDC_REDIRECT_URL"), Secure: true,
+			// Secure cookies follow the callback's scheme: browsers such as
+			// Safari drop Secure cookies on http://localhost, which broke the
+			// login round trip. Production refuses a plain-http callback.
+			RedirectURL: redirectURL, Secure: strings.HasPrefix(redirectURL, "https://"),
 			Scopes:   strings.Fields(strings.ReplaceAll(os.Getenv("OIDC_SCOPES"), ",", " ")),
 			OnLogout: revokeWorkspaceSessions,
 			OnLogin:  signup.OnLogin(repository),
