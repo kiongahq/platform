@@ -140,20 +140,44 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthenticated", "no principal resolved")
 		return
 	}
+	// mode is how this caller signed in; local_accounts whether local
+	// accounts exist at all (both are on next to single sign-on).
 	mode := "local"
-	if os.Getenv("OIDC_ISSUER") != "" {
+	switch principal.Credential {
+	case auth.CredentialSSOSession, auth.CredentialOIDCToken:
 		mode = "oidc"
+	case auth.CredentialLocalSession:
+	default:
+		if os.Getenv("OIDC_ISSUER") != "" {
+			mode = "oidc"
+		}
+	}
+	localAccounts := localAccountsEnabled()
+	// The latest access request lets the console tell someone who signed up
+	// that their account is waiting for approval (or was declined).
+	var accessRequest any
+	if requests := s.store.AccessRequestsFor(principal.Subject); len(requests) > 0 && principal.Subject != "" {
+		latest := requests[0]
+		for _, request := range requests[1:] {
+			if request.CreatedAt.After(latest.CreatedAt) {
+				latest = request
+			}
+		}
+		accessRequest = map[string]any{"status": latest.Status, "created_at": latest.CreatedAt}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"subject":      principal.Subject,
-		"email":        principal.Email,
-		"roles":        principal.Roles,
-		"mode":         mode,
-		"permissions":  auth.Permissions(principal),
-		"services":     principal.Services,
-		"project_ids":  principal.ProjectIDs,
-		"provisioned":  principal.Provisioned,
-		"entitlements": accessFor(s.store, principal),
+		"subject":        principal.Subject,
+		"email":          principal.Email,
+		"roles":          principal.Roles,
+		"mode":           mode,
+		"local_accounts": localAccounts,
+		"connector":      principal.Connector,
+		"access_request": accessRequest,
+		"permissions":    auth.Permissions(principal),
+		"services":       principal.Services,
+		"project_ids":    principal.ProjectIDs,
+		"provisioned":    principal.Provisioned,
+		"entitlements":   accessFor(s.store, principal),
 	})
 }
 

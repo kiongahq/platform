@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 	// Distroless images ship no zoneinfo; schedules need IANA timezones.
@@ -132,11 +133,21 @@ func main() {
 		if postgres != nil {
 			revokeWorkspaceSessions = postgres.RevokeWorkspaceEdgeSessionsForSubject
 		}
+		// Sign-up: what a first single sign-on creates for someone with no
+		// account and no mapped directory group (approval by default).
+		signup, err := httpapi.ParseSignupPolicy(os.Getenv("KIONGA_SIGNUP"), os.Getenv("KIONGA_SIGNUP_EMAIL_DOMAINS"),
+			os.Getenv("KIONGA_SIGNUP_PROFILE"), os.Getenv("KIONGA_SIGNUP_SERVICES"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("single sign-on sign-up mode: %s", signup.Mode)
 		sso, err = auth.NewSessionManager(auth.SessionConfig{
 			ClientID: os.Getenv("OIDC_CLIENT_ID"), ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
 			AuthURL: os.Getenv("OIDC_AUTH_URL"), TokenURL: os.Getenv("OIDC_TOKEN_URL"),
 			RedirectURL: os.Getenv("OIDC_REDIRECT_URL"), Secure: true,
+			Scopes:   strings.Fields(strings.ReplaceAll(os.Getenv("OIDC_SCOPES"), ",", " ")),
 			OnLogout: revokeWorkspaceSessions,
+			OnLogin:  signup.OnLogin(repository),
 		}, verifier)
 		if err != nil {
 			log.Fatalf("configure single sign-on: %v", err)
@@ -165,12 +176,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("configure sign-in: %v", err)
 	}
+	// Or a file the deployment keeps current (the local stack's Dex writes
+	// it from the connectors it enabled); it wins over the inline list.
+	if path := os.Getenv("KIONGA_SSO_PROVIDERS_FILE"); path != "" {
+		if err := authenticator.UseProvidersFile(path); err != nil {
+			log.Fatalf("configure sign-in: %v", err)
+		}
+	}
 	handler = authenticator.Handler(handler)
 	switch {
 	case sso != nil && local != nil:
-		log.Printf("sign-in: single sign-on (%d providers) and local break-glass accounts", len(providers))
+		log.Printf("sign-in: single sign-on %v and local break-glass accounts", authenticator.ProviderIDs())
 	case sso != nil:
-		log.Printf("sign-in: single sign-on (%d providers)", len(providers))
+		log.Printf("sign-in: single sign-on %v", authenticator.ProviderIDs())
 	default:
 		log.Printf("WARNING: single sign-on is not configured; local accounts only (development mode)")
 	}

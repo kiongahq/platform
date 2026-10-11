@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -10,6 +11,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -61,13 +64,16 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 			nonce = "someone-else"
 		}
 		now := time.Now()
-		token := jwt.NewWithClaims(jwt.SigningMethodRS256, Claims{
-			Email: "ada@example.com", Groups: idp.groups, Nonce: nonce,
+		verified := true
+		claims := Claims{
+			Email: "ada@example.com", Groups: idp.groups, Nonce: nonce, EmailVerified: &verified,
 			RegisteredClaims: jwt.RegisteredClaims{
 				Subject: "CgNhZGESBGxkYXA", Issuer: idp.server.URL, Audience: []string{"kionga"},
 				ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)), IssuedAt: jwt.NewNumericDate(now),
 			},
-		})
+		}
+		claims.FederatedClaims.ConnectorID = "ldap"
+		token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 		token.Header["kid"] = "k1"
 		raw, _ := token.SignedString(key)
 		w.Header().Set("Content-Type", "application/json")
@@ -79,9 +85,11 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 }
 
 type authSetup struct {
-	idp     *fakeIdP
-	handler http.Handler
-	seen    *Principal
+	idp           *fakeIdP
+	authenticator *Authenticator
+	handler       http.Handler
+	seen          *Principal
+	logins        []Principal // what SessionConfig.OnLogin received
 }
 
 func newAuthSetup(t *testing.T, withLocal bool, providers []Provider) *authSetup {
@@ -89,10 +97,12 @@ func newAuthSetup(t *testing.T, withLocal bool, providers []Provider) *authSetup
 	idp := newFakeIdP(t)
 	verifier := New(Config{Issuer: idp.server.URL, Audience: "kionga", JWKSURL: idp.server.URL + "/keys",
 		GroupRoles: map[string]string{"ml-admins": RoleAdmin}})
+	setup := &authSetup{idp: idp}
 	sso, err := NewSessionManager(SessionConfig{
 		ClientID: "kionga", ClientSecret: "secret",
 		AuthURL: idp.server.URL + "/auth", TokenURL: idp.server.URL + "/token",
 		RedirectURL: "https://kionga.example/auth/callback", Secure: true,
+		OnLogin: func(_ context.Context, principal Principal) { setup.logins = append(setup.logins, principal) },
 	}, verifier)
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +115,7 @@ func newAuthSetup(t *testing.T, withLocal bool, providers []Provider) *authSetup
 	if err != nil {
 		t.Fatal(err)
 	}
-	setup := &authSetup{idp: idp}
+	setup.authenticator = authenticator
 	setup.handler = authenticator.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if principal, ok := PrincipalFrom(r.Context()); ok {
 			setup.seen = &principal
@@ -407,5 +417,88 @@ func TestProvidersEndpointReturnsAnEmptyListWithoutSSO(t *testing.T) {
 	authenticator.Handler(http.NotFoundHandler()).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/auth/providers", nil))
 	if body := strings.TrimSpace(response.Body.String()); body != `{"local":true,"providers":[]}` {
 		t.Fatalf("providers without SSO = %s", body)
+	}
+}
+
+func TestSSOLoginReportsTheNewcomerToOnLogin(t *testing.T) {
+	setup := newAuthSetup(t, false, []Provider{{ID: "ldap", Name: "Company directory", Type: "ldap"}})
+	setup.idp.groups = []string{"everyone"} // no group maps to a role
+	callback, cookies := setup.ssoLogin(t, "ldap")
+	if callback.Code != http.StatusFound {
+		t.Fatalf("callback = %d: %s", callback.Code, callback.Body)
+	}
+	if len(setup.logins) != 1 {
+		t.Fatalf("OnLogin ran %d times, want once per sign-in", len(setup.logins))
+	}
+	login := setup.logins[0]
+	if login.Subject != "CgNhZGESBGxkYXA" || login.Connector != "ldap" || !login.EmailVerified ||
+		len(login.Roles) != 1 || login.Roles[0] != RoleUser || login.Provisioned {
+		t.Fatalf("OnLogin principal = %+v; want an unprovisioned user from the ldap connector", login)
+	}
+	// Using the session afterwards is not a new sign-in.
+	setup.do(http.MethodGet, "/api/v1/me", []*http.Cookie{cookieNamed(cookies, SessionCookieName)}, nil)
+	if len(setup.logins) != 1 {
+		t.Fatal("OnLogin must run on the callback only")
+	}
+}
+
+func TestFailedSSOCallbackNeverReachesOnLogin(t *testing.T) {
+	setup := newAuthSetup(t, false, []Provider{{ID: "ldap", Name: "Company directory", Type: "ldap"}})
+	setup.idp.badNonce = true
+	if callback, _ := setup.ssoLogin(t, "ldap"); callback.Code == http.StatusFound {
+		t.Fatal("a token for another login must not create a session")
+	}
+	if len(setup.logins) != 0 {
+		t.Fatalf("OnLogin ran for a rejected token: %+v", setup.logins)
+	}
+}
+
+func TestProvidersFileIsFollowedAndABadWriteKeepsTheLastGoodList(t *testing.T) {
+	setup := newAuthSetup(t, true, nil)
+	path := filepath.Join(t.TempDir(), "providers.json")
+	write := func(body string, mod time.Time) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, mod, mod); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listed := func() []string {
+		t.Helper()
+		var body providersResponse
+		if err := json.Unmarshal(setup.do(http.MethodGet, "/auth/providers", nil, nil).Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		ids := []string{}
+		for _, provider := range body.Providers {
+			ids = append(ids, provider.ID)
+		}
+		return ids
+	}
+	start := time.Now().Add(-time.Hour)
+	write(`[{"id":"ldap","name":"Company directory","type":"ldap"}]`, start)
+	if err := setup.authenticator.UseProvidersFile(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := listed(); strings.Join(got, ",") != "ldap" {
+		t.Fatalf("providers = %v", got)
+	}
+	// The deployment enables GitHub: no restart needed.
+	write(`[{"id":"ldap","name":"Company directory","type":"ldap"},{"id":"github","name":"GitHub","type":"github"}]`, start.Add(time.Minute))
+	if got := listed(); strings.Join(got, ",") != "ldap,github" {
+		t.Fatalf("providers after enabling GitHub = %v", got)
+	}
+	if start := setup.do(http.MethodGet, "/auth/sso/login?connector=github", nil, nil); start.Code != http.StatusFound {
+		t.Fatalf("a connector added through the file must be usable, got %d", start.Code)
+	}
+	// A half-written or invalid file never empties the login page.
+	write(`[{"id":"bad id!","name":""}]`, start.Add(2*time.Minute))
+	if got := listed(); strings.Join(got, ",") != "ldap,github" {
+		t.Fatalf("an invalid file must keep the last good list, got %v", got)
+	}
+	if err := setup.authenticator.UseProvidersFile(filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Fatal("a missing providers file must fail at startup")
 	}
 }

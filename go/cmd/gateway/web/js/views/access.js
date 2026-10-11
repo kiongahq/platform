@@ -109,7 +109,7 @@ function fillAccessForm(item, requestId = "") {
 
 function configureLocalPasswordField() {
   const section = document.querySelector("#local-password-section");
-  section.hidden = me.mode !== "local";
+  section.hidden = !(me.local_accounts ?? me.mode === "local");
   section.querySelector("input").value = "";
 }
 
@@ -179,7 +179,7 @@ onClick("[data-access-delete]", async node => {
   if (!confirm(`Revoke all access for ${node.dataset.accessDelete}? Their sessions stop working on the next request.`)) return;
   await withBusy(node, async () => {
     await api(`/api/v1/admin/users/${encodeURIComponent(node.dataset.accessDelete)}`, {method: "DELETE"});
-    if (me.mode === "local") await api(`/api/v1/admin/users/${encodeURIComponent(node.dataset.accessDelete)}/local-password`, {method: "DELETE"}).catch(() => {});
+    if (me.local_accounts ?? me.mode === "local") await api(`/api/v1/admin/users/${encodeURIComponent(node.dataset.accessDelete)}/local-password`, {method: "DELETE"}).catch(() => {});
   }, {success: "User access revoked."});
   await loadAccess();
 });

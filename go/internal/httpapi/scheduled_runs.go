@@ -47,7 +47,7 @@ func ownerPrincipal(data store.Repository, owner string) (auth.Principal, error)
 	if bootstrap == "" {
 		bootstrap = "admin"
 	}
-	if os.Getenv("OIDC_ISSUER") == "" && owner == bootstrap {
+	if localAccountsEnabled() && owner == bootstrap {
 		role := os.Getenv("MLAIOPS_LOCAL_ROLE")
 		if role == "" {
 			role = auth.RoleAdmin

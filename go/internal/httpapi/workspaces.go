@@ -122,7 +122,7 @@ func workspaceTarget(kind string, r *http.Request) (*workspaceDestination, error
 	p := principal(r)
 	if strings.Contains(raw, "{subject}") {
 		raw = strings.ReplaceAll(raw, "{subject}", fmt.Sprintf("%x", sha256.Sum256([]byte(p.Subject))))
-	} else if os.Getenv("OIDC_ISSUER") != "" || p.Subject != os.Getenv("MLAIOPS_LOCAL_USERNAME") && p.Subject != "admin" {
+	} else if !localBootstrapAdmin(p) {
 		return nil, fmt.Errorf("A personal workspace must be provisioned for this account")
 	}
 	u, err := url.Parse(raw)

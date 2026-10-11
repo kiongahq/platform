@@ -30,7 +30,17 @@ type SessionConfig struct {
 	RedirectURL  string
 	Secure       bool
 	OnLogout     func(context.Context, string) error
+	// Scopes requested from the issuer; DefaultScopes when empty.
+	Scopes []string
+	// OnLogin runs after every successful single sign-on, before the session
+	// cookie is set (sign-up uses it). It must not block the login on error.
+	OnLogin func(context.Context, Principal)
 }
+
+// DefaultScopes work with any OIDC provider. Dex deployments add
+// "federated:id" (OIDC_SCOPES) so tokens name the upstream connector; strict
+// providers such as Okta reject scopes they do not know.
+var DefaultScopes = []string{"openid", "profile", "email", "groups"}
 
 type SessionManager struct {
 	config   SessionConfig
@@ -48,9 +58,16 @@ func NewSessionManager(config SessionConfig, verifier *Verifier) (*SessionManage
 		oauth: oauth2.Config{
 			ClientID: config.ClientID, ClientSecret: config.ClientSecret, RedirectURL: config.RedirectURL,
 			Endpoint: oauth2.Endpoint{AuthURL: config.AuthURL, TokenURL: config.TokenURL},
-			Scopes:   []string{"openid", "profile", "email", "groups"},
+			Scopes:   scopesOrDefault(config.Scopes),
 		},
 	}, nil
+}
+
+func scopesOrDefault(scopes []string) []string {
+	if len(scopes) == 0 {
+		return DefaultScopes
+	}
+	return scopes
 }
 
 func (s *SessionManager) Handler(next http.Handler) http.Handler {
@@ -135,6 +152,9 @@ func (s *SessionManager) callback(w http.ResponseWriter, r *http.Request) {
 	if err != nil || nonce.Value == "" || subtle.ConstantTimeCompare([]byte(claims.Nonce), []byte(nonce.Value)) != 1 {
 		deny(w, http.StatusUnauthorized, "identity token does not match this login")
 		return
+	}
+	if s.config.OnLogin != nil {
+		s.config.OnLogin(r.Context(), s.verifier.principalFromClaims(claims))
 	}
 	s.setCookie(w, SessionCookieName, rawIDToken, 8*time.Hour)
 	s.clearCookie(w, stateCookieName)

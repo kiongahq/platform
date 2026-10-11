@@ -161,11 +161,7 @@ func canBootstrap(value auth.Principal) bool {
 	if slices.Contains(value.Roles, auth.RoleAdmin) {
 		return true
 	}
-	bootstrap := os.Getenv("MLAIOPS_LOCAL_USERNAME")
-	if bootstrap == "" {
-		bootstrap = "admin"
-	}
-	return os.Getenv("OIDC_ISSUER") == "" && value.Subject == bootstrap
+	return localBootstrapAdmin(value)
 }
 
 func (e *editorialAPI) bootstrapStatus(w http.ResponseWriter, r *http.Request) {

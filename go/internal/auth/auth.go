@@ -32,17 +32,21 @@ const (
 )
 
 type Principal struct {
-	Subject     string
-	Email       string
-	Tenant      string
-	Roles       []string
-	Groups      []string // identity-provider groups, as asserted at login
-	Namespaces  []string
-	Services    []string
-	ProjectIDs  []string
-	Disabled    bool
-	Provisioned bool
-	Credential  string
+	Subject string
+	Email   string
+	Tenant  string
+	Roles   []string
+	Groups  []string // identity-provider groups, as asserted at login
+	// Connector is the identity provider used at sign-in (Dex connector id),
+	// empty for local accounts and issuers that do not report it.
+	Connector     string
+	EmailVerified bool
+	Namespaces    []string
+	Services      []string
+	ProjectIDs    []string
+	Disabled      bool
+	Provisioned   bool
+	Credential    string
 }
 
 type contextKey struct{}
@@ -63,6 +67,14 @@ type Claims struct {
 	Groups     []string `json:"groups"`
 	Namespaces []string `json:"namespaces"`
 	Nonce      string   `json:"nonce"`
+	// EmailVerified is nil when the issuer does not say.
+	EmailVerified *bool `json:"email_verified,omitempty"`
+	// FederatedClaims names the upstream connector a broker such as Dex used
+	// (requested with the "federated:id" scope).
+	FederatedClaims struct {
+		ConnectorID string `json:"connector_id"`
+		UserID      string `json:"user_id"`
+	} `json:"federated_claims"`
 	jwt.RegisteredClaims
 }
 
@@ -209,9 +221,22 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	if err != nil {
 		return Principal{}, err
 	}
+	return v.principalFromClaims(claims), nil
+}
+
+func (v *Verifier) principalFromClaims(claims *Claims) Principal {
+	roles := rolesFromClaims(claims, v.config.GroupRoles)
+	if len(roles) == 0 {
+		// Signed in, but no directory group grants a role: an unprovisioned
+		// user. That reaches only /me, the access-request flow and personal
+		// settings until an administrator (or open sign-up) creates a
+		// profile with services.
+		roles = []string{RoleUser}
+	}
 	return Principal{Subject: claims.Subject, Email: claims.Email, Tenant: claims.Tenant,
-		Roles: rolesFromClaims(claims, v.config.GroupRoles), Groups: claims.Groups,
-		Namespaces: claims.Namespaces}, nil
+		Roles: roles, Groups: claims.Groups,
+		Namespaces: claims.Namespaces, Connector: claims.FederatedClaims.ConnectorID,
+		EmailVerified: claims.EmailVerified != nil && *claims.EmailVerified}
 }
 
 // verifyClaims checks signature, issuer, audience, expiry and tenant and

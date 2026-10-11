@@ -4,10 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Provider is one sign-in option on the login page. With Dex as the broker,
@@ -56,10 +60,14 @@ func ParseGroupRoles(raw string) (map[string]string, error) {
 // break-glass access next to SSO). It owns /auth/* and attaches the
 // principal for everything else; RBAC authorizes afterwards.
 type Authenticator struct {
-	sso       *SessionManager
-	verifier  *Verifier
-	local     *LocalSessionManager
-	providers []Provider
+	sso      *SessionManager
+	verifier *Verifier
+	local    *LocalSessionManager
+
+	mu            sync.RWMutex
+	providers     []Provider
+	providersFile string
+	providersMod  time.Time
 }
 
 func NewAuthenticator(sso *SessionManager, verifier *Verifier, local *LocalSessionManager, providers []Provider) (*Authenticator, error) {
@@ -69,6 +77,74 @@ func NewAuthenticator(sso *SessionManager, verifier *Verifier, local *LocalSessi
 	if sso != nil && verifier == nil {
 		return nil, errors.New("single sign-on needs a token verifier")
 	}
+	providers, err := checkProviders(sso, providers)
+	if err != nil {
+		return nil, err
+	}
+	return &Authenticator{sso: sso, verifier: verifier, local: local, providers: providers}, nil
+}
+
+// UseProvidersFile makes the provider list follow a file the deployment
+// writes (the local stack's Dex derives it from its rendered connectors), so
+// enabling a connector needs no gateway restart. The file is re-read when
+// its modification time changes; a file that no longer parses keeps the last
+// good list and is logged.
+func (a *Authenticator) UseProvidersFile(path string) error {
+	a.providersFile = path
+	return a.reloadProviders(true)
+}
+
+func (a *Authenticator) reloadProviders(force bool) error {
+	info, err := os.Stat(a.providersFile)
+	if err != nil {
+		return fmt.Errorf("sign-in providers file: %w", err)
+	}
+	a.mu.RLock()
+	unchanged := info.ModTime().Equal(a.providersMod)
+	a.mu.RUnlock()
+	if unchanged && !force {
+		return nil
+	}
+	raw, err := os.ReadFile(a.providersFile)
+	if err != nil {
+		return fmt.Errorf("sign-in providers file: %w", err)
+	}
+	parsed, err := ParseProviders(string(raw))
+	if err == nil {
+		parsed, err = checkProviders(a.sso, parsed)
+	}
+	if err != nil {
+		return fmt.Errorf("sign-in providers file %s: %w", a.providersFile, err)
+	}
+	a.mu.Lock()
+	a.providers, a.providersMod = parsed, info.ModTime()
+	a.mu.Unlock()
+	return nil
+}
+
+// ProviderIDs lists the sign-in options the login page offers now.
+func (a *Authenticator) ProviderIDs() []string {
+	ids := []string{}
+	for _, provider := range a.currentProviders() {
+		ids = append(ids, provider.ID)
+	}
+	return ids
+}
+
+func (a *Authenticator) currentProviders() []Provider {
+	if a.providersFile != "" {
+		if err := a.reloadProviders(false); err != nil {
+			log.Printf("keeping the previous sign-in providers: %v", err)
+		}
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.providers
+}
+
+// checkProviders validates a provider list and fills the defaults the login
+// page relies on.
+func checkProviders(sso *SessionManager, providers []Provider) ([]Provider, error) {
 	if sso == nil && len(providers) > 0 {
 		return nil, errors.New("KIONGA_SSO_PROVIDERS is set but single sign-on (OIDC_ISSUER) is not configured")
 	}
@@ -88,7 +164,7 @@ func NewAuthenticator(sso *SessionManager, verifier *Verifier, local *LocalSessi
 	if providers == nil {
 		providers = []Provider{} // serialize as [], not null
 	}
-	return &Authenticator{sso: sso, verifier: verifier, local: local, providers: providers}, nil
+	return providers, nil
 }
 
 type providersResponse struct {
@@ -102,11 +178,11 @@ func (a *Authenticator) Handler(next http.Handler) http.Handler {
 		case "/auth/providers":
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
-			_ = json.NewEncoder(w).Encode(providersResponse{Local: a.local != nil, Providers: a.providers})
+			_ = json.NewEncoder(w).Encode(providersResponse{Local: a.local != nil, Providers: a.currentProviders()})
 			return
 		case "/auth/login":
-			if a.local == nil && len(a.providers) == 1 {
-				a.sso.loginWith(w, r, a.providers[0].ID)
+			if providers := a.currentProviders(); a.local == nil && len(providers) == 1 {
+				a.sso.loginWith(w, r, providers[0].ID)
 				return
 			}
 			http.Redirect(w, r, "/login.html?return_to="+url.QueryEscape(safeReturnTo(r.URL.Query().Get("return_to"))), http.StatusFound)
@@ -171,6 +247,14 @@ func (a *Authenticator) Handler(next http.Handler) http.Handler {
 	})
 }
 
+// Principal.Credential values set by the authenticator (API tokens use
+// "api_token", set by APITokenMiddleware).
+const (
+	CredentialLocalSession = "local_session"
+	CredentialSSOSession   = "sso_session"
+	CredentialOIDCToken    = "oidc_token"
+)
+
 // identify resolves who is calling: a bearer token (internal service token,
 // or an OIDC token for API clients), then a local session, then an SSO session.
 // Only the Bearer scheme is a Kionga credential: other schemes, such as the
@@ -183,6 +267,7 @@ func (a *Authenticator) identify(r *http.Request) (Principal, bool) {
 		}
 		if a.verifier != nil {
 			if principal, err := a.verifier.Verify(r.Context(), bearer); err == nil {
+				principal.Credential = CredentialOIDCToken
 				return principal, true
 			}
 		}
@@ -190,12 +275,15 @@ func (a *Authenticator) identify(r *http.Request) (Principal, bool) {
 	}
 	if a.local != nil {
 		if subject, ok := a.local.authenticated(r); ok {
-			return a.local.principalFor(subject), true
+			principal := a.local.principalFor(subject)
+			principal.Credential = CredentialLocalSession
+			return principal, true
 		}
 	}
 	if a.verifier != nil {
 		if cookie, err := r.Cookie(SessionCookieName); err == nil && cookie.Value != "" {
 			if principal, err := a.verifier.Verify(r.Context(), cookie.Value); err == nil {
+				principal.Credential = CredentialSSOSession
 				return principal, true
 			}
 		}
@@ -212,7 +300,7 @@ func bearerToken(r *http.Request) (string, bool) {
 }
 
 func (a *Authenticator) knownProvider(id string) bool {
-	for _, provider := range a.providers {
+	for _, provider := range a.currentProviders() {
 		if provider.ID == id {
 			return true
 		}

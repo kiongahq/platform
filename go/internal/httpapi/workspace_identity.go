@@ -68,7 +68,7 @@ func WorkspaceIdentity(next http.Handler, client dynamic.Interface, namespace, l
 			}
 		} else {
 			// Shared Compose workspaces exist only in the single-user local profile.
-			if os.Getenv("OIDC_ISSUER") != "" || os.Getenv("KIONGA_ENVIRONMENT") == "production" || localToken == "" || name != "local" || subtle.ConstantTimeCompare([]byte(token), []byte(localToken)) != 1 {
+			if !localAccountsEnabled() || os.Getenv("KIONGA_ENVIRONMENT") == "production" || localToken == "" || name != "local" || subtle.ConstantTimeCompare([]byte(token), []byte(localToken)) != 1 {
 				http.Error(w, "workspace credential rejected", http.StatusUnauthorized)
 				return
 			}

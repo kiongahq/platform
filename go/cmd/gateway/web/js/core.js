@@ -189,8 +189,27 @@ function applyPermissions() {
   document.querySelectorAll(".nav-item[data-view]").forEach(node => {
     if (!["access", "profile", "settings"].includes(node.dataset.view)) node.hidden = !hasService(serviceForView(node.dataset.view));
   });
+  renderSignupBanner();
   document.querySelector("#workbench-link").hidden = !hasService("workbench");
   document.querySelector("#ide-link").hidden = !hasService("ide");
+}
+
+/* Someone who signed up with single sign-on but has no profile yet: say what
+ * happens next instead of showing an empty console. */
+function signupBannerText(identity) {
+  if (identity.provisioned || !identity.roles.includes("user") || identity.roles.some(role => role !== "user")) return "";
+  const status = identity.access_request?.status;
+  if (status === "pending") return "Your account is waiting for an administrator to approve it. You will get access to the services they grant.";
+  if (status === "rejected") return "Your access request was declined. Contact a platform administrator, or submit a new request from My access.";
+  return "You are signed in, but no services are assigned to your account yet. Request access from My access.";
+}
+
+function renderSignupBanner() {
+  const banner = document.querySelector("#signup-banner");
+  if (!banner) return;
+  const text = signupBannerText(me);
+  banner.hidden = !text;
+  document.querySelector("#signup-banner-message").textContent = text;
 }
 
 async function loadMe() {

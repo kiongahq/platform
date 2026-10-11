@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/kiongahq/platform/internal/auth"
 	"github.com/kiongahq/platform/internal/policy"
 	"github.com/kiongahq/platform/internal/store"
 )
@@ -27,11 +28,32 @@ func (l LocalAccountStore) LocalAccountActive(subject string) bool {
 	return store.LocalAccountExists(l.Docs, subject)
 }
 
-func localAccountsEnabled() bool { return os.Getenv("OIDC_ISSUER") == "" }
+// localAccountsEnabled mirrors the gateway's sign-in setup: local accounts
+// are the default without single sign-on and opt-in next to it
+// (KIONGA_LOCAL_LOGIN=true, the break-glass setting).
+func localAccountsEnabled() bool {
+	return os.Getenv("OIDC_ISSUER") == "" || os.Getenv("KIONGA_LOCAL_LOGIN") == "true"
+}
+
+// localBootstrapAdmin reports whether the caller is the built-in local
+// account (MLAIOPS_LOCAL_USERNAME, default admin), which has no stored
+// profile. A single sign-on identity never counts, even if its subject
+// happens to equal the local username.
+func localBootstrapAdmin(value auth.Principal) bool {
+	if !localAccountsEnabled() || value.Credential == auth.CredentialSSOSession || value.Credential == auth.CredentialOIDCToken {
+		return false
+	}
+	bootstrap := os.Getenv("MLAIOPS_LOCAL_USERNAME")
+	if bootstrap == "" {
+		bootstrap = "admin"
+	}
+	return value.Subject == bootstrap
+}
 
 // setLocalPassword lets an administrator issue a password login for a
-// provisioned subject in local mode. With OIDC the identity provider owns
-// credentials, so the endpoint refuses rather than creating a side door.
+// provisioned subject while local accounts are enabled. With single sign-on
+// alone the identity provider owns credentials, so the endpoint refuses
+// rather than creating a side door.
 func (s *Server) setLocalPassword(w http.ResponseWriter, r *http.Request) {
 	if !localAccountsEnabled() {
 		writeError(w, http.StatusConflict, "oidc_enabled", "Passwords are managed by the identity provider when OIDC is configured.")
