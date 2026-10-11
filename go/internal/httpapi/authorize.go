@@ -129,13 +129,19 @@ func (a *authorizer) resourceTags(resource string) map[string]string {
 	}
 	tags := map[string]string{}
 	if project, err := a.store.Project(id); err == nil {
-		for key, value := range map[string]string{"template": project.Template, "framework": project.Framework, "accelerator": project.Accelerator, "profile": project.RequestedProfile, "owner": project.OwnerSubject} {
-			if value != "" {
-				tags[key] = value
-			}
-		}
+		tags = projectTags(project)
 	}
 	a.tags[id] = tags
+	return tags
+}
+
+func projectTags(project api.Project) map[string]string {
+	tags := map[string]string{}
+	for key, value := range map[string]string{"template": project.Template, "framework": project.Framework, "accelerator": project.Accelerator, "profile": project.RequestedProfile, "owner": project.OwnerSubject} {
+		if value != "" {
+			tags[key] = value
+		}
+	}
 	return tags
 }
 
@@ -225,6 +231,12 @@ func (a *authorizer) visibleDefinitions(items []api.PipelineDefinition) []api.Pi
 func (a *authorizer) visibleProjects(items []api.Project) []api.Project {
 	out := make([]api.Project, 0, len(items))
 	for _, item := range items {
+		// The list already holds each project: derive its tags here rather
+		// than one store lookup per project (an N+1 that made listing
+		// hundreds of projects take seconds under load).
+		if _, cached := a.tags[item.ID]; !cached {
+			a.tags[item.ID] = projectTags(item)
+		}
 		if a.allowed(policy.ProjectRead, policy.ProjectResource(item.ID)) {
 			out = append(out, item)
 		}
