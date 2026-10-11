@@ -70,12 +70,21 @@ func TestFunctionPipelineInvokesJobsInDependencyOrder(t *testing.T) {
 	}
 	var run map[string]any
 	_ = json.Unmarshal(submit.Body.Bytes(), &run)
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
+	// Wait for the run itself to finish: a step's "succeeded" in the body
+	// is not the run's status.
+	deadline := time.Now().Add(10 * time.Second)
+	for status := ""; status != "succeeded"; {
+		if time.Now().After(deadline) {
+			t.Fatalf("run did not succeed in time; last status %q", status)
+		}
 		response := httptest.NewRecorder()
 		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/pipelines/runs/"+run["id"].(string), nil))
-		if strings.Contains(response.Body.String(), `"status":"succeeded"`) {
-			break
+		var current struct {
+			Status string `json:"status"`
+		}
+		_ = json.Unmarshal(response.Body.Bytes(), &current)
+		if status = current.Status; status == "failed" {
+			t.Fatalf("run failed: %s", response.Body.String())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
