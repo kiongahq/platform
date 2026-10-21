@@ -24,8 +24,8 @@ func (s *Server) logExportStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, base+"/status", nil)
-	response, err := http.DefaultClient.Do(request)
+	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, base+"/status", nil) // #nosec G704 -- KIONGA_LOG_EXPORTER_URL is operator config
+	response, err := http.DefaultClient.Do(request)                                    // #nosec G704 -- KIONGA_LOG_EXPORTER_URL is operator config
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"state": "not_deployed", "detail": "The log exporter is not running. Start it with: docker compose --profile log-export up -d log-exporter"})
 		return

@@ -108,7 +108,7 @@ func ConfigFromEnv() (Config, error) {
 	}
 	for env, target := range map[string]*string{"KIONGA_LOG_EXPORT_API_KEY_FILE": &config.APIKey, "KIONGA_LOG_EXPORT_PASSWORD_FILE": &config.Password} {
 		if path := os.Getenv(env); path != "" {
-			raw, err := os.ReadFile(path)
+			raw, err := os.ReadFile(path) // #nosec G304 G703 -- operator-set secret file path
 			if err != nil {
 				return config, fmt.Errorf("read %s: %w", env, err)
 			}

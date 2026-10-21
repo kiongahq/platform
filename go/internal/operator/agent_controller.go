@@ -70,7 +70,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 	}
 	deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: plan.Workload.Name, Namespace: agent.Namespace}}
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		replicas := int32(plan.Workload.Replicas)
+		replicas := int32(plan.Workload.Replicas) // #nosec G115 -- source is an int32 replica count
 		deployment.Labels = plan.Workload.Labels
 		// HorizontalPodAutoscaler owns spec.replicas after creation. Reapplying
 		// the minimum on every owned Deployment event would fight every scale.

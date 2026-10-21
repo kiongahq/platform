@@ -89,7 +89,7 @@ func (f *FSStore) Put(_ context.Context, key, _ string, data []byte) error {
 		return err
 	}
 	tmp := target + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o640); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, target)

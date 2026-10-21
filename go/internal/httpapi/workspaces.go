@@ -58,10 +58,10 @@ func ideSession(ctx context.Context, target *workspaceDestination) (string, erro
 	if time.Now().Before(cached.expires) {
 		return cached.cookie, nil
 	}
-	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(target.String(), "/")+"/login", strings.NewReader(url.Values{"password": {target.token}}.Encode()))
+	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(target.String(), "/")+"/login", strings.NewReader(url.Values{"password": {target.token}}.Encode())) // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	client := &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
-	response, err := client.Do(request)
+	response, err := client.Do(request) // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 	if err != nil {
 		return "", fmt.Errorf("IDE sign-in is unavailable")
 	}
@@ -231,9 +231,9 @@ func classifyWorkspaceProbe(ctx context.Context, client *http.Client, kind strin
 		return workspaceUnauthorized, "The IDE rejected the gateway credentials. KIONGA_IDE_PASSWORD must match the IDE password, or set KIONGA_IDE_AUTH_MODE=none for local use."
 	case status == http.StatusNotFound && kind == "workbench":
 		root := strings.TrimRight(target.String(), "/") + "/api"
-		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, root, nil)
+		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, root, nil) // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 		request.Header.Set("Authorization", "token "+target.token)
-		if response, err := client.Do(request); err == nil {
+		if response, err := client.Do(request); err == nil { // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 			response.Body.Close()
 			if response.StatusCode < 500 && response.StatusCode != http.StatusNotFound {
 				return workspaceMisrouted, "Jupyter is running from an outdated image that does not serve /workspaces/workbench/. Rebuild it from the deploy checkout with make -C deploy local-rebuild (or docker compose -f deploy/compose.yaml up -d --build jupyter)."
@@ -281,7 +281,7 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 			}
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			defer cancel()
-			request, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+			request, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil) // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 			if kind == "workbench" {
 				request.Header.Set("Authorization", "token "+target.token)
 			} else {
@@ -294,7 +294,7 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 				request.Header.Set("Cookie", cookie)
 			}
 			client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
-			response, err := client.Do(request)
+			response, err := client.Do(request) // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 			if err != nil {
 				e.State = workspaceOffline
 				if kind == "ide" && os.Getenv("KIONGA_ENVIRONMENT") != "production" {
@@ -475,11 +475,11 @@ func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			body, _ := json.Marshal(map[string]string{"namespace": project.Namespace})
-			request, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, strings.TrimRight(target.String(), "/")+"/proxy/8890/prepare-project", bytes.NewReader(body))
+			request, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, strings.TrimRight(target.String(), "/")+"/proxy/8890/prepare-project", bytes.NewReader(body)) // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Cookie", cookie)
 			client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
-			response, err := client.Do(request)
+			response, err := client.Do(request) // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 			if err != nil {
 				writeError(w, 503, "workspace_unavailable", "Could not prepare the IDE project folder. Please retry.")
 				return
@@ -502,9 +502,9 @@ func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 		for _, path := range []string{"projects", folder.Relative} {
 			endpoint := strings.TrimRight(upstream.String(), "/") + "/workspaces/workbench/api/contents/" + path
 			client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
-			get, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, endpoint, nil)
+			get, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, endpoint, nil) // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 			get.Header.Set("Authorization", "token "+upstream.token)
-			response, err := client.Do(get)
+			response, err := client.Do(get) // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 			if err != nil {
 				writeError(w, 503, "workspace_unavailable", "Could not reach the shared workspace. Please retry.")
 				return
@@ -517,10 +517,10 @@ func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 				writeError(w, 502, "workspace_unavailable", "Could not read the project folder. Check workspace credentials.")
 				return
 			}
-			put, _ := http.NewRequestWithContext(r.Context(), http.MethodPut, endpoint, bytes.NewBufferString(`{"type":"directory"}`))
+			put, _ := http.NewRequestWithContext(r.Context(), http.MethodPut, endpoint, bytes.NewBufferString(`{"type":"directory"}`)) // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 			put.Header.Set("Authorization", "token "+upstream.token)
 			put.Header.Set("Content-Type", "application/json")
-			response, err = client.Do(put)
+			response, err = client.Do(put) // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 			if err != nil {
 				writeError(w, 502, "workspace_unavailable", "Could not prepare the project folder. Please retry.")
 				return

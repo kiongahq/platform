@@ -127,7 +127,7 @@ func (s *Server) workspaceEdge(w http.ResponseWriter, r *http.Request, kind, slu
 			return
 		}
 		http.SetCookie(w, &http.Cookie{Name: edgeCookieName, Value: session, Path: "/", MaxAge: 1800, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
-		http.Redirect(w, r, next, http.StatusSeeOther)
+		http.Redirect(w, r, next, http.StatusSeeOther) // #nosec G710 -- target is validated by safeWorkspaceNext or constant
 		return
 	}
 	if r.URL.Path == "/_kionga/logout" {
@@ -162,7 +162,7 @@ func (s *Server) workspaceEdge(w http.ResponseWriter, r *http.Request, kind, slu
 		return
 	}
 	if r.URL.Path == "/" {
-		http.Redirect(w, r, "/workspaces/"+kind+"/", http.StatusFound)
+		http.Redirect(w, r, "/workspaces/"+kind+"/", http.StatusFound) // #nosec G710 -- target is validated by safeWorkspaceNext or constant
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, "/workspaces/"+kind+"/") {

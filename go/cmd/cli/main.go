@@ -71,14 +71,14 @@ func main() {
 		fatal(err)
 		reader = bytes.NewReader(raw)
 	}
-	request, err := http.NewRequest(method, base+path, reader)
+	request, err := http.NewRequest(method, base+path, reader) // #nosec G704 -- the CLI calls the gateway its user configured
 	fatal(err)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("X-MLAIOps-Actor", env("USER", "cli"))
 	if token := os.Getenv("MLAIOPS_TOKEN"); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
-	response, err := client.Do(request)
+	response, err := client.Do(request) // #nosec G704 -- the CLI calls the gateway its user configured
 	fatal(err)
 	defer response.Body.Close()
 	raw, err := io.ReadAll(response.Body)

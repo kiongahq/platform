@@ -1,0 +1,8 @@
+# Reviewed gitleaks findings: deliberate fake credentials in redaction and
+# feature-store tests (AKIAABCDEFGHIJKLMNOP, a JWT whose payload is {"sub":"user"}).
+# Fingerprints pin the exact commit/file/line, so any new finding still fails.
+612d428a0a952b836af745e7866c456964698463:go/internal/httpapi/feature_stores_test.go:generic-api-key:16
+8b202041554dd4928dcd8ee9e25a4c2ac6f3f274:go/internal/httpapi/logs_test.go:aws-access-token:46
+8b202041554dd4928dcd8ee9e25a4c2ac6f3f274:go/internal/httpapi/logs_test.go:aws-access-token:59
+8b202041554dd4928dcd8ee9e25a4c2ac6f3f274:go/internal/redact/redact_test.go:aws-access-token:11
+8b202041554dd4928dcd8ee9e25a4c2ac6f3f274:go/internal/redact/redact_test.go:jwt:20

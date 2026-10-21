@@ -27,7 +27,7 @@ func pipelineFile(client *http.Client, base string, args []string, stdout, stder
 			}
 			reader = bytes.NewReader(raw)
 		}
-		request, err := http.NewRequest(method, base+path, reader)
+		request, err := http.NewRequest(method, base+path, reader) // #nosec G704 -- the CLI calls the gateway its user configured
 		if err != nil {
 			return 0, nil, err
 		}
@@ -35,7 +35,7 @@ func pipelineFile(client *http.Client, base string, args []string, stdout, stder
 		if token := os.Getenv("MLAIOPS_TOKEN"); token != "" {
 			request.Header.Set("Authorization", "Bearer "+token)
 		}
-		response, err := client.Do(request)
+		response, err := client.Do(request) // #nosec G704 -- the CLI calls the gateway its user configured
 		if err != nil {
 			return 0, nil, err
 		}
@@ -75,7 +75,7 @@ func pipelineFile(client *http.Client, base string, args []string, stdout, stder
 		fmt.Fprint(stdout, body.YAML)
 		return 0
 	case "validate", "apply":
-		text, err := os.ReadFile(args[1])
+		text, err := os.ReadFile(args[1]) // #nosec G703 -- the CLI reads a file its user named
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1

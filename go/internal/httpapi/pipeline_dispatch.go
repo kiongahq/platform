@@ -131,7 +131,7 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 			}
 			return run
 		}
-		go s.executeFunctionPipeline(context.Background(), run, definition)
+		go s.executeFunctionPipeline(context.Background(), run, definition) // #nosec G118 -- the run outlives the request by design
 		return run
 	}
 	if run.DefinitionID != "" && kubernetesExecutorEnabled() {

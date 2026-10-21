@@ -303,7 +303,7 @@ func (s *Server) streamLogs(w http.ResponseWriter, r *http.Request) {
 				goto wait
 			}
 			payload, _ := json.Marshal(entries)
-			fmt.Fprintf(w, "id: %d\nevent: logs\ndata: %s\n\n", filter.After, payload)
+			fmt.Fprintf(w, "id: %d\nevent: logs\ndata: %s\n\n", filter.After, payload) // #nosec G705 -- JSON-encoded server-sent event
 			flusher.Flush()
 			heartbeat = time.Now()
 			if page == filter.Limit {

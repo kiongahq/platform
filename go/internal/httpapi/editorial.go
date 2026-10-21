@@ -152,7 +152,7 @@ func (e *editorialAPI) setCookie(w http.ResponseWriter, r *http.Request, token s
 	if token == "" {
 		maxAge = -1
 	}
-	http.SetCookie(w, &http.Cookie{Name: EditorialCookie, Value: token, Path: "/", Expires: expires, MaxAge: maxAge,
+	http.SetCookie(w, &http.Cookie{Name: EditorialCookie, Value: token, Path: "/", Expires: expires, MaxAge: maxAge, // #nosec G124 -- Secure follows secureCookies(r)
 		HttpOnly: true, Secure: secureCookies(r), SameSite: http.SameSiteStrictMode})
 }
 
@@ -498,7 +498,7 @@ func (e *editorialAPI) listMedia(w http.ResponseWriter, _ *http.Request, _ api.E
 
 func (e *editorialAPI) upload(w http.ResponseWriter, r *http.Request, member api.EditorialMember) {
 	r.Body = http.MaxBytesReader(w, r.Body, editorial.MaxUploadBytes+(1<<20))
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
+	if err := r.ParseMultipartForm(1 << 20); err != nil { // #nosec G120 -- body is bounded by MaxBytesReader
 		editorialUploads.WithLabelValues("too_large").Inc()
 		writeError(w, http.StatusRequestEntityTooLarge, "too_large", "Images are limited to 10 MB.")
 		return

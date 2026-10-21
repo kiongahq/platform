@@ -99,7 +99,7 @@ func (s *SessionManager) loginWith(w http.ResponseWriter, r *http.Request, conne
 	// they would never reach the callback. Move to the callback's origin
 	// first (once; "canonical" stops a loop behind a host-rewriting proxy).
 	if target, ok := s.canonicalLogin(r); ok {
-		http.Redirect(w, r, target, http.StatusFound)
+		http.Redirect(w, r, target, http.StatusFound) // #nosec G710 -- target is safeReturnTo-sanitized or the configured callback host
 		return
 	}
 	state, err := randomToken(32)
@@ -123,7 +123,7 @@ func (s *SessionManager) loginWith(w http.ResponseWriter, r *http.Request, conne
 	if connector != "" {
 		options = append(options, oauth2.SetAuthURLParam("connector_id", connector))
 	}
-	http.Redirect(w, r, s.oauth.AuthCodeURL(state, options...), http.StatusFound)
+	http.Redirect(w, r, s.oauth.AuthCodeURL(state, options...), http.StatusFound) // #nosec G710 -- target is safeReturnTo-sanitized or the configured callback host
 }
 
 func (s *SessionManager) canonicalLogin(r *http.Request) (string, bool) {
@@ -191,7 +191,7 @@ func (s *SessionManager) callback(w http.ResponseWriter, r *http.Request) {
 		target = safeReturnTo(cookie.Value)
 	}
 	s.clearCookie(w, returnCookieName)
-	http.Redirect(w, r, target, http.StatusFound)
+	http.Redirect(w, r, target, http.StatusFound) // #nosec G710 -- target is safeReturnTo-sanitized or the configured callback host
 }
 
 func (s *SessionManager) logout(w http.ResponseWriter, r *http.Request) {
@@ -220,14 +220,14 @@ func (s *SessionManager) endSession(w http.ResponseWriter, r *http.Request) erro
 }
 
 func (s *SessionManager) setCookie(w http.ResponseWriter, name, value string, ttl time.Duration) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure follows the callback scheme; production requires https
 		Name: name, Value: value, Path: "/", MaxAge: int(ttl.Seconds()), Expires: time.Now().Add(ttl),
 		HttpOnly: true, Secure: s.config.Secure, SameSite: http.SameSiteLaxMode,
 	})
 }
 
 func (s *SessionManager) clearCookie(w http.ResponseWriter, name string) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure follows the callback scheme; production requires https
 		Name: name, Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(1, 0),
 		HttpOnly: true, Secure: s.config.Secure, SameSite: http.SameSiteLaxMode,
 	})
