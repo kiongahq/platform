@@ -15,8 +15,10 @@ test-go:
 test-integration:            ## PostgreSQL integration tests in a throwaway container
 	bash scripts/integration-test.sh
 
-test-security:
-	cd go && go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+test-security:               ## the same scanners CI runs
+	cd go && go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+	cd go && go run github.com/securego/gosec/v2/cmd/gosec@v2.29.0 -quiet -exclude-dir=build -severity medium -confidence medium ./...
+	go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --no-banner --redact .
 
 fmt-check:                   ## the same gofmt check CI runs
 	@out="$$(cd go && gofmt -l .)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
