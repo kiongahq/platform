@@ -128,3 +128,27 @@ func TestAgentDeploymentRequiresRegisteredTools(t *testing.T) {
 		t.Fatalf("registered tool should deploy: %d %s", deployed.Code, deployed.Body.String())
 	}
 }
+
+func TestSecurityHeadersOnEveryResponse(t *testing.T) {
+	handler := testServer()
+	for _, path := range []string{"/", "/api/v1/health", "/api/v1/projects", "/missing.html"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		for key, want := range map[string]string{
+			"X-Content-Type-Options": "nosniff",
+			"X-Frame-Options":        "SAMEORIGIN",
+			"Referrer-Policy":        "strict-origin-when-cross-origin",
+		} {
+			if got := response.Header().Get(key); got != want {
+				t.Errorf("%s %s = %q, want %q", path, key, got, want)
+			}
+		}
+	}
+	// Workspaces are framed by the console across hosts in production and
+	// carry their own frame-ancestors policy.
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/workspaces/workbench/", nil))
+	if got := response.Header().Get("X-Frame-Options"); got != "" {
+		t.Fatalf("workspace response carries X-Frame-Options %q", got)
+	}
+}

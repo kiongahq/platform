@@ -14,11 +14,13 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-var SecretNames = []string{"DATABASE_URL", "OIDC_CLIENT_SECRET", "MLAIOPS_INTERNAL_TOKEN", "KIONGA_CREDENTIAL_KEY", "S3_ACCESS_KEY", "S3_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "REDIS_URL", "KAFKA_REST_TOKEN", "KFP_TOKEN", "MLFLOW_TOKEN", "OPENFAAS_PASSWORD", "LANGFUSE_SECRET_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LLM_UPSTREAM_API_KEY", "KIONGA_JUPYTER_TOKEN", "KIONGA_IDE_PASSWORD", "TRACE_SINK_TOKEN"}
+var SecretNames = []string{"DATABASE_URL", "OIDC_CLIENT_SECRET", "MLAIOPS_INTERNAL_TOKEN", "KIONGA_CREDENTIAL_KEY", "S3_ACCESS_KEY", "S3_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "REDIS_URL", "KAFKA_REST_TOKEN", "KFP_TOKEN", "MLFLOW_TOKEN", "OPENFAAS_PASSWORD", "LANGFUSE_SECRET_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LLM_UPSTREAM_API_KEY", "KIONGA_JUPYTER_TOKEN", "KIONGA_IDE_PASSWORD", "TRACE_SINK_TOKEN", "MLAIOPS_LOCAL_PASSWORD"}
 var keyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
 func readFile(path string) ([]byte, error) {
-	f, err := os.Open(path)
+	// Paths come from operator-set KIONGA_CONFIG_FILE and *_FILE variables,
+	// never from request input.
+	f, err := os.Open(path) // #nosec G304 G703
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +116,14 @@ func ValidateGateway() error {
 		value := os.Getenv(key)
 		if len(value) < 24 || strings.Contains(strings.ToLower(value), "local") || strings.Contains(strings.ToLower(value), "change-me") {
 			return fmt.Errorf("production %s must be a strong non-development credential", key)
+		}
+	}
+	// Break-glass local sign-in next to single sign-on is an internet-facing
+	// password: never a development default, never short.
+	if os.Getenv("KIONGA_LOCAL_LOGIN") == "true" {
+		password := strings.ToLower(os.Getenv("MLAIOPS_LOCAL_PASSWORD"))
+		if len(password) < 16 || strings.Contains(password, "local") || strings.Contains(password, "change-me") || strings.Contains(password, "password") {
+			return fmt.Errorf("production MLAIOPS_LOCAL_PASSWORD (break-glass sign-in) must be at least 16 characters and not a development default")
 		}
 	}
 	key, err := base64.StdEncoding.DecodeString(os.Getenv("KIONGA_CREDENTIAL_KEY"))

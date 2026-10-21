@@ -129,7 +129,7 @@ func New(data store.Repository, static fs.FS) http.Handler {
 		}
 		return []string{access.Role}, access.Services, access.ProjectIDs, access.Disabled, true
 	}
-	return logging(cors(auth.RBACWithResolver(mux, resolver)))
+	return logging(securityHeaders(cors(auth.RBACWithResolver(mux, resolver))))
 }
 
 // me reports the caller's identity and effective permissions so the console
@@ -723,7 +723,7 @@ func (s *Server) storageProxy(path string) http.HandlerFunc {
 		if r.URL.RawQuery != "" {
 			target += "?" + r.URL.RawQuery
 		}
-		request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target, nil)
+		request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target, nil) // #nosec G704 -- host is operator config (STORAGE_PROXY_URL, LANGFUSE_URL, SERVING_MANAGER_URL); paths are fixed or escaped
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "storage_unreachable", err.Error())
 			return
@@ -732,7 +732,7 @@ func (s *Server) storageProxy(path string) http.HandlerFunc {
 			request.Header.Set("Authorization", "Bearer "+token)
 		}
 		client := &http.Client{Timeout: 20 * time.Second}
-		response, err := client.Do(request)
+		response, err := client.Do(request) // #nosec G704 -- host is operator config (STORAGE_PROXY_URL, LANGFUSE_URL, SERVING_MANAGER_URL); paths are fixed or escaped
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "storage_unreachable", err.Error())
 			return
@@ -773,14 +773,14 @@ func (s *Server) prompts(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"configured": false, "items": []any{}})
 		return
 	}
-	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, strings.TrimRight(base, "/")+"/api/public/v2/prompts", nil)
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, strings.TrimRight(base, "/")+"/api/public/v2/prompts", nil) // #nosec G704 -- host is operator config (STORAGE_PROXY_URL, LANGFUSE_URL, SERVING_MANAGER_URL); paths are fixed or escaped
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "langfuse_unreachable", err.Error())
 		return
 	}
 	request.SetBasicAuth(public, secret)
 	client := &http.Client{Timeout: 10 * time.Second}
-	response, err := client.Do(request)
+	response, err := client.Do(request) // #nosec G704 -- host is operator config (STORAGE_PROXY_URL, LANGFUSE_URL, SERVING_MANAGER_URL); paths are fixed or escaped
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "langfuse_unreachable", err.Error())
 		return
@@ -1078,7 +1078,7 @@ func (s *Server) invokeFunction(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(result)
+	_, _ = w.Write(result) // #nosec G705 -- served as application/json with nosniff
 }
 
 func (s *Server) invokeFunctionAsync(w http.ResponseWriter, r *http.Request) {
@@ -1174,7 +1174,7 @@ func (s *Server) requestServing(r *http.Request, managerURL string, model api.Mo
 		ArtifactURI  string `json:"artifact_uri"`
 		ServingImage string `json:"serving_image,omitempty"`
 	}{Name: model.Name, ArtifactURI: model.ArtifactURI, ServingImage: model.ServingImage})
-	request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, strings.TrimRight(managerURL, "/")+"/deployments", bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, strings.TrimRight(managerURL, "/")+"/deployments", bytes.NewReader(body)) // #nosec G704 -- host is operator config (STORAGE_PROXY_URL, LANGFUSE_URL, SERVING_MANAGER_URL); paths are fixed or escaped
 	if err != nil {
 		return "", err
 	}
@@ -1183,7 +1183,7 @@ func (s *Server) requestServing(r *http.Request, managerURL string, model api.Mo
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 	client := &http.Client{Timeout: 90 * time.Second}
-	response, err := client.Do(request)
+	response, err := client.Do(request) // #nosec G704 -- host is operator config (STORAGE_PROXY_URL, LANGFUSE_URL, SERVING_MANAGER_URL); paths are fixed or escaped
 	if err != nil {
 		return "", err
 	}
@@ -1210,13 +1210,13 @@ func (s *Server) rollbackModel(w http.ResponseWriter, r *http.Request) {
 	if err == nil && os.Getenv("SERVING_MANAGER_URL") != "" {
 		// Best effort: remove the serving container for the rolled-back model.
 		managerURL := strings.TrimRight(os.Getenv("SERVING_MANAGER_URL"), "/")
-		request, buildErr := http.NewRequestWithContext(r.Context(), http.MethodDelete, managerURL+"/deployments/"+url.PathEscape(item.Name), nil)
+		request, buildErr := http.NewRequestWithContext(r.Context(), http.MethodDelete, managerURL+"/deployments/"+url.PathEscape(item.Name), nil) // #nosec G704 -- host is operator config (STORAGE_PROXY_URL, LANGFUSE_URL, SERVING_MANAGER_URL); paths are fixed or escaped
 		if buildErr == nil {
 			if token := os.Getenv("MLAIOPS_INTERNAL_TOKEN"); token != "" {
 				request.Header.Set("Authorization", "Bearer "+token)
 			}
 			client := &http.Client{Timeout: 30 * time.Second}
-			if response, doErr := client.Do(request); doErr == nil {
+			if response, doErr := client.Do(request); doErr == nil { // #nosec G704 -- host is operator config (STORAGE_PROXY_URL, LANGFUSE_URL, SERVING_MANAGER_URL); paths are fixed or escaped
 				_ = response.Body.Close()
 			} else {
 				log.Printf("serving rollback undeploy failed for %s: %v", item.Name, doErr)
@@ -1601,6 +1601,22 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, api.APIError{Error: code, Message: message})
+}
+
+// securityHeaders applies the browser hardening every response needs:
+// no MIME sniffing (function output and logs are served as JSON), no
+// cross-origin framing of the console, and no full URLs in Referer. Proxied
+// workspaces set their own frame-ancestors policy, so they are left alone.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header := w.Header()
+		header.Set("X-Content-Type-Options", "nosniff")
+		header.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		if !strings.HasPrefix(r.URL.Path, "/workspaces/") {
+			header.Set("X-Frame-Options", "SAMEORIGIN")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // cors reflects the configured origin. MLAIOPS_ALLOWED_ORIGIN pins the

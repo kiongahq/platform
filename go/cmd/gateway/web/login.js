@@ -4,7 +4,14 @@ const returnTo = (() => {
   return value && value.startsWith("/") && !value.startsWith("//") ? value : "/console.html";
 })();
 document.querySelector("#return-to").value = returnTo;
-document.querySelector("#login-error").hidden = query.get("error") !== "invalid";
+const loginErrors = {
+  invalid: "Those credentials were not accepted.",
+  throttled: "Too many failed attempts for this account. Wait a minute and try again.",
+};
+const loginError = document.querySelector("#login-error");
+const errorCode = query.get("error");
+loginError.hidden = !Object.hasOwn(loginErrors, errorCode ?? "");
+if (!loginError.hidden) loginError.textContent = loginErrors[errorCode];
 
 // Sign-in options come from the gateway: single sign-on providers (Dex
 // connectors such as LDAP, SAML, GitHub, Google) and whether local accounts

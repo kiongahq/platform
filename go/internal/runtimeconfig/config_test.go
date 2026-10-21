@@ -87,6 +87,33 @@ func TestProductionFailClosed(t *testing.T) {
 	}
 }
 
+func TestProductionBreakGlassPassword(t *testing.T) {
+	TestProductionFailClosed(t)
+	t.Setenv("KIONGA_LOCAL_LOGIN", "true")
+	for _, weak := range []string{"", "mlaiops-local", "short-secret", "my-Password-is-long-enough", "change-me-change-me-change-me"} {
+		t.Setenv("MLAIOPS_LOCAL_PASSWORD", weak)
+		if ValidateGateway() == nil {
+			t.Fatalf("weak break-glass password %q accepted", weak)
+		}
+	}
+	t.Setenv("MLAIOPS_LOCAL_PASSWORD", "vX9q-27fT-a8Lm-c3Rw")
+	if err := ValidateGateway(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLocalPasswordLoadsFromFile(t *testing.T) {
+	path := t.TempDir() + "/password"
+	if err := os.WriteFile(path, []byte("vX9q-27fT-a8Lm-c3Rw\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MLAIOPS_LOCAL_PASSWORD", "")
+	t.Setenv("MLAIOPS_LOCAL_PASSWORD_FILE", path)
+	if err := Load(); err != nil || os.Getenv("MLAIOPS_LOCAL_PASSWORD") != "vX9q-27fT-a8Lm-c3Rw" {
+		t.Fatalf("Load() = %v, password %q", err, os.Getenv("MLAIOPS_LOCAL_PASSWORD"))
+	}
+}
+
 func TestProductionWorkspaceDomains(t *testing.T) {
 	t.Setenv("KIONGA_ENVIRONMENT", "production")
 	for _, key := range []string{"OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUTH_URL", "OIDC_TOKEN_URL"} {

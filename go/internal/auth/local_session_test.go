@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLocalConsoleRequiresLogin(t *testing.T) {
@@ -166,5 +167,94 @@ func TestProvisionedLocalAccountsSignInAsNormalUsers(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("revoked account session still valid: %d", response.Code)
+	}
+}
+
+func postLogin(handler http.Handler, username, password string, header http.Header) *httptest.ResponseRecorder {
+	form := url.Values{"username": {username}, "password": {password}, "return_to": {"/console.html"}}
+	request := httptest.NewRequest(http.MethodPost, "/auth/local/login", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for key, values := range header {
+		request.Header[key] = values
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
+
+func TestLocalLoginThrottlesRepeatedFailuresPerAccount(t *testing.T) {
+	manager := NewLocalSessionManager("admin", "correct-password")
+	clock := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	manager.now = func() time.Time { return clock }
+	handler := manager.Handler(http.NotFoundHandler())
+
+	for i := 0; i < loginFreeFailures; i++ {
+		if got := postLogin(handler, "admin", "guess", nil); !strings.Contains(got.Header().Get("Location"), "error=invalid") {
+			t.Fatalf("attempt %d: %d %s", i, got.Code, got.Header().Get("Location"))
+		}
+	}
+	// Even the right password waits once the account is throttled, so a
+	// guesser cannot tell a hit from a throttle.
+	throttled := postLogin(handler, "admin", "correct-password", nil)
+	if !strings.Contains(throttled.Header().Get("Location"), "error=throttled") || throttled.Header().Get("Retry-After") == "" {
+		t.Fatalf("throttled response: %d %s retry=%q", throttled.Code, throttled.Header().Get("Location"), throttled.Header().Get("Retry-After"))
+	}
+	// Another account is unaffected.
+	if other := postLogin(handler, "someone-else", "guess", nil); !strings.Contains(other.Header().Get("Location"), "error=invalid") {
+		t.Fatalf("other account was throttled: %s", other.Header().Get("Location"))
+	}
+
+	clock = clock.Add(2 * time.Second)
+	if ok := postLogin(handler, "admin", "correct-password", nil); ok.Header().Get("Location") != "/console.html" {
+		t.Fatalf("login after the delay: %d %s", ok.Code, ok.Header().Get("Location"))
+	}
+	// Success clears the counter.
+	if got := postLogin(handler, "admin", "guess", nil); !strings.Contains(got.Header().Get("Location"), "error=invalid") {
+		t.Fatalf("counter not reset after success: %s", got.Header().Get("Location"))
+	}
+}
+
+func TestLocalLoginDelayIsCapped(t *testing.T) {
+	manager := NewLocalSessionManager("admin", "correct-password")
+	clock := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	manager.now = func() time.Time { return clock }
+	for i := 0; i < loginFreeFailures+40; i++ {
+		manager.recordFailure("admin")
+	}
+	if wait := manager.loginDelay("admin"); wait != loginMaxDelay {
+		t.Fatalf("delay = %s, want %s", wait, loginMaxDelay)
+	}
+	clock = clock.Add(loginFailureTTL + time.Second)
+	manager.recordFailure("admin")
+	if wait := manager.loginDelay("admin"); wait != 0 {
+		t.Fatalf("stale failures were not forgotten: %s", wait)
+	}
+}
+
+func TestLocalSessionCookieIsSecureBehindTLS(t *testing.T) {
+	manager := NewLocalSessionManager("admin", "correct-password")
+	handler := manager.Handler(http.NotFoundHandler())
+	for proto, want := range map[string]bool{"": false, "https": true} {
+		header := http.Header{}
+		if proto != "" {
+			header.Set("X-Forwarded-Proto", proto)
+		}
+		cookies := postLogin(handler, "admin", "correct-password", header).Result().Cookies()
+		if len(cookies) != 1 || cookies[0].Secure != want || !cookies[0].HttpOnly {
+			t.Fatalf("proto %q: cookies %+v, want Secure=%v", proto, cookies, want)
+		}
+	}
+}
+
+func TestExpiredLocalSessionsArePruned(t *testing.T) {
+	manager := NewLocalSessionManager("admin", "correct-password")
+	clock := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	manager.now = func() time.Time { return clock }
+	handler := manager.Handler(http.NotFoundHandler())
+	postLogin(handler, "admin", "correct-password", nil)
+	clock = clock.Add(9 * time.Hour)
+	postLogin(handler, "admin", "correct-password", nil)
+	if len(manager.sessions) != 1 {
+		t.Fatalf("sessions = %d, want only the fresh one", len(manager.sessions))
 	}
 }

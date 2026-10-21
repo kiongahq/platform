@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,16 +26,35 @@ type localSession struct {
 	expires time.Time
 }
 
+// Failed sign-ins are throttled per account, not per client address: behind
+// the TLS edge every request shares the proxy's address. After
+// loginFreeFailures misses, each further attempt waits a doubling delay capped
+// at loginMaxDelay, so guessing is slow while a locked-out user waits at most
+// a minute.
+const (
+	loginFreeFailures = 5
+	loginMaxDelay     = time.Minute
+	loginFailureTTL   = 15 * time.Minute
+)
+
+type loginFailures struct {
+	count int
+	last  time.Time
+}
+
 type LocalSessionManager struct {
 	username string
 	password string
 	accounts LocalAccounts
 	mu       sync.RWMutex
 	sessions map[string]localSession
+	failures map[string]loginFailures
+	now      func() time.Time
 }
 
 func NewLocalSessionManager(username, password string, accounts ...LocalAccounts) *LocalSessionManager {
-	manager := &LocalSessionManager{username: username, password: password, sessions: map[string]localSession{}}
+	manager := &LocalSessionManager{username: username, password: password, sessions: map[string]localSession{},
+		failures: map[string]loginFailures{}, now: time.Now}
 	if len(accounts) > 0 {
 		manager.accounts = accounts[0]
 	}
@@ -102,7 +122,19 @@ func (s *LocalSessionManager) verify(username, password string) bool {
 }
 
 func (s *LocalSessionManager) login(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil || !s.verify(r.FormValue("username"), r.FormValue("password")) {
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/login.html?error=invalid&return_to="+url.QueryEscape(safeReturnTo(r.FormValue("return_to"))), http.StatusFound)
+		return
+	}
+	username := r.FormValue("username")
+	if wait := s.loginDelay(username); wait > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Round(time.Second).Seconds())+1))
+		http.Redirect(w, r, "/login.html?error=throttled&return_to="+url.QueryEscape(safeReturnTo(r.FormValue("return_to"))), http.StatusSeeOther)
+		return
+	}
+	if !s.verify(username, r.FormValue("password")) {
+		s.recordFailure(username)
 		http.Redirect(w, r, "/login.html?error=invalid&return_to="+url.QueryEscape(safeReturnTo(r.FormValue("return_to"))), http.StatusFound)
 		return
 	}
@@ -111,15 +143,66 @@ func (s *LocalSessionManager) login(w http.ResponseWriter, r *http.Request) {
 		deny(w, http.StatusInternalServerError, "could not create session")
 		return
 	}
-	expires := time.Now().Add(8 * time.Hour)
+	now := s.now()
+	expires := now.Add(8 * time.Hour)
 	s.mu.Lock()
-	s.sessions[token] = localSession{subject: r.FormValue("username"), expires: expires}
+	delete(s.failures, username)
+	s.pruneLocked(now)
+	s.sessions[token] = localSession{subject: username, expires: expires}
 	s.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure follows requestIsHTTPS(r)
 		Name: localSessionCookie, Value: token, Path: "/", Expires: expires, MaxAge: int((8 * time.Hour).Seconds()),
-		HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		HttpOnly: true, Secure: requestIsHTTPS(r), SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, safeReturnTo(r.FormValue("return_to")), http.StatusFound)
+	http.Redirect(w, r, safeReturnTo(r.FormValue("return_to")), http.StatusFound) // #nosec G710 -- target is safeReturnTo-sanitized
+}
+
+// loginDelay is how long the account must wait before its next attempt.
+func (s *LocalSessionManager) loginDelay(username string) time.Duration {
+	s.mu.RLock()
+	failed := s.failures[username]
+	s.mu.RUnlock()
+	if failed.count < loginFreeFailures {
+		return 0
+	}
+	delay := loginMaxDelay
+	if shift := failed.count - loginFreeFailures; shift < 6 {
+		delay = min(time.Second<<shift, loginMaxDelay)
+	}
+	return failed.last.Add(delay).Sub(s.now())
+}
+
+func (s *LocalSessionManager) recordFailure(username string) {
+	now := s.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	failed := s.failures[username]
+	if now.Sub(failed.last) > loginFailureTTL {
+		failed.count = 0
+	}
+	s.failures[username] = loginFailures{count: failed.count + 1, last: now}
+	s.pruneLocked(now)
+}
+
+// pruneLocked drops expired sessions and stale failure counters so neither
+// map grows without bound. The caller holds s.mu.
+func (s *LocalSessionManager) pruneLocked(now time.Time) {
+	for token, session := range s.sessions {
+		if now.After(session.expires) {
+			delete(s.sessions, token)
+		}
+	}
+	for name, failed := range s.failures {
+		if now.Sub(failed.last) > loginFailureTTL {
+			delete(s.failures, name)
+		}
+	}
+}
+
+// requestIsHTTPS reports whether the browser reached the gateway over TLS,
+// directly or through the TLS edge.
+func requestIsHTTPS(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 func (s *LocalSessionManager) logout(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +217,7 @@ func (s *LocalSessionManager) endSession(w http.ResponseWriter, r *http.Request)
 		delete(s.sessions, cookie.Value)
 		s.mu.Unlock()
 	}
-	http.SetCookie(w, &http.Cookie{Name: localSessionCookie, Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(1, 0), HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: localSessionCookie, Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(1, 0), HttpOnly: true, Secure: requestIsHTTPS(r), SameSite: http.SameSiteLaxMode}) // #nosec G124 -- Secure follows requestIsHTTPS(r)
 }
 
 // authenticated returns the session subject. A provisioned account whose
