@@ -41,6 +41,9 @@ type WorkspaceReconciler struct {
 	// AllowedStorageClasses, when set, is the only set of classes tenant
 	// workspace claims may use (WORKSPACE_ALLOWED_STORAGE_CLASSES).
 	AllowedStorageClasses []string
+	// ImagePullSecrets name registry credentials in the workspace namespace
+	// for private workbench and IDE images (KIONGA_IMAGE_PULL_SECRETS).
+	ImagePullSecrets []corev1.LocalObjectReference
 }
 
 func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
@@ -128,6 +131,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{FSGroup: ptrInt64(1000), RunAsNonRoot: ptrBool(true), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
 		deployment.Spec.Template.Spec.Containers = containers
 		deployment.Spec.Template.Spec.Volumes = volumes
+		deployment.Spec.Template.Spec.ImagePullSecrets = r.ImagePullSecrets
 		return controllerutil.SetControllerReference(&workspace, deployment, r.Scheme())
 	})
 	if err != nil {
@@ -248,3 +252,16 @@ func (r *WorkspaceReconciler) SetupWithManager(manager ctrl.Manager) error {
 
 func ptrBool(value bool) *bool    { return &value }
 func ptrInt64(value int64) *int64 { return &value }
+
+// ParseImagePullSecrets reads a comma-separated list of Secret names
+// (KIONGA_IMAGE_PULL_SECRETS). Each must exist in the namespace where the
+// operator creates pods; the operator only references them.
+func ParseImagePullSecrets(raw string) []corev1.LocalObjectReference {
+	var refs []corev1.LocalObjectReference
+	for _, name := range strings.Split(raw, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			refs = append(refs, corev1.LocalObjectReference{Name: name})
+		}
+	}
+	return refs
+}

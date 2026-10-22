@@ -91,7 +91,7 @@ func ReconcileAgent(spec AgentSpec) (AgentPlan, error) {
 			Annotations: map[string]string{"mlaiops.io/inject-trace-proxy": "true"},
 			Containers: []Container{
 				{Name: "agent", Image: spec.Image, Port: 8080, Env: env},
-				{Name: "trace-proxy", Image: "ghcr.io/mlaiops/trace-proxy:latest", Port: 8081, Env: map[string]string{"MLAIOPS_AGENT_NAME": spec.Name}},
+				{Name: "trace-proxy", Image: "ghcr.io/kiongahq/trace-proxy:latest", Port: 8081, Env: map[string]string{"MLAIOPS_AGENT_NAME": spec.Name}},
 			},
 		},
 		Traffic: TrafficRoute{

@@ -50,7 +50,11 @@ func main() {
 		HealthProbeBindAddress: probeAddress, Metrics: metricsserver.Options{BindAddress: metricsAddress},
 	})
 	must(err)
-	must((&platformoperator.AgentReconciler{Client: manager.GetClient(), TraceProxyImage: env("TRACE_PROXY_IMAGE", "ghcr.io/mlaiops/trace-proxy:latest")}).SetupWithManager(manager))
+	// Private registries: Secret names in each workload namespace, referenced
+	// by every pod the operator creates.
+	pullSecrets := platformoperator.ParseImagePullSecrets(os.Getenv("KIONGA_IMAGE_PULL_SECRETS"))
+	must((&platformoperator.AgentReconciler{Client: manager.GetClient(), TraceProxyImage: env("TRACE_PROXY_IMAGE", "ghcr.io/kiongahq/trace-proxy:latest"),
+		ImagePullSecrets: pullSecrets}).SetupWithManager(manager))
 	must((&platformoperator.WorkspaceReconciler{
 		Client: manager.GetClient(), WorkbenchImage: env("WORKBENCH_IMAGE", "ghcr.io/kiongahq/jupyter:latest"),
 		IDEImage: env("IDE_IMAGE", "ghcr.io/kiongahq/ide:latest"), GatewayURL: env("MLAIOPS_URL", "http://mlaiops-gateway.mlaiops-system:8080"),
@@ -59,6 +63,7 @@ func main() {
 		LangfuseURL: env("WORKSPACE_LANGFUSE_URL", "http://langfuse.mlaiops-system:3000"), KafkaRESTURL: env("WORKSPACE_KAFKA_REST_URL", "http://kafka-rest.mlaiops-system:8082"),
 		StorageClass:          os.Getenv("WORKSPACE_STORAGE_CLASS"),
 		AllowedStorageClasses: platformoperator.ParseStorageClasses(os.Getenv("WORKSPACE_ALLOWED_STORAGE_CLASSES")),
+		ImagePullSecrets:      pullSecrets,
 	}).SetupWithManager(manager))
 	must((&platformoperator.PipelineReconciler{
 		Client: manager.GetClient(), KFP: integrations.NewKFP(os.Getenv("KFP_URL"), os.Getenv("KFP_TOKEN")),

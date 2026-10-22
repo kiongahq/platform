@@ -25,6 +25,9 @@ const agentFinalizer = "mlaiops.io/agent-cleanup"
 type AgentReconciler struct {
 	client.Client
 	TraceProxyImage string
+	// ImagePullSecrets name registry credentials in the agent namespace for
+	// private agent and trace-proxy images (KIONGA_IMAGE_PULL_SECRETS).
+	ImagePullSecrets []corev1.LocalObjectReference
 }
 
 func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
@@ -79,6 +82,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 		}
 		deployment.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"mlaiops.io/agent": agent.Name, "mlaiops.io/version": agent.Spec.Version}}
 		deployment.Spec.Template.ObjectMeta.Labels = deployment.Spec.Selector.MatchLabels
+		deployment.Spec.Template.Spec.ImagePullSecrets = r.ImagePullSecrets
 		deployment.Spec.Template.Spec.Containers = []corev1.Container{
 			{Name: "agent", Image: agent.Spec.Image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}, Env: append(envVars(plan.Workload.Containers[0].Env), corev1.EnvVar{Name: "MLAIOPS_AGENT_ID", Value: resourceID}, corev1.EnvVar{Name: "MLAIOPS_RUNTIME_PORT", Value: "8080"}), Resources: resources, ReadinessProbe: httpProbe("/healthz", "http", 2), LivenessProbe: httpProbe("/healthz", "http", 10), SecurityContext: hardenedSecurityContext()},
 			{Name: "trace-proxy", Image: traceProxyImage, Ports: []corev1.ContainerPort{{Name: "proxy", ContainerPort: 8081}}, Env: envVars(plan.Workload.Containers[1].Env), Resources: traceProxyResources(), ReadinessProbe: httpProbe("/healthz", "proxy", 2), LivenessProbe: httpProbe("/healthz", "proxy", 10), SecurityContext: hardenedSecurityContext()},
