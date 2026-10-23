@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/kiongahq/platform/internal/feature"
@@ -149,7 +151,9 @@ func (g *gateway) getOnlineFeatures(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *gateway) put(w http.ResponseWriter, r *http.Request) {
-	if g.token != "" && r.Header.Get("Authorization") != "Bearer "+g.token {
+	// Writes fail closed: without MLAIOPS_INTERNAL_TOKEN nobody may write.
+	bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if g.token == "" || !ok || subtle.ConstantTimeCompare([]byte(bearer), []byte(g.token)) != 1 {
 		g.metrics.writes.WithLabelValues(g.mode, "unauthorized").Inc()
 		fail(w, http.StatusUnauthorized, errText("unauthorized"))
 		return

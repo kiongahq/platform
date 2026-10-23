@@ -1,11 +1,13 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"github.com/kiongahq/platform/internal/runtimeconfig"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/kiongahq/platform/internal/storage"
@@ -58,7 +60,7 @@ func main() {
 		write(w, http.StatusOK, preview)
 	})
 	mux.HandleFunc("POST /presign", func(w http.ResponseWriter, r *http.Request) {
-		if token := os.Getenv("MLAIOPS_INTERNAL_TOKEN"); token != "" && r.Header.Get("Authorization") != "Bearer "+token {
+		if !authorized(r) {
 			write(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
@@ -81,9 +83,12 @@ func main() {
 	log.Fatal(server.ListenAndServe())
 }
 
+// authorized fails closed: the proxy holds the object-store credentials, so
+// without MLAIOPS_INTERNAL_TOKEN it refuses every call instead of serving all.
 func authorized(r *http.Request) bool {
 	token := os.Getenv("MLAIOPS_INTERNAL_TOKEN")
-	return token == "" || r.Header.Get("Authorization") == "Bearer "+token
+	bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return token != "" && ok && subtle.ConstantTimeCompare([]byte(bearer), []byte(token)) == 1
 }
 
 func write(w http.ResponseWriter, status int, value any) {

@@ -87,9 +87,20 @@ func TestHealthReportsOnlineStoreFailure(t *testing.T) {
 }
 
 func TestFeastModeRefusesWrites(t *testing.T) {
-	g := &gateway{mode: "feast", metrics: newMetrics(), lookup: func(feature.Request) (feature.Response, error) { return feature.Response{}, nil }}
-	response := call(t, g.handler(), http.MethodPut, "/internal/v1/features/a/b=c", `{}`, "")
+	g := &gateway{mode: "feast", token: "t0ken", metrics: newMetrics(), lookup: func(feature.Request) (feature.Response, error) { return feature.Response{}, nil }}
+	response := call(t, g.handler(), http.MethodPut, "/internal/v1/features/a/b=c", `{}`, "Bearer t0ken")
 	if response.Code != http.StatusNotImplemented {
 		t.Fatalf("feast writes: %d", response.Code)
+	}
+}
+
+// Without MLAIOPS_INTERNAL_TOKEN the gateway must refuse writes, not accept
+// them from anyone who can reach it.
+func TestWritesFailClosedWithoutToken(t *testing.T) {
+	handler := memoryGateway("").handler()
+	for _, auth := range []string{"", "Bearer ", "Bearer anything"} {
+		if response := call(t, handler, http.MethodPut, "/internal/v1/features/a/b=c", `{}`, auth); response.Code != http.StatusUnauthorized {
+			t.Fatalf("auth %q: write accepted with no token configured: %d", auth, response.Code)
+		}
 	}
 }
