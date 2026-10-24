@@ -69,13 +69,13 @@ async function loadStorage() {
       const data = await api("/api/v1/storage/buckets");
       title.textContent = "Buckets";
       up.hidden = true;
-      browser.innerHTML = (data.buckets || []).map(bucket => `<button type="button" class="storage-row" data-bucket="${escapeHTML(bucket.name)}"><span aria-hidden="true">🪣</span><b>${escapeHTML(bucket.name)}</b></button>`).join("") || emptyState("No buckets found", "Buckets you are granted appear here.");
+      browser.innerHTML = (data.buckets || []).map(bucket => `<button type="button" class="storage-row" data-bucket="${escapeHTML(bucket.name)}"><span aria-hidden="true"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#bucket"></use></svg></span><b>${escapeHTML(bucket.name)}</b></button>`).join("") || emptyState("No buckets found", "Buckets you are granted appear here.");
     } else {
       const data = await api(`/api/v1/storage/objects?bucket=${encodeURIComponent(storageState.bucket)}&prefix=${encodeURIComponent(storageState.prefix)}`);
       title.textContent = `${storageState.bucket}/${storageState.prefix}`;
       up.hidden = false;
-      const prefixes = (data.prefixes || []).map(prefix => `<button type="button" class="storage-row" data-prefix="${escapeHTML(prefix)}"><span aria-hidden="true">📁</span><b>${escapeHTML(prefix.slice(storageState.prefix.length))}</b></button>`).join("");
-      const objects = (data.objects || []).map(object => `<button type="button" class="storage-row" data-object="${escapeHTML(object.key)}"><span aria-hidden="true">📄</span><b>${escapeHTML(object.key.slice(storageState.prefix.length))}</b><small>${bytes(object.size)}</small></button>`).join("");
+      const prefixes = (data.prefixes || []).map(prefix => `<button type="button" class="storage-row" data-prefix="${escapeHTML(prefix)}"><span aria-hidden="true"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#folder"></use></svg></span><b>${escapeHTML(prefix.slice(storageState.prefix.length))}</b></button>`).join("");
+      const objects = (data.objects || []).map(object => `<button type="button" class="storage-row" data-object="${escapeHTML(object.key)}"><span aria-hidden="true"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#file"></use></svg></span><b>${escapeHTML(object.key.slice(storageState.prefix.length))}</b><small>${bytes(object.size)}</small></button>`).join("");
       browser.innerHTML = prefixes + objects || emptyState("This prefix is empty");
     }
   } catch (error) {

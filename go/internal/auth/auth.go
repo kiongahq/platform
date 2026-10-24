@@ -150,7 +150,7 @@ func publicPath(method, path string) bool {
 		return true
 	}
 	switch path {
-	case "/", "/index.html", "/logo.svg", "/favicon.svg", "/landing.css", "/landing.js", "/api/v1/health", "/api/v1/ready",
+	case "/", "/index.html", "/logo.svg", "/favicon.svg", "/icons.svg", "/landing.css", "/landing.js", "/api/v1/health", "/api/v1/ready",
 		"/api/openapi.json", "/api-docs.html", "/api-docs.css", "/api-docs.js",
 		"/blogs.html", "/blog.html", "/blog.css", "/blog.js":
 		return true

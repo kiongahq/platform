@@ -289,7 +289,7 @@ async function openDefinitionDetail(id, tab = "graph") {
   }
   container.innerHTML = `<p class="eyebrow">PIPELINE FLOW</p><h2 id="definition-detail-title">${escapeHTML(definition.name)} <span class="tag">v${escapeHTML(definition.version)} · r${definition.revision || 0}</span></h2>
     ${definition.description ? `<p>${escapeHTML(definition.description)}</p>` : ""}
-    <div class="button-row start">${writable ? `<button type="button" class="primary" data-run-definition="${escapeHTML(definition.id)}" data-project-id="${escapeHTML(definition.project_id)}">▶ Run</button><button type="button" data-edit-definition="${escapeHTML(definition.id)}">Edit</button>` : ""}</div>
+    <div class="button-row start">${writable ? `<button type="button" class="primary" data-run-definition="${escapeHTML(definition.id)}" data-project-id="${escapeHTML(definition.project_id)}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#play"></use></svg> Run</button><button type="button" data-edit-definition="${escapeHTML(definition.id)}">Edit</button>` : ""}</div>
     ${metaList([["Flow ID", copyable(definition.id)], ["Project", escapeHTML(projectName(definition.project_id))], ["Execution", escapeHTML(definition.execution_mode === "functions" ? "Functions · OpenFaaS" : "Containers · pipeline runner")], ["Nodes", String(definition.jobs.length)], ["Owner", escapeHTML(definition.owner_subject || "—")], ["Updated", timeTag(definition.updated_at)]])}
     <h3>Schedule</h3>${scheduleBlock}
     <div class="tabs" role="tablist">${tabs.map(([key, label]) => `<button type="button" role="tab" aria-selected="${key === tab}" data-definition-tab="${key}">${escapeHTML(label)}</button>`).join("")}</div>

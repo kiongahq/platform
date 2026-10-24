@@ -17,7 +17,7 @@ function definitionCard(definition) {
   const jobs = definition.jobs || definition.nodes || [];
   return `<article class="panel pipeline-definition-card interactive-card" data-definition-detail="${escapeHTML(definition.id)}">
     <div><span class="kind">${escapeHTML(definition.execution_mode)} · v${escapeHTML(definition.version)}</span><h3><button type="button" class="card-title-button" data-definition-detail="${escapeHTML(definition.id)}">${escapeHTML(definition.name)}</button></h3><p>${plural(jobs.length, "job")} · ${escapeHTML(projectName(definition.project_id))}</p></div>
-    ${can("pipelines_write") ? `<button type="button" class="btn-sm" data-run-definition="${escapeHTML(definition.id)}" data-project-id="${escapeHTML(definition.project_id)}">▶ Run</button>` : ""}
+    ${can("pipelines_write") ? `<button type="button" class="btn-sm" data-run-definition="${escapeHTML(definition.id)}" data-project-id="${escapeHTML(definition.project_id)}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#play"></use></svg> Run</button>` : ""}
     <div class="schedule-line">${scheduleSummary(definition)}</div>
     <div class="definition-graph">${pipelineGraph(jobs, {compact: true, ariaLabel: `${definition.name} dependency graph`})}</div>
   </article>`;
@@ -41,7 +41,7 @@ async function loadRuns() {
   pipelineDefinitionCache = scoped(definitions.items || []);
   document.querySelector("#pipeline-definition-grid").innerHTML = pipelineDefinitionCache.length
     ? pipelineDefinitionCache.map(definitionCard).join("")
-    : emptyState("No reusable flows yet", "A flow is a DAG of container jobs or deployed functions. Define one, then run it on demand or on a schedule.", can("pipelines_write") ? `<button class="primary" type="button" data-open-define-flow>＋ Define flow</button>` : "");
+    : emptyState("No reusable flows yet", "A flow is a DAG of container jobs or deployed functions. Define one, then run it on demand or on a schedule.", can("pipelines_write") ? `<button class="primary" type="button" data-open-define-flow><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg> Define flow</button>` : "");
   document.querySelector("#submit-definition").innerHTML = `<option value="">Built-in training pipeline</option>${pipelineDefinitionCache.map(definition => `<option value="${escapeHTML(definition.id)}" data-project="${escapeHTML(definition.project_id)}">${escapeHTML(definition.name)} · v${escapeHTML(definition.version)} · ${escapeHTML(definition.execution_mode)}</option>`).join("")}`;
   document.querySelector("#run-count").textContent = plural(runCache.length, "run");
   document.querySelector("#run-table").innerHTML = runCache.length

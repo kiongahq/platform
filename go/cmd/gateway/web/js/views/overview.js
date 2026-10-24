@@ -7,7 +7,7 @@ async function loadDashboard() {
   document.querySelector("#progress-ring").style.background = `conic-gradient(var(--accent) ${Number(data.onboarding_percent) || 0}%, var(--neutral-soft) 0)`;
   document.querySelector("#progress-ring strong").textContent = `${data.onboarding_percent}%`;
   document.querySelector("#recent-runs").innerHTML = data.recent_runs.length
-    ? data.recent_runs.map(run => `<div class="run-row"><span class="run-icon" aria-hidden="true">↯</span><div><b title="${escapeHTML(run.name)}">${escapeHTML(run.name)}</b><small>${timeTag(run.created_at)}</small></div>${status(run.status)}</div>`).join("")
+    ? data.recent_runs.map(run => `<div class="run-row"><span class="run-icon" aria-hidden="true"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#pipelines"></use></svg></span><div><b title="${escapeHTML(run.name)}">${escapeHTML(run.name)}</b><small>${timeTag(run.created_at)}</small></div>${status(run.status)}</div>`).join("")
     : emptyState("No runs yet", "Define a pipeline flow, then run it from Pipelines.");
 }
 

@@ -4,7 +4,7 @@
  * enforced, not decorative. */
 const runConfig = {definition: null, rerunFrom: "", checkedKey: "", checking: 0};
 
-const lockedNote = reason => `<span class="lock" title="${escapeHTML(reason)}">🔒 ${escapeHTML(reason)}</span>`;
+const lockedNote = reason => `<span class="lock" title="${escapeHTML(reason)}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#lock"></use></svg> ${escapeHTML(reason)}</span>`;
 
 function renderRunParameters(definition) {
   const container = document.querySelector("#submit-parameters");

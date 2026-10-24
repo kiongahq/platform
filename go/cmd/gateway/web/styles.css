@@ -392,6 +392,9 @@ nav { display: grid; gap: 2px; }
   text-align: left;
 }
 .nav-icon { display: block; width: 18px; height: 18px; flex-shrink: 0; }
+.ui-icon { display: inline-block; width: 1.15em; height: 1.15em; flex: 0 0 auto; vertical-align: -0.17em; }
+.settings-icon .ui-icon, .run-icon .ui-icon, .token-mark .ui-icon { width: 19px; height: 19px; }
+.storage-row .ui-icon { width: 18px; height: 18px; color: var(--accent); }
 .nav-item > span:first-child { width: 18px; color: var(--text-secondary); text-align: center; font-size: 15px; }
 .nav-item:hover { background: var(--neutral-soft); }
 .nav-item.active { color: #fff; background: var(--accent); }

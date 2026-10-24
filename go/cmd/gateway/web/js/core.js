@@ -25,6 +25,8 @@ const api = async (path, options = {}) => {
 };
 
 const escapeHTML = value => String(value ?? "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+// Names are kept local to the application; never interpolate user data into an icon URL.
+const icon = name => `<svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#${name}"></use></svg>`;
 const relativeFormat = new Intl.RelativeTimeFormat("en", {numeric: "auto"});
 function when(value) {
   if (!value) return "—";

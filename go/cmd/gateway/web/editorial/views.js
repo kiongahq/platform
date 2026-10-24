@@ -35,7 +35,7 @@
     const data = await request(`/api/v1/editorial/posts?${params}`);
     let items = data.items;
     const chips = route === "posts" ? `<div class="ed-chips" role="group" aria-label="Filter by status">${["all", "draft", "in_review", "scheduled", "published", "archived"].map(value => `<button type="button" class="${value === "all" ? "active" : ""}" data-chip="${value}">${esc(value === "all" ? "All" : EditorialAPI.STATUS_LABELS[value])}</button>`).join("")}</div>` : "";
-    root.innerHTML = heading(titles[route][0], titles[route][1], `<a class="button-link primary" href="#/new" id="ed-new-post">＋ New post</a>`) + chips + `<div id="ed-post-rows">${postRows(items, route === "reviews" ? "Nothing is waiting for review." : "No posts yet.")}</div>`;
+    root.innerHTML = heading(titles[route][0], titles[route][1], `<a class="button-link primary" href="#/new" id="ed-new-post"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg> New post</a>`) + chips + `<div id="ed-post-rows">${postRows(items, route === "reviews" ? "Nothing is waiting for review." : "No posts yet.")}</div>`;
     root.querySelectorAll("[data-chip]").forEach(chip => chip.addEventListener("click", () => {
       root.querySelectorAll("[data-chip]").forEach(other => other.classList.toggle("active", other === chip));
       const value = chip.dataset.chip;

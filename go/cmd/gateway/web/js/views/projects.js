@@ -12,8 +12,8 @@ const projectHandoffs = [
 
 function projectCard(project) {
   const repository = project.repository
-    ? `<span class="repository-badge" title="${escapeHTML(project.repository.url)}"><span aria-hidden="true">⌘</span><b>${escapeHTML(project.repository.provider)}</b><small>${escapeHTML(project.repository.default_branch)}</small></span>`
-    : `<span class="repository-badge unbound"><span aria-hidden="true">＋</span><b>No Git repository</b></span>`;
+    ? `<span class="repository-badge" title="${escapeHTML(project.repository.url)}"><span aria-hidden="true"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#repository"></use></svg></span><b>${escapeHTML(project.repository.provider)}</b><small>${escapeHTML(project.repository.default_branch)}</small></span>`
+    : `<span class="repository-badge unbound"><span aria-hidden="true"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg></span><b>No Git repository</b></span>`;
   return `<article class="card interactive-card" role="button" tabindex="0" data-project-detail="${escapeHTML(project.id)}" aria-label="Open project ${escapeHTML(project.name)}">
     <span class="kind">${escapeHTML(project.template)}${project.template_version ? ` · v${escapeHTML(project.template_version)}` : ""}</span>
     <h3>${escapeHTML(project.name)}</h3>
@@ -29,7 +29,7 @@ async function loadProjects() {
   projectCache = projects;
   document.querySelector("#project-grid").innerHTML = projects.length
     ? projects.map(projectCard).join("")
-    : emptyState(selectedProject ? "This project is not visible to you" : "No projects yet", selectedProject ? "Choose All assigned projects, or ask an administrator to assign it." : "Create a project from a template to get a scaffold, Git binding and workspace folder.", can("projects_write") && !selectedProject ? `<button class="primary" type="button" data-open-new-project>＋ New project</button>` : "");
+    : emptyState(selectedProject ? "This project is not visible to you" : "No projects yet", selectedProject ? "Choose All assigned projects, or ask an administrator to assign it." : "Create a project from a template to get a scaffold, Git binding and workspace folder.", can("projects_write") && !selectedProject ? `<button class="primary" type="button" data-open-new-project><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg> New project</button>` : "");
   if (!selectedResource) showProjectList();
   await loadProjectOptions();
   return projects;
