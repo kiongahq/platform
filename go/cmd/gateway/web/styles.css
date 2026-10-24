@@ -315,8 +315,8 @@ button[data-state="error"] { border-color: var(--danger); color: var(--danger); 
   flex: 0 0 auto;
   border-radius: var(--radius-md);
   color: #fff;
-  background: linear-gradient(145deg, #4e9cff, #0065d6);
-  box-shadow: inset 0 1px rgba(255, 255, 255, .4), 0 3px 8px rgba(0, 91, 200, .25);
+  background: #0B4F5C;
+  box-shadow: none;
   font-size: 14px;
   font-weight: 700;
 }
@@ -391,6 +391,7 @@ nav { display: grid; gap: 2px; }
   font-weight: 500;
   text-align: left;
 }
+.nav-icon { display: block; width: 18px; height: 18px; flex-shrink: 0; }
 .nav-item > span:first-child { width: 18px; color: var(--text-secondary); text-align: center; font-size: 15px; }
 .nav-item:hover { background: var(--neutral-soft); }
 .nav-item.active { color: #fff; background: var(--accent); }

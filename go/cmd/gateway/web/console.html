@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>Kionga Console</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="app-bar">
     <button class="icon-button quiet" id="sidebar-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true" aria-controls="sidebar"><span aria-hidden="true">☰</span></button>
-    <a class="app-brand" href="/console.html" data-view-target="overview" aria-label="Kionga overview"><span class="brand-mark" aria-hidden="true">K</span><b>Kionga</b></a>
+    <a class="app-brand" href="/console.html" data-view-target="overview" aria-label="Kionga overview"><img class="brand-mark" src="/logo.svg" alt="" width="30" height="30"><b>Kionga</b></a>
     <span class="app-spacer"></span>
     <span class="menu-status" id="live-indicator" role="status" data-state="off" title="Live updates off"><span class="label">Live updates off</span></span>
     <span class="sr-only" id="refresh-status" role="status" aria-live="polite"></span>
@@ -23,25 +24,25 @@
     <aside id="sidebar">
       <nav aria-label="Main navigation">
         <p class="nav-group-label">Build</p>
-        <button class="nav-item" type="button" data-view="overview"><span aria-hidden="true">⌂</span>Overview</button>
-        <button class="nav-item" type="button" data-view="projects"><span aria-hidden="true">◇</span>Projects</button>
-        <button class="nav-item" type="button" data-view="pipelines"><span aria-hidden="true">↯</span>Pipelines</button>
+        <button class="nav-item" type="button" data-view="overview"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>Overview</button>
+        <button class="nav-item" type="button" data-view="projects"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></span>Projects</button>
+        <button class="nav-item" type="button" data-view="pipelines"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2" y="3" width="6" height="6" rx="1"/><rect x="16" y="3" width="6" height="6" rx="1"/><rect x="16" y="15" width="6" height="6" rx="1"/><path d="M8 6h8M11 6v12h5"/></svg></span>Pipelines</button>
         <button class="nav-item" type="button" data-view="functions"><span aria-hidden="true">ƒ</span>Functions</button>
         <p class="nav-group-label">Models &amp; data</p>
-        <button class="nav-item" type="button" data-view="models"><span aria-hidden="true">◉</span>Models</button>
-        <button class="nav-item" type="button" data-view="agents"><span aria-hidden="true">✦</span>Agents</button>
-        <button class="nav-item" type="button" data-view="features"><span aria-hidden="true">▤</span>Features</button>
-        <button class="nav-item" type="button" data-view="storage"><span aria-hidden="true">▣</span>Storage</button>
-        <button class="nav-item" type="button" data-view="realtime"><span aria-hidden="true">≈</span>Real-time</button>
-        <button class="nav-item" type="button" data-view="catalog"><span aria-hidden="true">▦</span>Catalog</button>
+        <button class="nav-item" type="button" data-view="models"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 3 9 5v8l-9 5-9-5V8Zm0 9 9-4M12 12 3 8m9 4v9M7.5 5.5l9 5"/></svg></span>Models</button>
+        <button class="nav-item" type="button" data-view="agents"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="7" width="18" height="14" rx="3"/><path d="M12 3v4M8 16h8M1 12h2m18 0h2"/><circle cx="8" cy="12" r="1"/><circle cx="16" cy="12" r="1"/></svg></span>Agents</button>
+        <button class="nav-item" type="button" data-view="features"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 3v6m0 4v8M12 3v10m0 4v4M20 3v2m0 4v12"/><path d="M1 9h6v4H1zM9 13h6v4H9zM17 5h6v4h-6z"/></svg></span>Features</button>
+        <button class="nav-item" type="button" data-view="storage"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 4 18 4 18 0V5M3 12c0 4 18 4 18 0"/></svg></span>Storage</button>
+        <button class="nav-item" type="button" data-view="realtime"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12h4l3-9 6 18 3-9h4"/></svg></span>Real-time</button>
+        <button class="nav-item" type="button" data-view="catalog"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5v16M12 5C9 3 5 3 2 4v15c3-1 7-1 10 2 3-3 7-3 10-2V4c-3-1-7-1-10 1Z"/></svg></span>Catalog</button>
         <p class="nav-group-label">Operate</p>
-        <button class="nav-item" type="button" data-view="logs"><span aria-hidden="true">☰</span>Logs</button>
-        <button class="nav-item" type="button" data-view="platform"><span aria-hidden="true">◎</span>Platform</button>
-        <button class="nav-item" type="button" data-view="access" data-admin-only hidden><span aria-hidden="true">◈</span>Users &amp; access</button>
+        <button class="nav-item" type="button" data-view="logs"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Zm0 0v6h6M8 12h8M8 16h8"/></svg></span>Logs</button>
+        <button class="nav-item" type="button" data-view="platform"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5"/></svg></span>Platform</button>
+        <button class="nav-item" type="button" data-view="access" data-admin-only hidden><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="9" cy="7" r="4"/><path d="M2 21v-3a6 6 0 0 1 12 0v3M16 3a4 4 0 0 1 0 8m2 4a5 5 0 0 1 4 5v1"/></svg></span>Users &amp; access</button>
         <p class="nav-group-label">Account</p>
-        <button class="nav-item" type="button" data-view="profile"><span aria-hidden="true">♙</span>My access</button>
-        <button class="nav-item" type="button" data-view="settings"><span aria-hidden="true">⚙</span>Settings</button>
-        <button class="nav-item" type="button" data-view="blogs"><span aria-hidden="true">✎</span>Engineering blog</button>
+        <button class="nav-item" type="button" data-view="profile"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg></span>My access</button>
+        <button class="nav-item" type="button" data-view="settings"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="m9 3 1-1h4l1 3 3 1 3-1 2 4-2 3 1 3-2 4-3-1-3 1-1 3h-4l-1-3-3-1-3 1-2-4 2-3-1-3 2-4 3 1 3-1Z"/></svg></span>Settings</button>
+        <button class="nav-item" type="button" data-view="blogs"><span aria-hidden="true"><svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7M16 3l5 5M10 14l-1 5 5-1L22 10a2 2 0 0 0 0-3l-2-2a2 2 0 0 0-3 0Z"/></svg></span>Engineering blog</button>
       </nav>
       <div class="sidebar-footer">
         <div class="cluster user-chip"><i id="user-dot" aria-hidden="true"></i><span><b id="user-name">…</b><small id="user-role">Resolving identity</small></span></div>

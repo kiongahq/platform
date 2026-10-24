@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Kionga">
+  <rect width="48" height="48" rx="11" fill="#0B4F5C"/>
+  <g fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round">
+    <path d="M15 9v30"/>
+    <path d="M15 25 31 11"/>
+    <path d="M21 20 33 37"/>
+  </g>
+  <circle cx="33" cy="10" r="4.5" fill="#F2994A"/>
+  <circle cx="34" cy="38" r="4.5" fill="#fff"/>
+</svg>

@@ -3,7 +3,7 @@
 body { margin:0; min-height:100vh; color:var(--text); background:#f7f9fc; font:14px Inter,ui-sans-serif,system-ui,-apple-system,sans-serif; }
 header { position:sticky; z-index:10; top:0; height:64px; display:flex; align-items:center; justify-content:space-between; padding:0 max(24px,calc((100vw - 1120px)/2)); border-bottom:1px solid var(--line); background:rgba(255,255,255,.94); backdrop-filter:blur(16px); }
 .brand { display:flex; align-items:center; gap:9px; color:var(--text); text-decoration:none; }
-.brand span { width:30px; height:30px; display:grid; place-items:center; border-radius:8px; color:#fff; background:var(--blue); font-weight:800; }
+.brand img { width:30px; height:30px; display:grid; place-items:center; border-radius:8px; color:#fff; background: #0B4F5C; font-weight:800; }
 .brand b { font-size:16px; }
 nav { display:flex; gap:18px; }
 nav a { color:var(--muted); text-decoration:none; font-size:13px; font-weight:600; }
