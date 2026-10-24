@@ -149,6 +149,7 @@ async function switchEditorMode(mode) {
   const result = await validateDefinition().catch(() => null);
   if (mode === "yaml") {
     if (result?.yaml) document.querySelector("#definition-yaml").value = result.yaml;
+    KiongaCodeFormat.sync(document.querySelector("#definition-yaml"));
   } else {
     if (!result || (result.issues || []).some(issue => issue.path === "" || issue.path === "apiVersion" || issue.path === "kind")) {
       toast("Fix the YAML syntax before switching to the form.", "error");
@@ -259,7 +260,14 @@ function lineDiff(before, after) {
   while (j < b.length) out.push({type: "add", text: b[j++]});
   return out;
 }
-const renderDiff = parts => `<div class="diff" role="region" aria-label="Line differences">${parts.map(part => `<div class="${part.type === "same" ? "" : part.type}">${part.type === "add" ? "+ " : part.type === "del" ? "- " : "  "}${escapeHTML(part.text)}</div>`).join("")}</div>`;
+function renderDiff(parts) {
+  let before = 0, after = 0;
+  return `<div class="diff" role="region" aria-label="Line differences">${parts.map(part => {
+    const oldLine = part.type === "add" ? "" : ++before;
+    const newLine = part.type === "del" ? "" : ++after;
+    return `<div class="diff-line ${part.type}"><span class="diff-number" aria-label="old line ${oldLine || "none"}">${oldLine}</span><span class="diff-number" aria-label="new line ${newLine || "none"}">${newLine}</span><span class="diff-marker" aria-hidden="true">${part.type === "add" ? "+" : part.type === "del" ? "−" : " "}</span><code>${escapeHTML(part.text) || "&nbsp;"}</code></div>`;
+  }).join("")}</div>`;
+}
 
 const definitionDetail = {id: "", tab: "graph"};
 async function openDefinitionDetail(id, tab = "graph") {
@@ -279,25 +287,25 @@ async function openDefinitionDetail(id, tab = "graph") {
   const tabs = [["graph", "Graph"], ["revisions", `Revisions (${revisions.items.length})`], ["yaml", "YAML"]];
   let body = "";
   if (tab === "graph") {
-    body = `${pipelineGraph(definition.jobs, {ariaLabel: `${definition.name} dependency graph`})}<p class="field-help" id="definition-node-detail">Select a node to see its configuration.</p>`;
+    body = `<section class="detail-section" aria-label="Dependency graph">${pipelineGraph(definition.jobs, {ariaLabel: `${definition.name} dependency graph`})}<div class="node-detail-placeholder" id="definition-node-detail">Select a node to see its configuration.</div></section>`;
   } else if (tab === "revisions") {
-    body = revisions.items.length ? revisions.items.map(revision => `<div class="revision-row"><span class="tag">r${revision.revision}</span><div><b>${escapeHTML(revision.message || (revision.revision === 1 ? "Created" : "Updated"))}</b><br><small>${escapeHTML(revision.author)} · ${timeTag(revision.created_at)} · <code title="${escapeHTML(revision.sha256)}">${escapeHTML(revision.sha256.slice(0, 12))}</code></small></div><span class="button-row">${revision.revision !== definition.revision ? `<button type="button" class="btn-sm" data-revision-diff="${revision.revision}">Compare with current</button>${writable ? `<button type="button" class="btn-sm" data-revision-rollback="${revision.revision}">Roll back</button>` : ""}` : `<span class="tag">Current</span>`}</span></div>`).join("") + `<div id="revision-diff"></div>`
+    body = revisions.items.length ? `<div class="revision-list" aria-label="Flow revisions">${revisions.items.map(revision => `<article class="revision-row"><span class="revision-number">r${revision.revision}</span><div class="revision-copy"><h3>${escapeHTML(revision.message || (revision.revision === 1 ? "Created" : "Updated"))}</h3><p>${escapeHTML(revision.author)} <span aria-hidden="true">·</span> ${timeTag(revision.created_at)}</p><small>SHA-256 <code title="${escapeHTML(revision.sha256)}">${escapeHTML(revision.sha256.slice(0, 12))}</code></small></div><div class="button-row">${revision.revision !== definition.revision ? `<button type="button" class="btn-sm" data-revision-diff="${revision.revision}">Compare with current</button>${writable ? `<button type="button" class="btn-sm" data-revision-rollback="${revision.revision}">Roll back</button>` : ""}` : `<span class="tag">Current revision</span>`}</div></article>`).join("")}</div><div id="revision-diff"></div>`
       : emptyState("No revision history", "This flow was saved before revisions existed. Its next save creates revision 1.");
   } else {
     const yaml = await api(`/api/v1/pipelines/definitions/${encodeURIComponent(id)}/yaml`);
-    body = `<div class="button-row start">${copyButton(yaml.yaml, "Copy YAML")}<a class="button-link btn-sm" download="${escapeHTML(definition.name)}.kionga.yaml" href="data:application/yaml;charset=utf-8,${encodeURIComponent(yaml.yaml)}">Download</a><span class="field-help">Revision ${yaml.revision} · sha256 <code>${escapeHTML(yaml.sha256.slice(0, 16))}…</code></span></div><pre class="yaml-view" tabindex="0">${escapeHTML(yaml.yaml)}</pre><p class="field-help">Commit this file to the project repository (for example <code>pipelines/${escapeHTML(definition.name)}.kionga.yaml</code>) to review changes in Git.</p>`;
+    body = `<section class="detail-section"><div class="code-toolbar"><div><h3>Definition YAML</h3><p>Revision ${yaml.revision} · SHA-256 <code>${escapeHTML(yaml.sha256.slice(0, 16))}…</code></p></div><div class="button-row">${copyButton(yaml.yaml, "Copy YAML")}<a class="button-link btn-sm" download="${escapeHTML(definition.name)}.kionga.yaml" href="data:application/yaml;charset=utf-8,${encodeURIComponent(yaml.yaml)}">Download</a></div></div>${KiongaCodeFormat.render(yaml.yaml)}<p class="field-help">Commit this file to the project repository (for example <code>pipelines/${escapeHTML(definition.name)}.kionga.yaml</code>) to review changes in Git.</p></section>`;
   }
-  container.innerHTML = `<p class="eyebrow">PIPELINE FLOW</p><h2 id="definition-detail-title">${escapeHTML(definition.name)} <span class="tag">v${escapeHTML(definition.version)} · r${definition.revision || 0}</span></h2>
-    ${definition.description ? `<p>${escapeHTML(definition.description)}</p>` : ""}
+  container.innerHTML = `<header class="detail-header"><p class="eyebrow">PIPELINE FLOW</p><div class="detail-heading"><h2 id="definition-detail-title">${escapeHTML(definition.name)}</h2><span class="tag">v${escapeHTML(definition.version)} · r${definition.revision || 0}</span></div>
+    ${definition.description ? `<p>${escapeHTML(definition.description)}</p>` : ""}</header>
     <div class="button-row start">${writable ? `<button type="button" class="primary" data-run-definition="${escapeHTML(definition.id)}" data-project-id="${escapeHTML(definition.project_id)}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#play"></use></svg> Run</button><button type="button" data-edit-definition="${escapeHTML(definition.id)}">Edit</button>` : ""}</div>
     ${metaList([["Flow ID", copyable(definition.id)], ["Project", escapeHTML(projectName(definition.project_id))], ["Execution", escapeHTML(definition.execution_mode === "functions" ? "Functions · OpenFaaS" : "Containers · pipeline runner")], ["Nodes", String(definition.jobs.length)], ["Owner", escapeHTML(definition.owner_subject || "—")], ["Updated", timeTag(definition.updated_at)]])}
-    <h3>Schedule</h3>${scheduleBlock}
-    <div class="tabs" role="tablist">${tabs.map(([key, label]) => `<button type="button" role="tab" aria-selected="${key === tab}" data-definition-tab="${key}">${escapeHTML(label)}</button>`).join("")}</div>
-    <div role="tabpanel">${body}</div>`;
+    <section class="detail-section"><h3>Schedule</h3>${scheduleBlock}</section>
+    <div class="tabs" role="tablist" aria-label="Flow details">${tabs.map(([key, label]) => `<button type="button" role="tab" id="definition-detail-tab-${key}" aria-selected="${key === tab}" aria-controls="definition-detail-panel" data-definition-tab="${key}">${escapeHTML(label)}</button>`).join("")}</div>
+    <div role="tabpanel" id="definition-detail-panel" aria-labelledby="definition-detail-tab-${tab}">${body}</div>`;
   window.KiongaPipelineGraph.enhance(container, {onSelect: name => {
     const job = definition.jobs.find(item => item.name === name);
     if (!job) return;
-    document.querySelector("#definition-node-detail").outerHTML = `<div id="definition-node-detail" class="panel">${nodeSummary(job)}</div>`;
+    document.querySelector("#definition-node-detail").outerHTML = `<div id="definition-node-detail" class="panel node-detail-panel">${nodeSummary(job)}</div>`;
   }});
 }
 

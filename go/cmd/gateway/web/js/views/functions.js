@@ -69,7 +69,7 @@ document.querySelector("#function-form").addEventListener("submit", async event 
     try { JSON.parse(payload); } catch { throw new Error("Payload must be valid JSON."); }
     const route = functionState.async ? "invoke-async" : "invoke";
     const result = await withBusy(event.submitter, () => api(`/api/v1/functions/${encodeURIComponent(functionState.name)}/${route}`, {method: "POST", body: payload}), {failure: false});
-    output.textContent = JSON.stringify(result, null, 2);
+    output.innerHTML = KiongaCodeFormat.render(JSON.stringify(result, null, 2), "json");
     toast(functionState.async ? "Function invocation queued." : "Function invocation completed.");
   } catch (failure) { error.textContent = failure.message; }
 });

@@ -91,7 +91,7 @@ async function openProjectDetail(id) {
             ["Owner", escapeHTML(project.owner_subject || "—")],
             ["Created", timeTag(project.created_at)],
           ])}
-          <details class="raw-json"><summary>Raw record</summary><pre class="hint metadata-json">${escapeHTML(JSON.stringify(project, null, 2))}</pre></details>
+          <details class="raw-json"><summary>Raw record</summary>${KiongaCodeFormat.render(JSON.stringify(project, null, 2), "json")}</details>
         </article>
       </div>
     </div>`;

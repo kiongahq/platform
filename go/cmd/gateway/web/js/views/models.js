@@ -60,7 +60,7 @@ document.querySelector("#predict-form").addEventListener("submit", async event =
     const body = document.querySelector("#predict-input").value;
     try { JSON.parse(body); } catch { throw new Error("Request payload must be valid JSON."); }
     const result = await withBusy(event.submitter, () => api(`/api/v1/models/${encodeURIComponent(predictState.modelId)}/predict`, {method: "POST", body}), {failure: false});
-    output.textContent = JSON.stringify(result, null, 2);
+    output.innerHTML = KiongaCodeFormat.render(JSON.stringify(result, null, 2), "json");
   } catch (failure) { output.textContent = `Error: ${failure.message}`; }
 });
 document.querySelector("#metric-select").addEventListener("change", event => metricChart(cachedModels, event.target.value));

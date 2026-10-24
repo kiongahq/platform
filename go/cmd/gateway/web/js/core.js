@@ -155,7 +155,7 @@ const emptyState = (title, detail = "", actions = "") => `<div class="empty-stat
 const tableEmpty = (columns, title, detail = "") => `<tr><td colspan="${columns}" class="empty"><b>${escapeHTML(title)}</b>${detail ? `<br><small>${detail}</small>` : ""}</td></tr>`;
 const metadataValue = value => {
   if (value === undefined || value === null || value === "") return "—";
-  if (typeof value === "object") return `<pre class="hint metadata-json">${escapeHTML(JSON.stringify(value, null, 2))}</pre>`;
+  if (typeof value === "object") return KiongaCodeFormat.render(JSON.stringify(value, null, 2), "json");
   return escapeHTML(value);
 };
 function showMetadata(kind, title, item, actions = "") {

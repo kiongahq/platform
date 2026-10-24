@@ -190,6 +190,7 @@ function setPolicyEditorMode(mode) {
   if (mode === policyEditorMode) return;
   if (mode === "json") {
     document.querySelector("#policy-json").value = JSON.stringify(policyFromForm(), null, 2);
+    KiongaCodeFormat.sync(document.querySelector("#policy-json"));
   } else {
     let draft;
     try { draft = JSON.parse(document.querySelector("#policy-json").value); }

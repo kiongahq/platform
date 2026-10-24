@@ -281,42 +281,45 @@ python -m realtime.produce --demo recommendations --count 2</code><button type="
   </dialog>
 
   <dialog id="connection-dialog" aria-labelledby="connection-dialog-title">
-    <form id="connection-form">
-      <p class="eyebrow">CONNECT SERVICE</p><h2 id="connection-dialog-title">Add infrastructure</h2><p>Kionga tests the endpoint right away. Prefect and OpenFaaS can then be activated for new operations; other connections monitor services configured in your deployment.</p>
+    <form id="connection-form" class="provisioning-form compact-modal">
+      <header class="modal-header"><p class="eyebrow">CONNECT SERVICE</p><h2 id="connection-dialog-title">Add infrastructure</h2><p>Kionga tests the endpoint right away. Prefect and OpenFaaS can then be activated for new operations; other connections monitor services configured in your deployment.</p></header>
+      <div class="modal-scroll"><section class="form-section">
       <label>Service<select name="type"><option value="kubernetes">Kubernetes</option><option value="mlflow">MLflow</option><option value="rustfs">RustFS (local)</option><option value="s3">S3-compatible storage</option><option value="kafka">Kafka REST</option><option value="langfuse">Langfuse</option><option value="prefect">Prefect</option><option value="openfaas">OpenFaaS</option><option value="redis">Redis / Feast</option></select></label>
       <label>Connection name<input name="name" required placeholder="e.g. production-mlflow"></label>
       <label>Service address<input name="endpoint" required type="url" placeholder="https://prefect.example.com/api"><small>Prefect: its API base address. OpenFaaS: its gateway address. Others: a health endpoint.</small></label>
       <label>Credential reference<input name="secret_ref" required value="none" placeholder="none or env:PREFECT_API_KEY"><small>Use <code>none</code>, or <code>env:VARIABLE</code> for a secret set on the gateway. Never paste a secret here.</small></label>
-      <p class="form-error" id="connection-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save and test</button></div>
+      </section></div>
+      <footer class="modal-footer"><p class="form-error" id="connection-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save and test</button></div></footer>
     </form>
   </dialog>
 
   <dialog id="scaffold-confirm-dialog" class="wide" aria-labelledby="scaffold-confirm-title">
-    <form id="scaffold-confirm-form" method="dialog">
-      <p class="eyebrow">RUN IN WORKSPACE</p><h2 id="scaffold-confirm-title">Generate the starter code?</h2>
-      <p>Kionga will run exactly this command in your workspace, without a shell, using only the project's stored template settings. Nothing else is executed.</p>
-      <div id="scaffold-confirm-detail"></div>
-      <p class="form-error" id="scaffold-confirm-error" role="alert"></p>
-      <div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit" id="scaffold-confirm-run">Run in workspace</button></div>
+    <form id="scaffold-confirm-form" class="provisioning-form" method="dialog">
+      <header class="modal-header"><p class="eyebrow">RUN IN WORKSPACE</p><h2 id="scaffold-confirm-title">Generate the starter code?</h2><p>Kionga will run exactly this command in your workspace, without a shell, using only the project's stored template settings. Nothing else is executed.</p></header>
+      <div class="modal-scroll"><div id="scaffold-confirm-detail"></div></div>
+      <footer class="modal-footer"><p class="form-error" id="scaffold-confirm-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit" id="scaffold-confirm-run">Run in workspace</button></div></footer>
     </form>
   </dialog>
 
   <dialog id="feature-store-dialog" aria-labelledby="feature-store-title">
-    <form id="feature-store-form">
-      <p class="eyebrow">FEATURE STORE</p><h2 id="feature-store-title">Connect an external feature store</h2><p>Only providers with an adapter can be connected. The connection is saved, then tested.</p>
+    <form id="feature-store-form" class="provisioning-form compact-modal">
+      <header class="modal-header"><p class="eyebrow">FEATURE STORE</p><h2 id="feature-store-title">Connect an external feature store</h2><p>Only providers with an adapter can be connected. The connection is saved, then tested.</p></header>
+      <div class="modal-scroll"><section class="form-section">
       <label>Provider<select name="provider" id="feature-store-provider"></select><small id="feature-store-provider-help"></small></label>
       <label>Connection name<input name="name" required pattern="[a-z0-9][a-z0-9-]{1,62}" placeholder="e.g. team-feast"></label>
       <label>Feature server URL<input name="url" required type="url" placeholder="http://feast-feature-server:6566"></label>
       <label>Feature services<input name="feature_services" placeholder="customer_profile, fraud_signals"><small>Optional, comma separated. Feast's HTTP server cannot list them itself.</small></label>
       <label>Credential reference<input name="secret_ref" placeholder="env:FEAST_TOKEN"><small>Optional bearer token set on the gateway. Never paste a secret here.</small></label>
       <label>Allowed projects<input name="allowed_projects" placeholder="Empty means every project"><small>Comma-separated project IDs.</small></label>
-      <p class="form-error" id="feature-store-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save and test</button></div>
+      </section></div>
+      <footer class="modal-footer"><p class="form-error" id="feature-store-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save and test</button></div></footer>
     </form>
   </dialog>
 
   <dialog id="storage-connection-dialog" aria-labelledby="storage-connection-title">
-    <form id="storage-connection-form">
-      <p class="eyebrow">OBJECT STORAGE</p><h2 id="storage-connection-title">Connect S3-compatible storage</h2><p>Kionga checks the bucket with a signed request. Credentials come from the gateway environment.</p>
+    <form id="storage-connection-form" class="provisioning-form compact-modal">
+      <header class="modal-header"><p class="eyebrow">OBJECT STORAGE</p><h2 id="storage-connection-title">Connect S3-compatible storage</h2><p>Kionga checks the bucket with a signed request. Credentials come from the gateway environment.</p></header>
+      <div class="modal-scroll"><section class="form-section">
       <label>Connection name<input name="name" required pattern="[a-z0-9][a-z0-9-]{1,62}" placeholder="e.g. team-lake"></label>
       <label>Endpoint<input name="endpoint" required type="url" placeholder="https://s3.eu-west-1.amazonaws.com"></label>
       <div class="form-grid"><label>Region<input name="region" placeholder="us-east-1"></label><label>Bucket<input name="bucket" required placeholder="team-lake"></label></div>
@@ -324,7 +327,8 @@ python -m realtime.produce --demo recommendations --count 2</code><button type="
       <label>Credential reference<input name="secret_ref" required placeholder="env:LAKE_CREDENTIALS"><small>The variable holds <code>ACCESS_KEY_ID:SECRET_ACCESS_KEY</code>.</small></label>
       <label>CA bundle (PEM)<textarea name="ca_bundle" rows="3" spellcheck="false" placeholder="Only for private certificate authorities"></textarea></label>
       <label>Allowed projects<input name="allowed_projects" placeholder="Empty means every project"></label>
-      <p class="form-error" id="storage-connection-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save and test</button></div>
+      </section></div>
+      <footer class="modal-footer"><p class="form-error" id="storage-connection-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Save and test</button></div></footer>
     </form>
   </dialog>
 
@@ -395,30 +399,26 @@ mlaiops projects list</pre><div class="form-actions"><button class="primary" typ
   </dialog>
 
   <dialog id="predict-dialog" aria-labelledby="predict-model-name">
-    <div class="detail-sheet">
-      <p class="eyebrow">INFERENCE TEST CONSOLE</p><h2 id="predict-model-name">Model</h2>
-      <form id="predict-form" style="padding:0">
-        <label>Request payload (MLflow /invocations)<textarea id="predict-input" rows="5" spellcheck="false">{"inputs": [[0.1, -1.2, 0.5, 2.0, 0.3, -0.7, 1.1, 0.0, -0.4, 0.9, -1.5, 0.2]]}</textarea></label>
-        <div class="form-actions"><button type="button" data-dialog-close>Close</button><button class="primary" type="submit">Send prediction request</button></div>
-      </form>
-      <pre id="predict-output" class="hint" role="status"></pre>
-    </div>
+    <form id="predict-form" class="provisioning-form compact-modal">
+      <header class="modal-header"><p class="eyebrow">INFERENCE TEST CONSOLE</p><h2 id="predict-model-name">Model</h2></header>
+      <div class="modal-scroll"><section class="form-section"><label>Request payload (MLflow /invocations)<textarea id="predict-input" rows="5" spellcheck="false">{"inputs": [[0.1, -1.2, 0.5, 2.0, 0.3, -0.7, 1.1, 0.0, -0.4, 0.9, -1.5, 0.2]]}</textarea></label><div id="predict-output" class="code-output" role="status"></div></section></div>
+      <footer class="modal-footer"><div class="form-actions"><button type="button" data-dialog-close>Close</button><button class="primary" type="submit">Send prediction request</button></div></footer>
+    </form>
   </dialog>
 
   <dialog id="traffic-dialog" aria-labelledby="traffic-title">
-    <form id="traffic-form">
-      <p class="eyebrow">AGENT TRAFFIC</p><h2 id="traffic-title">Set canary traffic</h2><p>The percentage of requests routed to the canary version.</p>
-      <label>Canary weight <output id="traffic-value">10%</output><input id="traffic-weight" name="canary_weight" type="range" min="0" max="100" value="10"></label>
-      <p class="form-error" id="traffic-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Update traffic</button></div>
+    <form id="traffic-form" class="provisioning-form compact-modal">
+      <header class="modal-header"><p class="eyebrow">AGENT TRAFFIC</p><h2 id="traffic-title">Set canary traffic</h2><p>The percentage of requests routed to the canary version.</p></header>
+      <div class="modal-scroll"><section class="form-section"><label>Canary weight <output id="traffic-value">10%</output><input id="traffic-weight" name="canary_weight" type="range" min="0" max="100" value="10"></label></section></div>
+      <footer class="modal-footer"><p class="form-error" id="traffic-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Update traffic</button></div></footer>
     </form>
   </dialog>
 
   <dialog id="function-dialog" aria-labelledby="function-name">
-    <form id="function-form">
-      <p class="eyebrow">SERVERLESS FUNCTION</p><h2 id="function-name">Invoke function</h2>
-      <label>JSON payload<textarea id="function-payload" rows="6" spellcheck="false">{}</textarea></label>
-      <p class="form-error" id="function-error" role="alert"></p><pre id="function-output" class="hint" role="status"></pre>
-      <div class="form-actions"><button type="button" data-dialog-close>Close</button><button class="primary" type="submit">Invoke function</button></div>
+    <form id="function-form" class="provisioning-form compact-modal">
+      <header class="modal-header"><p class="eyebrow">SERVERLESS FUNCTION</p><h2 id="function-name">Invoke function</h2></header>
+      <div class="modal-scroll"><section class="form-section"><label>JSON payload<textarea id="function-payload" rows="6" spellcheck="false">{}</textarea></label><div id="function-output" class="code-output" role="status"></div></section></div>
+      <footer class="modal-footer"><p class="form-error" id="function-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Close</button><button class="primary" type="submit">Invoke function</button></div></footer>
     </form>
   </dialog>
 
@@ -473,12 +473,14 @@ mlaiops projects list</pre><div class="form-actions"><button class="primary" typ
   <dialog id="definition-detail-dialog" class="wide" aria-labelledby="definition-detail-title"><div class="detail-sheet"><div id="definition-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
 
   <dialog id="project-repository-dialog" aria-labelledby="project-repository-title">
-    <form id="project-repository-form">
+    <form id="project-repository-form" class="provisioning-form compact-modal">
       <input name="project_id" type="hidden">
-      <p class="eyebrow">GIT REPOSITORY</p><h2 id="project-repository-title">Connect source control</h2><p>Credentials stay in your workspace Git credential helper; Kionga stores only repository metadata.</p>
+      <header class="modal-header"><p class="eyebrow">GIT REPOSITORY</p><h2 id="project-repository-title">Connect source control</h2><p>Credentials stay in your workspace Git credential helper; Kionga stores only repository metadata.</p></header>
+      <div class="modal-scroll"><section class="form-section">
       <label>Repository URL<input name="url" required placeholder="https://github.com/team/project.git"></label>
       <label>Default branch<input name="default_branch" required value="main"></label>
-      <p class="form-error" id="project-repository-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Connect repository</button></div>
+      </section></div>
+      <footer class="modal-footer"><p class="form-error" id="project-repository-error" role="alert"></p><div class="form-actions"><button type="button" data-dialog-close>Cancel</button><button class="primary" type="submit">Connect repository</button></div></footer>
     </form>
   </dialog>
 
@@ -515,6 +517,7 @@ mlaiops projects list</pre><div class="form-actions"><button class="primary" typ
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="/vendor/dagre.min.js" integrity="sha384-AzQ70cQk8D+zQhLIF5sw1ZNJprV/OYEvT65aRyn0VxZJxNdcsyLtfMheBEDhEfRM"></script>
   <script src="/pipeline-graph.js"></script>
+  <script src="/js/code-format.js"></script>
   <script src="/js/core.js"></script>
   <script src="/js/views/overview.js"></script>
   <script src="/js/views/projects.js"></script>

@@ -235,6 +235,28 @@ test('line diff marks additions and deletions',async t=>{
  assert.equal(JSON.stringify(parts.map(p=>p.type+':'+p.text)),JSON.stringify(['same:a','del:b','same:c','add:d']));
 });
 
+test('flow details separate facts, revisions, and numbered YAML', async t=>{
+ const definition={id:'pipe-1',project_id:'p1',name:'branch-flow',version:'1',revision:3,description:'Branched flow',execution_mode:'prefect',owner_subject:'admin',updated_at:'2026-10-10T00:00:00Z',jobs:[{name:'extract',kind:'container',image:'busybox',depends_on:[]}],triggers:[]};
+ const yaml='apiVersion: kionga.dev/v1\nkind: Pipeline\nmetadata:\n  name: branch-flow';
+ const app=consoleApp(['pipelines'],'pipelines',{
+   '/api/v1/pipelines/definitions':{items:[definition]},
+   '/api/v1/pipelines/definitions/pipe-1':definition,
+   '/api/v1/pipelines/definitions/pipe-1/revisions':{items:[{revision:3,message:'Branched flow',author:'admin',created_at:'2026-10-10T00:00:00Z',sha256:'a'.repeat(64)}]},
+   '/api/v1/pipelines/definitions/pipe-1/yaml':{yaml,revision:3,sha256:'a'.repeat(64)},
+ });
+ t.after(()=>app.dom.window.close());await tick();
+ app.w.document.querySelector('.card-title-button[data-definition-detail="pipe-1"]').click();await tick();
+ assert.match(app.w.document.querySelector('#definition-detail').innerHTML,/class="detail-header"/);
+ assert.equal(app.w.document.querySelectorAll('#definition-detail .meta-list > div').length,6);
+ assert.match(app.w.document.querySelector('#definition-node-detail').textContent,/Select a node/);
+ app.w.document.querySelector('[data-definition-tab="revisions"]').click();await tick();
+ assert.equal(app.w.document.querySelectorAll('.revision-row').length,1);
+ assert.match(app.w.document.querySelector('.revision-copy h3').textContent,/Branched flow/);
+ app.w.document.querySelector('[data-definition-tab="yaml"]').click();await tick();
+ assert.equal(app.w.document.querySelectorAll('#definition-detail .code-line-number').length,4);
+ assert.match(app.w.document.querySelector('#definition-detail .code-view').textContent,/apiVersion/);
+});
+
 test('run configuration shows defaults beside overrides, locks fields with reasons, and requires a passing preflight',async t=>{
  const definition={id:'pipe-1',project_id:'p1',name:'train',version:'1',execution_mode:'prefect',revision:2,parameters:{window:'daily',seed:7},overridable:{parameters:['window'],image:true,nodes:true},jobs:[{name:'extract',kind:'container',image:'x',depends_on:[]},{name:'train',kind:'container',image:'y',depends_on:['extract']}]};
  const writer={subject:'user-1',roles:['user'],services:['pipelines'],mode:'local',permissions:{pipelines_write:true},project_ids:['p1'],provisioned:true,entitlements:null};

@@ -58,11 +58,11 @@ function renderRunDetail(run) {
   const runActions = can("pipelines_write") ? `<div class="sheet-actions">${active ? `<button type="button" class="danger" data-run-action="cancel" data-run-id="${escapeHTML(run.id)}">Cancel run</button>` : ""}${resumable ? `<button type="button" data-rerun-from="${escapeHTML(run.id)}" data-definition-id="${escapeHTML(run.definition_id)}" data-project-id="${escapeHTML(run.project_id)}" title="Reuse succeeded nodes and run the rest again">Rerun from failure</button>` : ""}<button class="primary" type="button" data-run-action="retry" data-run-id="${escapeHTML(run.id)}">Retry whole run</button></div>` : "";
   const provenance = run.provenance || {};
   const overrides = provenance.overrides ? Object.entries({...(provenance.overrides.parameters ? {parameters: provenance.overrides.parameters} : {}), ...(provenance.overrides.nodes ? {nodes: provenance.overrides.nodes} : {}), ...(provenance.overrides.selected_nodes ? {selected_nodes: provenance.overrides.selected_nodes} : {}), ...(provenance.overrides.rerun_from_run_id ? {rerun_from: provenance.overrides.rerun_from_run_id} : {}), ...(provenance.overrides.max_parallelism ? {max_parallelism: provenance.overrides.max_parallelism} : {})}) : [];
-  document.querySelector("#run-detail").innerHTML = `<p class="eyebrow">PIPELINE RUN</p><h2>${escapeHTML(run.name)}</h2>
-    <div class="detail-meta">${status(run.status)}<span class="tag">${escapeHTML(triggerLabel(run))}</span><span>${Number(run.progress) || 0}% complete</span><span>Started ${timeTag(run.created_at)}</span></div>
-    ${metaList([["Run ID", copyable(run.id)], ["Project", escapeHTML(projectName(run.project_id))], ["Definition", escapeHTML(run.definition_id || "Built-in training pipeline")], ["Engine run", run.engine_run_id ? copyable(run.engine_run_id) : "Not yet accepted by an engine"], ["Execution mode", escapeHTML(run.execution_mode || "prefect")], ["Definition revision", provenance.definition_revision ? `r${provenance.definition_revision} · <code title="${escapeHTML(provenance.definition_sha256)}">${escapeHTML((provenance.definition_sha256 || "").slice(0, 12))}</code>` : "Built-in or legacy"], ["Started by", `${escapeHTML(run.owner_subject || "—")} · ${escapeHTML(triggerLabel(run))}${run.scheduled_for ? ` for ${escapeHTML(dateTime(run.scheduled_for))}` : ""}`], ["Policy decision", escapeHTML(provenance.policy_decision || "—")], ["Overrides", overrides.length ? `<pre class="hint metadata-json">${escapeHTML(JSON.stringify(Object.fromEntries(overrides), null, 2))}</pre>` : "None (definition defaults)"]])}
-    <h3>Execution graph</h3>${pipelineGraph(run.steps, {ariaLabel: `${run.name} execution graph`})}<div id="run-node-detail"><p class="field-help">Select a node for its timing, attempts and workload.</p></div>
-    <h3>Logs</h3><div class="logs" role="log" aria-live="polite">${logs}</div>${runActions}`;
+  document.querySelector("#run-detail").innerHTML = `<header class="detail-header"><p class="eyebrow">PIPELINE RUN</p><h2>${escapeHTML(run.name)}</h2>
+    <div class="detail-meta">${status(run.status)}<span class="tag">${escapeHTML(triggerLabel(run))}</span><span>${Number(run.progress) || 0}% complete</span><span>Started ${timeTag(run.created_at)}</span></div></header>
+    ${metaList([["Run ID", copyable(run.id)], ["Project", escapeHTML(projectName(run.project_id))], ["Definition", escapeHTML(run.definition_id || "Built-in training pipeline")], ["Engine run", run.engine_run_id ? copyable(run.engine_run_id) : "Not yet accepted by an engine"], ["Execution mode", escapeHTML(({prefect: "Containers · pipeline runner", functions: "Functions · OpenFaaS"})[run.execution_mode] || run.execution_mode || "Containers · pipeline runner")], ["Definition revision", provenance.definition_revision ? `r${provenance.definition_revision} · <code title="${escapeHTML(provenance.definition_sha256)}">${escapeHTML((provenance.definition_sha256 || "").slice(0, 12))}</code>` : "Built-in or legacy"], ["Started by", `${escapeHTML(run.owner_subject || "—")} · ${escapeHTML(triggerLabel(run))}${run.scheduled_for ? ` for ${escapeHTML(dateTime(run.scheduled_for))}` : ""}`], ["Policy decision", escapeHTML(provenance.policy_decision || "—")], ["Overrides", overrides.length ? KiongaCodeFormat.render(JSON.stringify(Object.fromEntries(overrides), null, 2), "json") : "None (definition defaults)"]])}
+    <section class="detail-section"><h3>Execution graph</h3>${pipelineGraph(run.steps, {ariaLabel: `${run.name} execution graph`})}<div id="run-node-detail" class="node-detail-placeholder">Select a node for its timing, attempts and workload.</div></section>
+    <section class="detail-section"><h3>Logs</h3><div class="logs" role="log" aria-live="polite">${logs}</div></section>${runActions}`;
 }
 async function showRun(runId, options = {}) {
   const dialog = document.querySelector("#run-dialog");
@@ -90,7 +90,8 @@ function showRunNode(run, name) {
   const step = run.steps.find(item => item.name === name);
   if (!step) return;
   const workload = step.workload_kind ? `${escapeHTML({"docker-container": "Docker container", "k8s-job": "Kubernetes Job", "k8s-pod": "Kubernetes Pod", "openfaas-call": "OpenFaaS function call"}[step.workload_kind] || step.workload_kind)} ${step.workload_id ? `<code>${escapeHTML(step.workload_id)}</code>` : ""}` : "Not started";
-  document.querySelector("#run-node-detail").innerHTML = `<div class="panel"><h3 style="margin-top:0">${escapeHTML(step.name)} ${status(step.status)}</h3>${metaList([
+  document.querySelector("#run-node-detail").className = "panel node-detail-panel";
+  document.querySelector("#run-node-detail").innerHTML = `<h3 style="margin-top:0">${escapeHTML(step.name)} ${status(step.status)}</h3>${metaList([
     ["Started", step.started_at ? timeTag(step.started_at) : "Not started"],
     ["Ended", step.ended_at ? timeTag(step.ended_at) : "—"],
     ["Duration", duration(step)],
@@ -100,7 +101,7 @@ function showRunNode(run, name) {
     ["Image", step.image_digest ? `<code>${escapeHTML(step.image_digest)}</code>` : `<code>${escapeHTML(step.image || "—")}</code>`],
     ["Depends on", (step.depends_on || []).map(dep => `<span class="tag">${escapeHTML(dep)}</span>`).join("") || "Nothing"],
     ["Last message", step.message ? `<span class="mono">${escapeHTML(step.message.slice(-400))}</span>` : "—"],
-  ])}<h4 style="margin-top:var(--space-4)">Logs and events</h4><div id="run-node-logs"></div></div>`;
+  ])}<h4 style="margin-top:var(--space-4)">Logs and events</h4><div id="run-node-logs"></div>`;
   runNodeLogs?.close();
   runNodeLogs = createLogPanel(document.querySelector("#run-node-logs"), {run_id: run.id, node: step.name}, {emptyText: "No output recorded for this node yet."});
 }
