@@ -33,6 +33,7 @@ function consoleApp(services, view, overrides={}) {
     '/api/v1/access-requests':{items:[]},
     '/api/v1/langflow-snapshots':{items:[]},
     '/api/v1/datasets':{items:[]},
+    '/api/v1/registered-storage':{items:[]},
     '/api/v1/knowledge-bases':{items:[]},
     '/api/v1/agent-api-connections':{items:[]},
     ...overrides,

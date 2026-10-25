@@ -11,13 +11,14 @@ function langflowMessage(message, error = false) {
   node.classList.toggle('error', error);
 }
 async function loadLangflow() {
-  const [data, snapshots, agents, datasets, knowledge, connections] = await Promise.all([api('/api/v1/langflow-workspaces'), api('/api/v1/langflow-snapshots'), me.services.includes('agents') || me.roles.some(role => ['admin','operator'].includes(role)) ? api('/api/v1/agents') : Promise.resolve({items:[]}), api('/api/v1/datasets'), api('/api/v1/knowledge-bases'), api('/api/v1/agent-api-connections')]);
+  const [data, snapshots, agents, datasets, sources, knowledge, connections] = await Promise.all([api('/api/v1/langflow-workspaces'), api('/api/v1/langflow-snapshots'), me.services.includes('agents') || me.roles.some(role => ['admin','operator'].includes(role)) ? api('/api/v1/agents') : Promise.resolve({items:[]}), api('/api/v1/datasets'), api('/api/v1/registered-storage'), api('/api/v1/knowledge-bases'), api('/api/v1/agent-api-connections')]);
   langflowSnapshots = (snapshots.items || []).filter(item => !selectedProject || item.project_id === selectedProject);
   langflowAgents = agents.items || [];
   langflowManagedMode = data.mode === 'kubernetes';
   langflowItems = (data.items || []).filter(item => !selectedProject || item.project_id === selectedProject || item.id === 'local');
   const projectDatasets = (datasets.items || []).filter(item => !selectedProject || item.project_id === selectedProject);
   document.querySelector('#langflow-datasets').innerHTML = projectDatasets.map(item => `<div class="store-row"><div><b>${escapeHTML(item.name)}</b><small>${escapeHTML(item.description || 'Project dataset')} · <code>${escapeHTML(item.id)}</code></small></div><div><span class="tag">${escapeHTML(item.bucket)}</span><small>${escapeHTML(item.prefix || 'Entire bucket')}</small></div></div>`).join('') || emptyState('No datasets', 'An administrator can assign a bucket prefix to this project.');
+  document.querySelector('#langflow-registered-storage').innerHTML = (sources.items || []).map(item => `<div class="store-row"><div><b>${escapeHTML(item.name)}</b><small><code>${escapeHTML(item.id)}</code></small></div><span class="tag">${escapeHTML(item.bucket)}</span></div>`).join('') || emptyState('No registered sources', 'An administrator can assign a storage connection to this project.');
   const datasetForm = document.querySelector('#langflow-dataset-create');
   datasetForm.hidden = !me.roles.some(role => ['admin','operator'].includes(role));
   datasetForm.elements.project_id.innerHTML = projectOptions.map(item => `<option value="${escapeHTML(item.id)}">${escapeHTML(item.name)}</option>`).join('');
