@@ -57,6 +57,11 @@ func (s *Server) createProjectDataset(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, "invalid_request", "Use a lowercase name, bucket and a relative prefix without parent segments")
 		return
 	}
+	// A dataset names a directory-like prefix. Without a trailing slash, a
+	// grant for "training/churn" would also include "training/churn-private".
+	if dataset.Prefix != "" && !strings.HasSuffix(dataset.Prefix, "/") {
+		dataset.Prefix += "/"
+	}
 	for _, existing := range store.ListDocs[projectDataset](s.store, datasetKind) {
 		if existing.ProjectID == dataset.ProjectID && existing.Name == dataset.Name {
 			writeError(w, 409, "already_exists", "Dataset name already exists in this project")

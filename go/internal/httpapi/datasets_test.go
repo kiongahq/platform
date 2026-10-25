@@ -49,6 +49,10 @@ func TestDatasetCatalogScopesProjectBucketAndPrefix(t *testing.T) {
 		return item
 	}
 	allowed := create(project.ID, "churn-training", "team-data")
+	canonical := call(t, admin, "POST", "/api/v1/admin/datasets", `{"project_id":"`+project.ID+`","name":"raw-prefix","bucket":"team-data","prefix":"training/churn"}`)
+	if canonical.Code != 201 || !strings.Contains(canonical.Body.String(), `"prefix":"training/churn/"`) {
+		t.Fatalf("dataset prefix must include a path boundary: %d %s", canonical.Code, canonical.Body.String())
+	}
 	create(project.ID, "restricted-bucket", "other-data")
 	create(other.ID, "other-project", "team-data")
 	_, err = repository.UpsertUserAccess("alice", api.UpsertUserAccessRequest{
@@ -74,6 +78,7 @@ func TestDatasetCatalogScopesProjectBucketAndPrefix(t *testing.T) {
 	for _, path := range []string{
 		"/api/v1/datasets/" + allowed.ID + "/objects?prefix=../private",
 		"/api/v1/datasets/" + allowed.ID + "/object?key=training/private.csv",
+		"/api/v1/datasets/" + allowed.ID + "/object?key=training/churn-private.csv",
 	} {
 		response := call(t, alice, "GET", path, "")
 		if response.Code != 422 || len(seen) != 2 {
