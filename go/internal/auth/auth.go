@@ -517,6 +517,8 @@ func serviceForPath(path string) string {
 		return "langflow"
 	case strings.HasPrefix(path, "/api/v1/agent-api-connections"):
 		return "langflow"
+	case strings.HasPrefix(path, "/api/v1/datasets"):
+		return "langflow"
 	case path == "/api/v1/dashboard", path == "/api/v1/onboarding/readiness", path == "/api/v1/events":
 		return "overview"
 	case strings.HasPrefix(path, "/api/v1/project-templates"):
