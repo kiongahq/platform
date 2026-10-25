@@ -96,11 +96,13 @@ test('agent presets choose adapter entrypoints and disclose NOOA isolation requi
 test('agent sessions show missing usage as unavailable and keep totals partial',async t=>{
  const agent={id:'a1',name:'Flow agent',project_id:'p1',status:'ready',llm_backend:'langflow',version:'1',graph_module:'agents.langflow_adapter:build',canary_weight:0};
  const session={id:'s1',agent_id:'a1',status:'succeeded',turns:1,current_node:'complete',input_tokens:0,output_tokens:0,cost_usd:0,usage_available:false};
- const app=consoleApp(['agents'],'agents',{'/api/v1/agents':{items:[agent],total:1},'/api/v1/agents/a1/sessions':{items:[session]}});
+ const trace={id:'t1',agent_id:'a1',status:'succeeded',duration_ms:24,tokens:0,created_at:'2026-10-25T12:00:00Z',metadata:{usage_available:false,lfx_timing:{component_timings:[{component:'Chat Output',duration:0.012}]}}};
+ const app=consoleApp(['agents'],'agents',{'/api/v1/agents':{items:[agent],total:1},'/api/v1/agents/a1/sessions':{items:[session]},'/api/v1/agents/a1/traces':{items:[trace]}});
  t.after(()=>app.dom.window.close());await tick();
  assert.match(app.w.document.querySelector('#session-table').textContent,/Unavailable.*Unavailable/);
  assert.match(app.w.document.querySelector('#agent-summary').textContent,/1 session unmetered/);
  assert.match(app.w.document.querySelector('#agent-summary').textContent,/\$0\.0000\+/);
+ assert.match(app.w.document.querySelector('#agent-trace-table').textContent,/Flow agent.*24 ms.*Unavailable.*1 components.*Chat Output/);
  assert.deepEqual(app.errors,[]);
 });
 

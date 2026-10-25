@@ -6,6 +6,8 @@ async function loadAgents() {
   agentCache = data.items || [];
   const sessionGroups = await Promise.all(data.items.map(agent => api(`/api/v1/agents/${encodeURIComponent(agent.id)}/sessions`).catch(() => ({items: []}))));
   const sessions = sessionGroups.flatMap(group => group.items);
+  const traceGroups = await Promise.all(data.items.map(agent => api(`/api/v1/agents/${encodeURIComponent(agent.id)}/traces`).catch(() => ({items: []}))));
+  const traces = traceGroups.flatMap(group => group.items).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 20);
   const unmetered = sessions.filter(item => item.usage_available === false);
   const measured = sessions.filter(item => item.usage_available !== false);
   const tokens = measured.reduce((sum, item) => sum + item.input_tokens + item.output_tokens, 0);
@@ -20,6 +22,12 @@ async function loadAgents() {
     return `<article class="card interactive-card" data-agent-detail="${escapeHTML(agent.id)}"><span class="kind">${escapeHTML(agent.llm_backend)} · v${escapeHTML(agent.version)}</span><h3><button type="button" class="card-title-button" data-agent-detail="${escapeHTML(agent.id)}">${escapeHTML(agent.name)}</button></h3><p class="truncate" title="${escapeHTML(agent.graph_module)}">${escapeHTML(agent.graph_module)}</p><div class="tags"><span class="tag">${escapeHTML(resources.cpu || "500m")} CPU</span><span class="tag">${escapeHTML(resources.memory || "1Gi")} RAM</span><span class="tag">${scaling.min_replicas}–${scaling.max_replicas} replicas</span>${resources.gpu ? `<span class="tag">${resources.gpu} × ${escapeHTML(resources.gpu_type)}</span>` : ""}${(agent.tools || []).map(tool => `<span class="tag">${escapeHTML(tool)}</span>`).join("")}</div><footer>${status(agent.status)}<span class="tag">${agent.canary_weight}% canary</span>${actions}</footer></article>`;
   }).join("") : emptyState("No agents deployed yet", "Scaffold a production-agent project, build its image, then deploy it here.");
   document.querySelector("#session-table").innerHTML = sessions.length ? sessions.map(session => `<tr><td><span class="truncate mono" title="${escapeHTML(session.id)}">${escapeHTML(session.id)}</span></td><td>${escapeHTML(session.agent_id)}</td><td>${escapeHTML(session.current_node)}</td><td>${status(session.status)}</td><td>${session.turns}</td><td>${session.usage_available === false ? "Unavailable" : (session.input_tokens + session.output_tokens).toLocaleString()}</td><td>${session.usage_available === false ? "Unavailable" : `$${session.cost_usd.toFixed(4)}`}</td></tr>`).join("") : tableEmpty(7, "No sessions yet", "Chat with a ready agent to start one.");
+  document.querySelector("#agent-trace-table").innerHTML = traces.length ? traces.map(trace => {
+    const components = Array.isArray(trace.metadata?.lfx_timing?.component_timings) ? trace.metadata.lfx_timing.component_timings : [];
+    const componentCell = components.length ? `<details><summary>${components.length} components</summary><ul>${components.map(item => `<li>${escapeHTML(item.component || 'Component')} · ${Number(item.duration || 0).toFixed(3)} s</li>`).join('')}</ul></details>` : 'Unavailable';
+    const agentName = agentCache.find(agent => agent.id === trace.agent_id)?.name || trace.agent_id;
+    return `<tr><td>${escapeHTML(new Date(trace.created_at).toLocaleString())}</td><td>${escapeHTML(agentName)}</td><td>${status(trace.status)}</td><td>${Number(trace.duration_ms || 0).toLocaleString()} ms</td><td>${trace.metadata?.usage_available === false ? 'Unavailable' : Number(trace.tokens || 0).toLocaleString()}</td><td>${componentCell}</td></tr>`;
+  }).join('') : tableEmpty(6, 'No traces yet', 'Invoke an agent to see its recent executions.');
   document.querySelector("#prompt-list").closest("article").hidden = !hasService("catalog");
   document.querySelector("#prompt-list").innerHTML = prompts.unavailable ? emptyState("Prompts are temporarily unavailable", "Use the refresh button to retry.") : prompts.configured
     ? (prompts.items.length ? prompts.items.map(prompt => `<div class="prompt-row"><b>${escapeHTML(prompt.name)}</b><span class="tag">v${escapeHTML(prompt.version ?? "?")}</span>${(prompt.labels || []).map(label => `<span class="tag">${escapeHTML(label)}</span>`).join("")}</div>`).join("") : emptyState("No prompts stored yet", "Langfuse is connected."))
