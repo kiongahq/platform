@@ -27,6 +27,8 @@ func hexString(value []byte) string { return hex.EncodeToString(value) }
 type Browser struct {
 	Config Config
 	Client *http.Client
+	// BucketInHost uses virtual-hosted S3 URLs for an external bucket.
+	BucketInHost bool
 	// PreviewLimit caps object preview bytes; defaults to 64 KiB.
 	PreviewLimit int64
 }
@@ -167,7 +169,11 @@ func (b *Browser) ListObjects(bucket, prefix string) (Listing, error) {
 	if prefix != "" {
 		query.Set("prefix", prefix)
 	}
-	response, err := b.get("/"+bucket, query)
+	path := "/" + bucket
+	if b.BucketInHost {
+		path = "/"
+	}
+	response, err := b.get(path, query)
 	if err != nil {
 		return Listing{}, err
 	}
@@ -194,7 +200,11 @@ func (b *Browser) PreviewObject(bucket, key string) (Preview, error) {
 	if limit <= 0 {
 		limit = 64 << 10
 	}
-	response, err := b.get("/"+bucket+"/"+key, nil)
+	path := "/" + bucket + "/" + key
+	if b.BucketInHost {
+		path = "/" + key
+	}
+	response, err := b.get(path, nil)
 	if err != nil {
 		return Preview{}, err
 	}
