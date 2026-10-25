@@ -4,10 +4,14 @@ async function loadAgents() {
   const [data, prompts] = await Promise.all([api("/api/v1/agents"), hasService("catalog") ? api("/api/v1/prompts").catch(() => ({items: [], unavailable: true})) : Promise.resolve({items: []})]);
   data.items = scoped(data.items || []);
   agentCache = data.items || [];
-  const sessionGroups = await Promise.all(data.items.map(agent => api(`/api/v1/agents/${encodeURIComponent(agent.id)}/sessions`).catch(() => ({items: []}))));
+  const [sessionGroups, traceGroups, metricGroups] = await Promise.all([
+    Promise.all(data.items.map(agent => api(`/api/v1/agents/${encodeURIComponent(agent.id)}/sessions`).catch(() => ({items: []})))),
+    Promise.all(data.items.map(agent => api(`/api/v1/agents/${encodeURIComponent(agent.id)}/traces`).catch(() => ({items: []})))),
+    Promise.all(data.items.map(agent => api(`/api/v1/agents/${encodeURIComponent(agent.id)}/metrics`).catch(() => ({available: false})))),
+  ]);
   const sessions = sessionGroups.flatMap(group => group.items);
-  const traceGroups = await Promise.all(data.items.map(agent => api(`/api/v1/agents/${encodeURIComponent(agent.id)}/traces`).catch(() => ({items: []}))));
   const traces = traceGroups.flatMap(group => group.items).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 20);
+  const liveMetrics = Object.fromEntries(data.items.map((agent, index) => [agent.id, metricGroups[index]]));
   const unmetered = sessions.filter(item => item.usage_available === false);
   const measured = sessions.filter(item => item.usage_available !== false);
   const tokens = measured.reduce((sum, item) => sum + item.input_tokens + item.output_tokens, 0);
@@ -19,7 +23,9 @@ async function loadAgents() {
     const actions = can("agents_write") ? `<button type="button" data-agent-traffic="${escapeHTML(agent.id)}">Traffic</button><button type="button" class="primary" data-agent-chat="${escapeHTML(agent.id)}" data-agent-name="${escapeHTML(agent.name)}" ${ready ? "" : "disabled title=\"The runtime health check has not passed yet\""}>Chat</button>` : `<span class="tag">Read-only</span>`;
     const resources = agent.resources || {};
     const scaling = agent.autoscaling || {min_replicas: agent.replicas || 1, max_replicas: agent.replicas || 1};
-    return `<article class="card interactive-card" data-agent-detail="${escapeHTML(agent.id)}"><span class="kind">${escapeHTML(agent.llm_backend)} · v${escapeHTML(agent.version)}</span><h3><button type="button" class="card-title-button" data-agent-detail="${escapeHTML(agent.id)}">${escapeHTML(agent.name)}</button></h3><p class="truncate" title="${escapeHTML(agent.graph_module)}">${escapeHTML(agent.graph_module)}</p><div class="tags"><span class="tag">${escapeHTML(resources.cpu || "500m")} CPU</span><span class="tag">${escapeHTML(resources.memory || "1Gi")} RAM</span><span class="tag">${scaling.min_replicas}–${scaling.max_replicas} replicas</span>${resources.gpu ? `<span class="tag">${resources.gpu} × ${escapeHTML(resources.gpu_type)}</span>` : ""}${(agent.tools || []).map(tool => `<span class="tag">${escapeHTML(tool)}</span>`).join("")}</div><footer>${status(agent.status)}<span class="tag">${agent.canary_weight}% canary</span>${actions}</footer></article>`;
+    const measured = liveMetrics[agent.id];
+    const live = measured?.available ? `${Number(measured.cpu_millicores || 0).toLocaleString()}m CPU · ${(Number(measured.memory_bytes || 0) / (1024 ** 2)).toFixed(0)} MiB RAM · ${Number(measured.pods || 0)} measured pods` : 'Live resource usage unavailable';
+    return `<article class="card interactive-card" data-agent-detail="${escapeHTML(agent.id)}"><span class="kind">${escapeHTML(agent.llm_backend)} · v${escapeHTML(agent.version)}</span><h3><button type="button" class="card-title-button" data-agent-detail="${escapeHTML(agent.id)}">${escapeHTML(agent.name)}</button></h3><p class="truncate" title="${escapeHTML(agent.graph_module)}">${escapeHTML(agent.graph_module)}</p><div class="tags"><span class="tag">${escapeHTML(resources.cpu || "500m")} CPU</span><span class="tag">${escapeHTML(resources.memory || "1Gi")} RAM</span><span class="tag">${scaling.min_replicas}–${scaling.max_replicas} replicas</span>${resources.gpu ? `<span class="tag">${resources.gpu} × ${escapeHTML(resources.gpu_type)}</span>` : ""}${(agent.tools || []).map(tool => `<span class="tag">${escapeHTML(tool)}</span>`).join("")}</div><p class="field-help">${live}${resources.gpu ? ' · GPU utilization unavailable' : ''}</p><footer>${status(agent.status)}<span class="tag">${agent.canary_weight}% canary</span>${actions}</footer></article>`;
   }).join("") : emptyState("No agents deployed yet", "Scaffold a production-agent project, build its image, then deploy it here.");
   document.querySelector("#session-table").innerHTML = sessions.length ? sessions.map(session => `<tr><td><span class="truncate mono" title="${escapeHTML(session.id)}">${escapeHTML(session.id)}</span></td><td>${escapeHTML(session.agent_id)}</td><td>${escapeHTML(session.current_node)}</td><td>${status(session.status)}</td><td>${session.turns}</td><td>${session.usage_available === false ? "Unavailable" : (session.input_tokens + session.output_tokens).toLocaleString()}</td><td>${session.usage_available === false ? "Unavailable" : `$${session.cost_usd.toFixed(4)}`}</td></tr>`).join("") : tableEmpty(7, "No sessions yet", "Chat with a ready agent to start one.");
   document.querySelector("#agent-trace-table").innerHTML = traces.length ? traces.map(trace => {

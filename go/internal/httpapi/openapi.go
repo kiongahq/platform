@@ -51,6 +51,7 @@ func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 			"/api/v1/registered-storage":                 map[string]any{"get": map[string]any{"summary": "List project-authorized registered object storage without credentials"}},
 			"/api/v1/registered-storage/{id}/objects":    map[string]any{"get": map[string]any{"summary": "Browse an authorized registered object storage connection"}},
 			"/api/v1/registered-storage/{id}/object":     map[string]any{"get": map[string]any{"summary": "Read a bounded preview from registered object storage"}},
+			"/api/v1/agents/{id}/metrics":                map[string]any{"get": map[string]any{"summary": "Read managed agent CPU and memory usage when Kubernetes metrics are available"}},
 			"/api/v1/connections/{id}/activate":          map[string]any{"post": map[string]any{"summary": "Verify and persist the Prefect or OpenFaaS runtime for new operations"}},
 			"/api/v1/health":                             map[string]any{"get": map[string]any{"summary": "Gateway health"}},
 			"/api/v1/me":                                 map[string]any{"get": map[string]any{"summary": "Caller identity, roles and effective permissions"}},
