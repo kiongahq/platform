@@ -216,6 +216,9 @@ function renderSignupBanner() {
 
 async function loadMe() {
   me = {...me, ...await api("/api/v1/me")};
+  me.roles = Array.isArray(me.roles) ? me.roles : [];
+  me.services = Array.isArray(me.services) ? me.services : [];
+  me.permissions = me.permissions && typeof me.permissions === "object" ? me.permissions : {};
   applyPermissions();
 }
 

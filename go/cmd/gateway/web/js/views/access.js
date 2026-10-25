@@ -55,6 +55,9 @@ async function loadAccess() {
 async function loadMyAccess() {
   const [identity, requests] = await Promise.all([api("/api/v1/me"), api("/api/v1/access-requests")]);
   me = {...me, ...identity};
+  me.roles = Array.isArray(me.roles) ? me.roles : [];
+  me.services = Array.isArray(me.services) ? me.services : [];
+  me.permissions = me.permissions && typeof me.permissions === "object" ? me.permissions : {};
   const grant = me.entitlements;
   const services = isAdmin() ? accessServices : (me.services || []);
   const roleState = grant?.disabled ? "suspended" : (me.provisioned || isAdmin() ? "active" : "not_provisioned");

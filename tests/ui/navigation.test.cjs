@@ -53,6 +53,17 @@ function consoleApp(services, view, overrides={}) {
   return {dom,w,requests,errors,fixtures};
 }
 
+test('Langflow renders when identity service grants are null', async () => {
+ const app=consoleApp(['langflow','agents'],'langflow',{
+  '/api/v1/me':{subject:'admin',roles:['admin'],services:null,mode:'local',permissions:{},project_ids:['p1'],provisioned:true},
+  '/api/v1/langflow-workspaces':{mode:'local',items:[]},
+ });
+ await tick();
+ assert.equal(app.w.document.querySelector('.view.active').id,'langflow');
+ assert.equal(app.w.document.querySelector('#view-feedback-message').textContent,'');
+ assert.deepEqual(app.errors,[]);
+});
+
 for(const view of ['agents','platform','functions','storage','pipelines','projects','models','features','realtime','catalog']) {
  test(`${view} loads with only its own service grant`,async t=>{
    const app=consoleApp([view],view);t.after(()=>app.dom.window.close());await tick();
