@@ -35,6 +35,8 @@ func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 			"/api/v1/langflow-snapshots":                 map[string]any{"get": map[string]any{"summary": "List Kionga flow snapshots"}},
 			"/api/v1/langflow-snapshots/{id}":            map[string]any{"get": map[string]any{"summary": "Read flow snapshot metadata and revision history"}},
 			"/api/v1/langflow-snapshots/{id}/publish":    map[string]any{"post": map[string]any{"summary": "Publish a snapshot revision as an independently managed agent"}},
+			"/api/v1/langflow-snapshots/{id}/activate":   map[string]any{"post": map[string]any{"summary": "Activate a ready deployment or roll back the stable flow route"}},
+			"/api/v1/langflow-snapshots/{id}/invoke":     map[string]any{"post": map[string]any{"summary": "Invoke the active Langflow deployment through a stable project-scoped route"}},
 			"/api/v1/admin/knowledge-bases":              map[string]any{"post": map[string]any{"summary": "Register a project-scoped Qdrant or pgvector knowledge backend using gateway environment credentials"}},
 			"/api/v1/knowledge-bases":                    map[string]any{"get": map[string]any{"summary": "List knowledge bases in assigned projects without endpoint credentials"}},
 			"/api/v1/knowledge-bases/{id}/chunks":        map[string]any{"post": map[string]any{"summary": "Store a text chunk and matching embedding in an authorized knowledge base"}},

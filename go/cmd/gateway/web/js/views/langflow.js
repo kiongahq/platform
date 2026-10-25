@@ -42,8 +42,9 @@ async function loadLangflow() {
     ${item.id === 'local' ? '' : `<button type="button" data-langflow-action="${item.state === 'stopped' ? 'start' : 'stop'}" data-langflow-id="${escapeHTML(item.id)}">${item.state === 'stopped' ? 'Start' : 'Stop'}</button><button type="button" data-langflow-action="restart" data-langflow-id="${escapeHTML(item.id)}" ${item.state === 'stopped' ? 'disabled' : ''}>Restart</button><button type="button" class="danger" data-langflow-action="delete" data-langflow-id="${escapeHTML(item.id)}">Delete</button>`}</div>
   </article>`).join('') || emptyState('No Langflow workspaces', data.mode === 'local' ? 'Start the optional Langflow Compose profile to enable the local canvas.' : 'Create a workspace for this project to start building flows.');
   document.querySelector('#langflow-snapshots').innerHTML = langflowSnapshots.map(item => {
-    const deployments = langflowAgents.filter(agent => agent.snapshot_id === item.id).map(agent => `<small>Agent ${escapeHTML(agent.id)} · revision ${agent.snapshot_revision} · ${escapeHTML(agent.status)}</small>`).join('');
-    return `<div class="store-row"><div><b>${escapeHTML(item.name)}</b><small>${escapeHTML(projectOptions.find(project => project.id === item.project_id)?.name || item.project_id)} · ${escapeHTML(item.flow_id)}</small>${deployments}</div><div>${status(`revision ${item.revision}`)}<small>${escapeHTML(dateTime(item.updated_at))}</small>${langflowManagedMode && item.owner_subject === me.subject && (me.services.includes('agents') || me.roles.some(role => ['admin','operator'].includes(role))) ? `<button type="button" data-langflow-publish="${escapeHTML(item.id)}">Publish</button>` : ''}</div></div>`;
+    const canManage = langflowManagedMode && item.owner_subject === me.subject && (me.services.includes('agents') || me.roles.some(role => ['admin','operator'].includes(role)));
+    const deployments = langflowAgents.filter(agent => agent.snapshot_id === item.id).map(agent => `<small>Agent ${escapeHTML(agent.id)} · revision ${agent.snapshot_revision} · ${escapeHTML(agent.status)}${item.active_agent_id === agent.id ? ' · active' : ''}</small>${canManage && agent.status === 'ready' && item.active_agent_id !== agent.id ? `<button type="button" data-langflow-activate="${escapeHTML(agent.id)}" data-langflow-snapshot="${escapeHTML(item.id)}">${item.active_agent_id && agent.snapshot_revision < item.active_revision ? 'Roll back to' : 'Activate'} revision ${agent.snapshot_revision}</button>` : ''}`).join('');
+    return `<div class="store-row"><div><b>${escapeHTML(item.name)}</b><small>${escapeHTML(projectOptions.find(project => project.id === item.project_id)?.name || item.project_id)} · ${escapeHTML(item.flow_id)}</small>${item.active_agent_id ? `<small>Stable API · <code>${escapeHTML(item.invoke_path)}</code></small>` : ''}${deployments}</div><div>${status(`revision ${item.revision}`)}<small>${escapeHTML(dateTime(item.updated_at))}</small>${canManage ? `<button type="button" data-langflow-publish="${escapeHTML(item.id)}">Publish</button>` : ''}</div></div>`;
   }).join('') || emptyState('No flow snapshots', 'Open a Langflow workspace and capture a saved flow.');
 }
 registerView('langflow', loadLangflow, {eyebrow: 'AGENT BUILDER', title: 'Langflow workspaces'});
@@ -149,7 +150,16 @@ document.querySelector('#langflow-capture-form').addEventListener('submit', asyn
     await loadLangflow();
   } catch (error) { document.querySelector('#langflow-capture-error').textContent = error.message; }
 });
-document.querySelector('#langflow-snapshots').addEventListener('click', event => {
+document.querySelector('#langflow-snapshots').addEventListener('click', async event => {
+  const activate = event.target.closest('[data-langflow-activate]');
+  if (activate) {
+    try {
+      await withBusy(activate, () => api(`/api/v1/langflow-snapshots/${encodeURIComponent(activate.dataset.langflowSnapshot)}/activate`, {method:'POST',body:JSON.stringify({agent_id:activate.dataset.langflowActivate})}));
+      toast('Active Langflow deployment updated. The stable API now uses this revision.');
+      await loadLangflow();
+    } catch (error) { langflowMessage(error.message, true); }
+    return;
+  }
   const button = event.target.closest('[data-langflow-publish]');
   if (!button) return;
   const snapshot = langflowSnapshots.find(item => item.id === button.dataset.langflowPublish);

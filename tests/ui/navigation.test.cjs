@@ -416,6 +416,25 @@ test('Langflow publishes an earlier flow revision with managed resources', async
  assert.deepEqual(app.errors,[]);
 });
 
+test('Langflow offers a stable endpoint and ready deployment rollback',async t=>{
+ const snapshot={id:'lfs-123',name:'Support flow',project_id:'p1',flow_id:'flow-1',owner_subject:'user-1',revision:3,active_agent_id:'agt-new',active_revision:3,invoke_path:'/api/v1/langflow-snapshots/lfs-123/invoke'};
+ const app=consoleApp(['langflow','agents'],'langflow',{
+  '/api/v1/langflow-workspaces':{mode:'kubernetes',items:[]},
+  '/api/v1/langflow-snapshots':{items:[snapshot]},
+  '/api/v1/agents':{items:[{id:'agt-new',snapshot_id:'lfs-123',snapshot_revision:3,status:'ready'},{id:'agt-old',snapshot_id:'lfs-123',snapshot_revision:1,status:'ready'}]},
+  '/api/v1/langflow-snapshots/lfs-123/activate':{agent_id:'agt-old',revision:1},
+ });
+ t.after(()=>app.dom.window.close());await tick();
+ const d=app.w.document;
+ assert.match(d.querySelector('#langflow-snapshots').textContent,/Stable API.*\/api\/v1\/langflow-snapshots\/lfs-123\/invoke/);
+ const rollback=d.querySelector('[data-langflow-activate="agt-old"]');
+ assert.match(rollback.textContent,/Roll back to revision 1/);
+ rollback.click();await tick();
+ const body=app.w.__bodies.find(item=>item.path==='/api/v1/langflow-snapshots/lfs-123/activate');
+ assert.deepEqual(JSON.parse(body.body),{agent_id:'agt-old'});
+ assert.deepEqual(app.errors,[]);
+});
+
 test('Langflow availability does not replace the IDE workspace link', async t => {
  const app=consoleApp(['ide','langflow'],'langflow',{
    '/api/v1/langflow-workspaces':{mode:'local',items:[]},
