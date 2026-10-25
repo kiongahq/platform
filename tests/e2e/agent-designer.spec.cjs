@@ -1,0 +1,34 @@
+const {test, expect, ADMIN, signIn, screenshotPath} = require('./fixtures.cjs');
+
+test('native agent canvas saves and reloads a connected graph', async ({page}, testInfo) => {
+  await signIn(page, ADMIN, '/console.html?view=agent-designer');
+  await expect(page.locator('#agent-designer')).toHaveClass(/active/);
+  await expect(page.locator('.design-node')).toHaveCount(2);
+  await page.locator('[data-design-add="prompt"]').click();
+  await expect(page.locator('.design-node')).toHaveCount(3);
+  await page.locator('[data-design-out="input"]').click();
+  await page.locator('[data-design-in^="prompt-"]').click();
+  await page.locator('[data-design-out^="prompt-"]').click();
+  await page.locator('[data-design-in="output"]').click();
+  await page.locator('#design-name').fill(`canvas-smoke-${Date.now()}`);
+  await page.locator('#design-save').click();
+  await expect(page.locator('#design-message')).toContainText('Saved revision 1.');
+  await expect(page.locator('#design-revision')).toContainText('Revision 1');
+  await expect(page.locator('#design-description')).toHaveValue('');
+  await page.screenshot({path: screenshotPath(testInfo, 'agent-designer'), fullPage: false});
+  await page.reload();
+  await expect(page.locator('#agent-designer')).toHaveClass(/active/);
+  await expect(page.locator('.design-node')).toHaveCount(3);
+  await expect(page.locator('.design-edge')).toHaveCount(3);
+  await expect(page.locator('#design-description')).toHaveValue('');
+  await page.locator('[data-design-select^="prompt-"]').click();
+  await page.locator('#design-node-name').fill('Revised prompt');
+  await page.locator('#design-save').click();
+  await expect(page.locator('#design-revision')).toContainText('Revision 2');
+  await expect(page.locator('[data-design-restore="1"]')).toBeVisible();
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('[data-design-restore="1"]').click();
+  await expect(page.locator('[data-design-select^="prompt-"] strong')).toHaveText('Prompt');
+  await page.locator('#design-save').click();
+  await expect(page.locator('#design-revision')).toContainText('Revision 3');
+});

@@ -225,7 +225,7 @@ const viewLoaders = {};
 const viewMeta = {};
 /* Views whose data the project selector filters. Others hide the selector so
  * it never appears to do something it does not. */
-const projectScopedViews = new Set(["overview", "projects", "pipelines", "functions", "models", "agents", "logs"]);
+const projectScopedViews = new Set(["overview", "projects", "pipelines", "functions", "models", "agents", "agent-designer", "logs"]);
 const adminViews = new Set(["access"]);
 const ungatedViews = new Set(["access", "profile", "settings", "blogs"]);
 
@@ -274,7 +274,7 @@ function routeURL(id, resource = selectedResource) {
 }
 
 /* Views backed by another service's API (logs belong to pipelines). */
-const serviceForView = id => ({logs: "pipelines"})[id] || id;
+const serviceForView = id => ({logs: "pipelines", "agent-designer": "agents"})[id] || id;
 function canOpenView(id) {
   if (!ungatedViews.has(id) && !hasService(serviceForView(id))) return "This service has not been assigned to you.";
   if (adminViews.has(id) && !isAdmin()) return "Administrator access is required.";

@@ -31,6 +31,7 @@
         <p class="nav-group-label">Models &amp; data</p>
         <button class="nav-item" type="button" data-view="models"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#models"></use></svg></span>Models</button>
         <button class="nav-item" type="button" data-view="agents"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#agents"></use></svg></span>Agents</button>
+        <button class="nav-item" type="button" data-view="agent-designer"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#pipelines"></use></svg></span>Agent designer</button>
         <button class="nav-item" type="button" data-view="features"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#features"></use></svg></span>Features</button>
         <button class="nav-item" type="button" data-view="storage"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#storage"></use></svg></span>Storage</button>
         <button class="nav-item" type="button" data-view="realtime"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#realtime"></use></svg></span>Real-time</button>
@@ -142,13 +143,25 @@
       </section>
 
       <section id="agents" class="view" aria-labelledby="page-title">
-        <div class="section-heading"><div><p>Deployments, tools, live sessions, traces, prompts, token usage and cost.</p></div><div class="heading-actions"><button class="primary" type="button" id="deploy-agent" data-perm="agents_write"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg> Deploy agent</button></div></div>
+        <div class="section-heading"><div><p>Deployments, tools, live sessions, traces, prompts, token usage and cost.</p></div><div class="heading-actions"><button type="button" data-view-target="agent-designer">Open designer</button><button class="primary" type="button" id="deploy-agent" data-perm="agents_write"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg> Deploy agent</button></div></div>
         <div data-intro="agents"></div>
         <div id="agent-summary" class="stat-grid"></div>
         <div id="agent-grid" class="card-grid"></div>
         <div class="split">
           <article class="panel table-wrap agent-traces" tabindex="0" aria-label="Live sessions table"><div class="panel-heading table-heading"><div><p class="eyebrow">SESSION MONITOR</p><h3>Live sessions</h3></div></div><table><thead><tr><th scope="col">Session</th><th scope="col">Agent</th><th scope="col">Node</th><th scope="col">Status</th><th scope="col">Turns</th><th scope="col">Tokens</th><th scope="col">Cost</th></tr></thead><tbody id="session-table"></tbody></table></article>
           <article class="panel"><div class="panel-heading"><div><p class="eyebrow">PROMPT LIBRARY</p><h3>Langfuse prompts</h3></div></div><div id="prompt-list" class="prompt-list"></div></article>
+        </div>
+      </section>
+
+      <section id="agent-designer" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Design agent graphs in Kionga. Saved designs are versioned drafts; deploying still requires a built agent runtime image.</p></div><div class="heading-actions"><button type="button" id="design-new" data-perm="agents_write">New design</button><button class="primary" type="button" id="design-save" data-perm="agents_write">Save revision</button></div></div>
+        <div class="design-toolbar"><label>Design <select id="design-list" aria-label="Saved agent designs"></select></label><label>Project <select id="design-project"></select></label><label>Name <input id="design-name" maxlength="100" required></label><span id="design-revision" class="tag">Unsaved</span></div>
+        <label class="design-description">Description <input id="design-description" maxlength="1000" placeholder="What this agent does"></label>
+        <div id="design-message" role="status" aria-live="polite"></div>
+        <div class="design-layout">
+          <div class="design-palette panel" role="region" aria-label="Node palette"><p class="eyebrow">COMPONENTS</p><p>Add a node, then connect its output port to another node's input port.</p><button type="button" data-design-add="prompt">+ Prompt</button><button type="button" data-design-add="model">+ Model</button><button type="button" data-design-add="tool">+ Tool</button><p class="field-help">The input and output nodes are always present.</p><button type="button" id="design-export">Export JSON</button></div>
+          <div class="design-canvas-scroll" aria-label="Agent graph canvas" tabindex="0"><div id="design-canvas" class="design-canvas"><svg id="design-edges" aria-hidden="true" width="2000" height="1300"></svg><div id="design-nodes"></div></div></div>
+          <div class="design-inspector panel" role="region" aria-label="Selected node settings"><p class="eyebrow">NODE SETTINGS</p><div id="design-inspector-content"><p>Select a node to edit it.</p></div><div id="design-revisions"></div><datalist id="design-model-options"></datalist><datalist id="design-tool-options"></datalist></div>
         </div>
       </section>
 
@@ -528,6 +541,7 @@ mlaiops projects list</pre><div class="form-actions"><button class="primary" typ
   <script src="/js/views/functions.js"></script>
   <script src="/js/views/models.js"></script>
   <script src="/js/views/agents.js"></script>
+  <script src="/js/views/agent-designer.js"></script>
   <script src="/js/views/data.js"></script>
   <script src="/js/views/platform.js"></script>
   <script src="/js/views/access.js"></script>

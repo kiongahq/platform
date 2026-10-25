@@ -78,6 +78,8 @@ func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 			"/api/v1/models/{id}/rollback":            map[string]any{"post": map[string]any{"summary": "Roll back a model deployment"}},
 			"/api/v1/models/{id}/predict":             map[string]any{"post": map[string]any{"summary": "Send a prediction request"}},
 			"/api/v1/agents":                          map[string]any{"get": map[string]any{"summary": "List agents"}, "post": map[string]any{"summary": "Deploy an agent"}},
+			"/api/v1/agent-designs":                   map[string]any{"get": map[string]any{"summary": "List native agent graph designs"}, "post": map[string]any{"summary": "Create an agent graph design"}},
+			"/api/v1/agent-designs/{id}":              map[string]any{"get": map[string]any{"summary": "Read an agent graph design"}, "put": map[string]any{"summary": "Save a new agent graph revision"}},
 			"/api/v1/agents/{id}/traffic":             map[string]any{"put": map[string]any{"summary": "Update agent canary traffic"}},
 			"/api/v1/agents/{id}/invoke":              map[string]any{"post": map[string]any{"summary": "Invoke an agent"}},
 			"/api/v1/agents/{id}/sessions":            map[string]any{"get": map[string]any{"summary": "List agent sessions"}},

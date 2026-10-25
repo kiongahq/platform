@@ -50,6 +50,23 @@ make build && bin/mlaiops-cli project list
 To run the gateway alone during development, with a file-backed store and no other
 services, use `make run`.
 
+### Native agent designer
+
+Open **Agents → Agent designer** (or `/console.html?view=agent-designer`) to build
+an agent graph inside the Kionga console. Add prompt, model, and tool nodes;
+connect their ports; drag nodes to arrange the canvas; then save a project-scoped
+design. The API persists the graph in the gateway's tenant-scoped document store
+and checks node identities, connections, cycles, and project access. Saves use a
+revision number to reject stale edits; the 20 most recent prior revisions can
+be restored in the inspector and saved as a new revision. **Export JSON**
+downloads the design.
+
+The designer currently saves graph drafts. Testing, publishing, and deploying a
+draft as an executable agent are not yet connected to the agent runtime. Use
+**Deploy agent** with a built OCI image and Python graph module for production
+execution. Do not put credentials in node settings; reference registered platform
+resources instead.
+
 ## Documentation
 
 - Product documentation: <https://kiongahq.github.io/docs/>, starting with

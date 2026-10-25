@@ -369,7 +369,7 @@ func (v *Verifier) refresh(ctx context.Context) error {
 // engineerWrite lists what the engineer role may mutate: the ML lifecycle,
 // but not platform configuration (connections stay admin/operator-only).
 var engineerWrite = []string{
-	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents",
+	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents", "/api/v1/agent-designs",
 	"/api/v1/tools", "/api/v1/features", "/api/v1/traces", "/api/v1/functions",
 	"/api/v1/realtime",
 }
@@ -382,13 +382,16 @@ var serviceWrite = []string{
 }
 
 var userWrite = []string{
-	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents",
+	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents", "/api/v1/agent-designs",
 	"/api/v1/tools", "/api/v1/features", "/api/v1/traces", "/api/v1/functions",
 	"/api/v1/realtime",
 }
 
 func Allowed(principal Principal, method, path string) bool {
 	if principal.Disabled {
+		return false
+	}
+	if strings.HasPrefix(path, "/api/v1/agent-designs") && hasRole(principal, RoleService) {
 		return false
 	}
 	if strings.HasPrefix(path, "/workspaces/") || (strings.HasPrefix(path, "/api/v1/workspaces/") && strings.HasSuffix(path, "/launch")) {
@@ -510,7 +513,7 @@ func serviceForPath(path string) string {
 		return "pipelines"
 	case strings.HasPrefix(path, "/api/v1/models"):
 		return "models"
-	case strings.HasPrefix(path, "/api/v1/agents"), strings.HasPrefix(path, "/api/v1/traces"):
+	case strings.HasPrefix(path, "/api/v1/agents"), strings.HasPrefix(path, "/api/v1/agent-designs"), strings.HasPrefix(path, "/api/v1/traces"):
 		return "agents"
 	case strings.HasPrefix(path, "/api/v1/features"):
 		return "features"
