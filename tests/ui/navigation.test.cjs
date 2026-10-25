@@ -32,6 +32,7 @@ function consoleApp(services, view, overrides={}) {
     '/api/v1/realtime':{demos:{}}, '/api/v1/catalog':[], '/api/v1/settings/tokens':{items:[]},
     '/api/v1/access-requests':{items:[]},
     '/api/v1/langflow-snapshots':{items:[]},
+    '/api/v1/knowledge-bases':{items:[]},
     ...overrides,
   };
   const grants={projects:'projects',pipelines:'pipelines',agents:'agents',models:'models',features:'features',functions:'functions',storage:'storage',components:'platform',connections:'platform',realtime:'realtime',catalog:'catalog',prompts:'catalog',tools:'catalog',onboarding:'overview',dashboard:'overview'};
@@ -321,6 +322,29 @@ test('Langflow is a separate agent builder with project-scoped workspace control
  assert.match(app.w.document.querySelector('#langflow-list').textContent,/Support lab/);
  assert.ok(app.requests.includes('/api/v1/langflow-workspaces'));
  assert.ok(!app.requests.includes('/api/v1/agent-designs'));
+ assert.deepEqual(app.errors,[]);
+});
+
+test('Langflow shows project knowledge and registers an admin pgvector base without a raw DSN',async t=>{
+ const identity={subject:'admin',roles:['admin'],services:['langflow','agents'],mode:'local',permissions:{},project_ids:['p1'],provisioned:true};
+ const app=consoleApp(['langflow','agents'],'langflow',{
+  '/api/v1/me':identity,
+  '/api/v1/langflow-workspaces':{mode:'local',items:[]},
+  '/api/v1/knowledge-bases':{items:[{id:'kb-1',project_id:'p1',name:'support-docs',backend:'pgvector',dimensions:1536}]},
+  '/api/v1/admin/knowledge-bases':{id:'kb-2',name:'new-docs'},
+ });
+ t.after(()=>app.dom.window.close());await tick();
+ const d=app.w.document;
+ assert.match(d.querySelector('#langflow-knowledge').textContent,/support-docs/,d.querySelector('#view-feedback-message').textContent);
+ assert.equal(d.querySelector('#langflow-knowledge-create').hidden,false);
+ const form=d.querySelector('#langflow-knowledge-create');
+ form.elements.name.value='new-docs';
+ form.elements.backend.value='pgvector';
+ form.elements.backend.dispatchEvent(new app.w.Event('change'));
+ form.elements.dsn_ref.value='env:KIONGA_KNOWLEDGE_DSN';
+ form.dispatchEvent(new app.w.Event('submit',{bubbles:true,cancelable:true}));await tick();
+ const body=app.w.__bodies.find(item=>item.path==='/api/v1/admin/knowledge-bases');
+ assert.deepEqual(JSON.parse(body.body),{project_id:'p1',name:'new-docs',backend:'pgvector',dimensions:1536,dsn_ref:'env:KIONGA_KNOWLEDGE_DSN'});
  assert.deepEqual(app.errors,[]);
 });
 

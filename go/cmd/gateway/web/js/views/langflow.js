@@ -11,11 +11,17 @@ function langflowMessage(message, error = false) {
   node.classList.toggle('error', error);
 }
 async function loadLangflow() {
-  const [data, snapshots, agents] = await Promise.all([api('/api/v1/langflow-workspaces'), api('/api/v1/langflow-snapshots'), me.services.includes('agents') || me.roles.some(role => ['admin','operator'].includes(role)) ? api('/api/v1/agents') : Promise.resolve({items:[]})]);
+  const [data, snapshots, agents, knowledge] = await Promise.all([api('/api/v1/langflow-workspaces'), api('/api/v1/langflow-snapshots'), me.services.includes('agents') || me.roles.some(role => ['admin','operator'].includes(role)) ? api('/api/v1/agents') : Promise.resolve({items:[]}), api('/api/v1/knowledge-bases')]);
   langflowSnapshots = (snapshots.items || []).filter(item => !selectedProject || item.project_id === selectedProject);
   langflowAgents = agents.items || [];
   langflowManagedMode = data.mode === 'kubernetes';
   langflowItems = (data.items || []).filter(item => !selectedProject || item.project_id === selectedProject || item.id === 'local');
+  const bases = (knowledge.items || []).filter(item => !selectedProject || item.project_id === selectedProject);
+  document.querySelector('#langflow-knowledge').innerHTML = bases.map(item => `<div class="store-row"><div><b>${escapeHTML(item.name)}</b><small>${escapeHTML(projectOptions.find(project => project.id === item.project_id)?.name || item.project_id)} · <code>${escapeHTML(item.id)}</code></small></div><div><span class="tag">${escapeHTML(item.backend)}</span><small>${Number(item.dimensions)} dimensions</small></div></div>`).join('') || emptyState('No knowledge bases', 'An administrator can register Qdrant or pgvector for this project.');
+  const knowledgeForm = document.querySelector('#langflow-knowledge-create');
+  knowledgeForm.hidden = !me.roles.some(role => ['admin','operator'].includes(role));
+  knowledgeForm.elements.project_id.innerHTML = projectOptions.map(item => `<option value="${escapeHTML(item.id)}">${escapeHTML(item.name)}</option>`).join('');
+  if (selectedProject) knowledgeForm.elements.project_id.value = selectedProject;
   const form = document.querySelector('#langflow-create');
   form.hidden = data.mode !== 'kubernetes' || me.roles.includes('viewer');
   const project = document.querySelector('#langflow-project');
@@ -35,6 +41,28 @@ async function loadLangflow() {
   }).join('') || emptyState('No flow snapshots', 'Open a Langflow workspace and capture a saved flow.');
 }
 registerView('langflow', loadLangflow, {eyebrow: 'AGENT BUILDER', title: 'Langflow workspaces'});
+document.querySelector('#langflow-knowledge-create [name=backend]').addEventListener('change', event => {
+  const postgres = event.target.value === 'pgvector';
+  document.querySelectorAll('[data-knowledge-qdrant]').forEach(node => { node.hidden = postgres; });
+  document.querySelectorAll('[data-knowledge-pgvector]').forEach(node => { node.hidden = !postgres; });
+});
+document.querySelector('#langflow-knowledge-create').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.target;
+  const error = document.querySelector('#langflow-knowledge-error');
+  error.textContent = '';
+  const payload = Object.fromEntries(new FormData(form));
+  payload.dimensions = Number(payload.dimensions);
+  if (payload.backend === 'qdrant') delete payload.dsn_ref;
+  else { delete payload.endpoint; delete payload.secret_ref; }
+  try {
+    await withBusy(event.submitter, () => api('/api/v1/admin/knowledge-bases', {method:'POST', body:JSON.stringify(payload)}));
+    form.reset();
+    form.elements.backend.dispatchEvent(new Event('change'));
+    toast('Knowledge base registered for this project.');
+    await loadLangflow();
+  } catch (failure) { error.textContent = failure.message; }
+});
 document.querySelector('#langflow-refresh').addEventListener('click', () => loadLangflow().catch(error => langflowMessage(error.message, true)));
 document.querySelector('#langflow-create').addEventListener('submit', async event => {
   event.preventDefault();
