@@ -61,6 +61,8 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/v1/langflow-snapshots", server.langflowSnapshots)
 	mux.HandleFunc("GET /api/v1/langflow-snapshots/{id}", server.langflowSnapshot)
 	mux.HandleFunc("POST /api/v1/langflow-snapshots/{id}/publish", server.publishLangflowSnapshot)
+	mux.HandleFunc("POST /api/v1/langflow-snapshots/{id}/activate", server.activateLangflowDeployment)
+	mux.HandleFunc("POST /api/v1/langflow-snapshots/{id}/invoke", server.invokeActiveLangflowDeployment)
 	mux.HandleFunc("/workspaces/{kind}/{path...}", server.workspaceProxy)
 	mux.HandleFunc("GET /api/v1/admin/users", server.userAccess)
 	mux.HandleFunc("GET /api/v1/admin/resource-profiles", server.resourceProfiles)

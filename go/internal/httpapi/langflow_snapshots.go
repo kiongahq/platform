@@ -20,6 +20,7 @@ import (
 )
 
 const langflowSnapshotKind = "langflow_snapshot"
+const langflowRouteKind = "langflow_active_deployment"
 const maxLangflowFlowBytes = 1 << 20
 
 var langflowFlowID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
@@ -48,6 +49,12 @@ type flowSummary struct {
 	Name         string `json:"name"`
 	Description  string `json:"description,omitempty"`
 	VersionToken string `json:"version_token,omitempty"`
+}
+type langflowActiveDeployment struct {
+	SnapshotID  string    `json:"snapshot_id"`
+	AgentID     string    `json:"agent_id"`
+	Revision    int       `json:"revision"`
+	ActivatedAt time.Time `json:"activated_at"`
 }
 
 func (s *Server) langflowSnapshotSource(r *http.Request) (*workspaceDestination, string, error) {
@@ -217,11 +224,20 @@ func snapshotSummary(item langflowSnapshotRecord) map[string]any {
 	}
 	return map[string]any{"id": item.ID, "project_id": item.ProjectID, "workspace_id": item.WorkspaceID, "flow_id": item.FlowID, "owner_subject": item.OwnerSubject, "name": item.Name, "revision": item.Revision, "created_at": item.CreatedAt, "updated_at": item.UpdatedAt, "history": revisions}
 }
+func (s *Server) routedSnapshotSummary(item langflowSnapshotRecord) map[string]any {
+	summary := snapshotSummary(item)
+	if active, err := store.GetDoc[langflowActiveDeployment](s.store, langflowRouteKind, item.ID); err == nil {
+		summary["active_agent_id"] = active.AgentID
+		summary["active_revision"] = active.Revision
+		summary["invoke_path"] = "/api/v1/langflow-snapshots/" + item.ID + "/invoke"
+	}
+	return summary
+}
 func (s *Server) langflowSnapshots(w http.ResponseWriter, r *http.Request) {
 	items := []map[string]any{}
 	for _, item := range store.ListDocs[langflowSnapshotRecord](s.store, langflowSnapshotKind) {
 		if projectAllowed(s.store, principal(r), item.ProjectID) {
-			items = append(items, snapshotSummary(item))
+			items = append(items, s.routedSnapshotSummary(item))
 		}
 	}
 	writeJSON(w, 200, map[string]any{"items": items})
@@ -237,7 +253,67 @@ func (s *Server) langflowSnapshot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "not_found", "snapshot not found")
 		return
 	}
-	writeJSON(w, 200, snapshotSummary(item))
+	writeJSON(w, 200, s.routedSnapshotSummary(item))
+}
+
+func (s *Server) activateLangflowDeployment(w http.ResponseWriter, r *http.Request) {
+	snapshot, err := store.GetDoc[langflowSnapshotRecord](s.store, langflowSnapshotKind, r.PathValue("id"))
+	if err != nil || snapshot.OwnerSubject != principal(r).Subject || !projectAllowed(s.store, principal(r), snapshot.ProjectID) {
+		writeError(w, 404, "not_found", "snapshot not found")
+		return
+	}
+	if !auth.Allowed(principal(r), http.MethodPost, "/api/v1/agents") {
+		writeError(w, 403, "access_denied", "Agent deployment service is not assigned")
+		return
+	}
+	var req struct {
+		AgentID string `json:"agent_id"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	if err := decode(r, &req); err != nil {
+		writeError(w, 400, "invalid_request", err.Error())
+		return
+	}
+	var selected *api.Agent
+	for _, item := range s.store.Agents() {
+		if item.ID == req.AgentID && item.SnapshotID == snapshot.ID && item.ProjectID == snapshot.ProjectID && item.OwnerSubject == snapshot.OwnerSubject {
+			copy := item
+			selected = &copy
+			break
+		}
+	}
+	if selected == nil {
+		writeError(w, 404, "not_found", "snapshot deployment not found")
+		return
+	}
+	if err := agentRuntimeReady(r.Context(), agentRuntimeEndpoint(selected.ID), selected, 3*time.Second); err != nil {
+		writeError(w, 503, "agent_not_ready", "Wait for this deployment to pass its runtime health check")
+		return
+	}
+	route := langflowActiveDeployment{SnapshotID: snapshot.ID, AgentID: selected.ID, Revision: selected.SnapshotRev, ActivatedAt: time.Now().UTC()}
+	saved, err := store.UpdateDoc(s.store, langflowRouteKind, snapshot.ID, func(_ langflowActiveDeployment, _ bool) (langflowActiveDeployment, error) {
+		return route, nil
+	}, "langflow_deployment.activated", actor(r))
+	writeMutation(w, saved, err, 200)
+}
+
+func (s *Server) invokeActiveLangflowDeployment(w http.ResponseWriter, r *http.Request) {
+	snapshot, err := store.GetDoc[langflowSnapshotRecord](s.store, langflowSnapshotKind, r.PathValue("id"))
+	if err != nil || !projectAllowed(s.store, principal(r), snapshot.ProjectID) {
+		writeError(w, 404, "not_found", "snapshot not found")
+		return
+	}
+	if !auth.Allowed(principal(r), http.MethodPost, "/api/v1/agents/example/invoke") {
+		writeError(w, 403, "access_denied", "Agent invocation service is not assigned")
+		return
+	}
+	route, err := store.GetDoc[langflowActiveDeployment](s.store, langflowRouteKind, snapshot.ID)
+	if err != nil {
+		writeError(w, 503, "deployment_inactive", "Activate a ready deployment before invoking this flow")
+		return
+	}
+	r.SetPathValue("id", route.AgentID)
+	s.invokeAgent(w, r)
 }
 func (s *Server) captureLangflowSnapshot(w http.ResponseWriter, r *http.Request) {
 	var req struct {

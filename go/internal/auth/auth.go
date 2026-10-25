@@ -442,7 +442,8 @@ func Allowed(principal Principal, method, path string) bool {
 				return false
 			}
 			return principal.Provisioned && hasService(principal.Services, serviceForPath(path)) &&
-				(read || hasAnyPrefix(path, userWrite) || strings.HasPrefix(path, "/workspaces/"))
+				(read || hasAnyPrefix(path, userWrite) || strings.HasPrefix(path, "/workspaces/") ||
+					(strings.HasPrefix(path, "/api/v1/langflow-snapshots/") && strings.HasSuffix(path, "/invoke")))
 		case RoleViewer:
 			if read {
 				return true
