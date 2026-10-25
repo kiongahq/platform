@@ -73,14 +73,13 @@ func TestQdrantKnowledgeRoundTrip(t *testing.T) {
 	if endpoint == "" {
 		t.Skip("set KIONGA_QDRANT_TEST_URL to run against a disposable Qdrant service")
 	}
-	t.Setenv("KIONGA_QDRANT_TEST_KEY", "local-test-key")
 	repository := store.New()
 	project, err := repository.CreateProject(api.CreateProjectRequest{Name: "Qdrant project"}, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := domainServer(repository, auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}})
-	body := `{"project_id":"` + project.ID + `","name":"qdrant-docs","backend":"qdrant","dimensions":3,"endpoint":"` + endpoint + `","secret_ref":"env:KIONGA_QDRANT_TEST_KEY"}`
+	body := `{"project_id":"` + project.ID + `","name":"qdrant-docs","backend":"qdrant","dimensions":3,"endpoint":"` + endpoint + `","secret_ref":"none"}`
 	created := call(t, server, http.MethodPost, "/api/v1/admin/knowledge-bases", body)
 	if created.Code != 201 {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())

@@ -139,8 +139,8 @@ func (s *Server) createKnowledgeBase(w http.ResponseWriter, r *http.Request) {
 	switch base.Backend {
 	case "qdrant":
 		target, err := url.Parse(base.Endpoint)
-		if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.User != nil || target.RawQuery != "" || target.Fragment != "" || !knowledgeRef.MatchString(base.SecretRef) {
-			writeError(w, 422, "invalid_request", "Qdrant requires an HTTP(S) endpoint and an env: API-key reference")
+		if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.User != nil || target.RawQuery != "" || target.Fragment != "" || (base.SecretRef != "none" && !knowledgeRef.MatchString(base.SecretRef)) {
+			writeError(w, 422, "invalid_request", "Qdrant requires an HTTP(S) endpoint and none or an env: API-key reference")
 			return
 		}
 		if base.DSNRef != "" {
@@ -180,6 +180,9 @@ func (base knowledgeBase) credential() (string, error) {
 	ref := base.SecretRef
 	if base.Backend == "pgvector" {
 		ref = base.DSNRef
+	}
+	if ref == "none" {
+		return "", nil
 	}
 	value := os.Getenv(strings.TrimPrefix(ref, "env:"))
 	if value == "" {
@@ -225,7 +228,9 @@ func (base knowledgeBase) qdrant(ctx context.Context, method, path string, paylo
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("api-key", token)
+	if token != "" {
+		req.Header.Set("api-key", token)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	response, err := knowledgeHTTP.Do(req)
 	if err != nil {
