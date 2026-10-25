@@ -245,6 +245,7 @@ func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.KiongaWorkspace, au
 				corev1.EnvVar{Name: "LANGFLOW_CONFIG_DIR", Value: "/workspace/.langflow"},
 				corev1.EnvVar{Name: "LANGFLOW_SAVE_DB_IN_CONFIG_DIR", Value: "true"},
 				corev1.EnvVar{Name: "LANGFLOW_AUTO_LOGIN", Value: "true"},
+				corev1.EnvVar{Name: "LANGFLOW_SKIP_AUTH_AUTO_LOGIN", Value: "true"},
 				corev1.EnvVar{Name: "LANGFLOW_RESTRICT_LOCAL_FILE_ACCESS", Value: "true"},
 				corev1.EnvVar{Name: "LANGFLOW_COMPONENTS_PATH", Value: "/app/kionga-components"},
 				corev1.EnvVar{Name: "LANGFLOW_AGENTIC_EXPERIENCE", Value: "false"},

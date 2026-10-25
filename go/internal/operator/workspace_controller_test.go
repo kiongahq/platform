@@ -130,6 +130,15 @@ func TestLangflowWorkspaceHasIndependentVolumeAndScopedSidecar(t *testing.T) {
 	if len(containers) != 2 || containers[0].Name != "langflow" || containers[1].Name != "kionga-api" {
 		t.Fatalf("unexpected Langflow pod: %#v", containers)
 	}
+	autoAPI := false
+	for _, variable := range containers[0].Env {
+		if variable.Name == "LANGFLOW_SKIP_AUTH_AUTO_LOGIN" && variable.Value == "true" {
+			autoAPI = true
+		}
+	}
+	if !autoAPI {
+		t.Fatal("Kionga's scoped gateway needs the Langflow flow API in auto-login mode")
+	}
 	if deployment.Spec.Template.Annotations["mlaiops.io/restart-at"] != "first" {
 		t.Fatal("restart annotation did not propagate")
 	}
