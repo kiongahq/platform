@@ -68,6 +68,37 @@ func TestPgvectorKnowledgeRoundTrip(t *testing.T) {
 	}
 }
 
+func TestQdrantKnowledgeRoundTrip(t *testing.T) {
+	endpoint := os.Getenv("KIONGA_QDRANT_TEST_URL")
+	if endpoint == "" {
+		t.Skip("set KIONGA_QDRANT_TEST_URL to run against a disposable Qdrant service")
+	}
+	t.Setenv("KIONGA_QDRANT_TEST_KEY", "local-test-key")
+	repository := store.New()
+	project, err := repository.CreateProject(api.CreateProjectRequest{Name: "Qdrant project"}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := domainServer(repository, auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}})
+	body := `{"project_id":"` + project.ID + `","name":"qdrant-docs","backend":"qdrant","dimensions":3,"endpoint":"` + endpoint + `","secret_ref":"env:KIONGA_QDRANT_TEST_KEY"}`
+	created := call(t, server, http.MethodPost, "/api/v1/admin/knowledge-bases", body)
+	if created.Code != 201 {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	var base knowledgeSummary
+	if err := json.Unmarshal(created.Body.Bytes(), &base); err != nil {
+		t.Fatal(err)
+	}
+	added := call(t, server, http.MethodPost, "/api/v1/knowledge-bases/"+base.ID+"/chunks", `{"text":"Qdrant fact","vector":[1,0,0]}`)
+	if added.Code != 201 {
+		t.Fatalf("add: %d %s", added.Code, added.Body.String())
+	}
+	found := call(t, server, http.MethodPost, "/api/v1/knowledge-bases/"+base.ID+"/search", `{"vector":[1,0,0],"limit":2}`)
+	if found.Code != 200 || !strings.Contains(found.Body.String(), "Qdrant fact") {
+		t.Fatalf("search: %d %s", found.Code, found.Body.String())
+	}
+}
+
 func TestQdrantKnowledgeIsProjectScopedAndCredentialsStayServerSide(t *testing.T) {
 	t.Setenv("KIONGA_QDRANT_TEST_KEY", "qdrant-secret-value")
 	var requests []string
