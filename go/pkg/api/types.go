@@ -595,17 +595,18 @@ type Readiness struct {
 }
 
 type AgentSession struct {
-	ID           string    `json:"id"`
-	AgentID      string    `json:"agent_id"`
-	UserID       string    `json:"user_id"`
-	Status       string    `json:"status"`
-	CurrentNode  string    `json:"current_node"`
-	Turns        int       `json:"turns"`
-	InputTokens  int       `json:"input_tokens"`
-	OutputTokens int       `json:"output_tokens"`
-	CostUSD      float64   `json:"cost_usd"`
-	StartedAt    time.Time `json:"started_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID             string    `json:"id"`
+	AgentID        string    `json:"agent_id"`
+	UserID         string    `json:"user_id"`
+	Status         string    `json:"status"`
+	CurrentNode    string    `json:"current_node"`
+	Turns          int       `json:"turns"`
+	InputTokens    int       `json:"input_tokens"`
+	OutputTokens   int       `json:"output_tokens"`
+	CostUSD        float64   `json:"cost_usd"`
+	UsageAvailable *bool     `json:"usage_available,omitempty"`
+	StartedAt      time.Time `json:"started_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type AgentTrace struct {

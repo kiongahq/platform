@@ -652,6 +652,7 @@ func (p *Postgres) RecordTrace(req api.RecordTraceRequest) (api.AgentTrace, erro
 		return trace, err
 	}
 	session.Status, session.CurrentNode, session.UpdatedAt = req.Status, req.CurrentNode, now
+	session.UsageAvailable = mergedUsageAvailability(session.UsageAvailable, req.Metadata)
 	session.Turns++
 	session.InputTokens += req.InputTokens
 	session.OutputTokens += req.OutputTokens

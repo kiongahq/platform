@@ -58,3 +58,23 @@ func TestFailedGateBlocksProduction(t *testing.T) {
 		t.Fatal("expected quality gate failure")
 	}
 }
+
+func TestSessionUsageAvailabilityTracksUnmeteredTurns(t *testing.T) {
+	repository := New()
+	for _, metadata := range []map[string]any{
+		{"usage_available": true},
+		{"usage_available": false},
+		{"usage_available": true},
+	} {
+		if _, err := repository.RecordTrace(api.RecordTraceRequest{AgentID: "agt-usage", SessionID: "mixed", Status: "succeeded", Metadata: metadata}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := repository.RecordTrace(api.RecordTraceRequest{AgentID: "agt-usage", SessionID: "legacy", Status: "succeeded"}); err != nil {
+		t.Fatal(err)
+	}
+	sessions := repository.AgentSessions("agt-usage")
+	if len(sessions) != 2 || sessions[0].UsageAvailable != nil || sessions[1].UsageAvailable == nil || *sessions[1].UsageAvailable {
+		t.Fatalf("unexpected usage availability: %#v", sessions)
+	}
+}

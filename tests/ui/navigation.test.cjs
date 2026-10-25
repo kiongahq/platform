@@ -89,6 +89,17 @@ test('agent presets choose adapter entrypoints and disclose NOOA isolation requi
  assert.match(app.w.document.querySelector('#agent-framework-help').textContent,/not a sandbox/);
 });
 
+test('agent sessions show missing usage as unavailable and keep totals partial',async t=>{
+ const agent={id:'a1',name:'Flow agent',project_id:'p1',status:'ready',llm_backend:'langflow',version:'1',graph_module:'agents.langflow_adapter:build',canary_weight:0};
+ const session={id:'s1',agent_id:'a1',status:'succeeded',turns:1,current_node:'complete',input_tokens:0,output_tokens:0,cost_usd:0,usage_available:false};
+ const app=consoleApp(['agents'],'agents',{'/api/v1/agents':{items:[agent],total:1},'/api/v1/agents/a1/sessions':{items:[session]}});
+ t.after(()=>app.dom.window.close());await tick();
+ assert.match(app.w.document.querySelector('#session-table').textContent,/Unavailable.*Unavailable/);
+ assert.match(app.w.document.querySelector('#agent-summary').textContent,/1 session unmetered/);
+ assert.match(app.w.document.querySelector('#agent-summary').textContent,/\$0\.0000\+/);
+ assert.deepEqual(app.errors,[]);
+});
+
 test('navigation preserves project in URL and back/forward restores the view',async t=>{
  const app=consoleApp(['projects','pipelines'],'projects');t.after(()=>app.dom.window.close());await tick();
  const select=app.w.document.querySelector('#project-context');select.value='p1';select.dispatchEvent(new app.w.Event('change'));await tick();

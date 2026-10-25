@@ -655,6 +655,7 @@ func (s *Store) RecordTrace(req api.RecordTraceRequest) (api.AgentTrace, error) 
 	for i := range s.data.Sessions {
 		if s.data.Sessions[i].ID == req.SessionID && s.data.Sessions[i].AgentID == req.AgentID {
 			s.data.Sessions[i].CurrentNode, s.data.Sessions[i].Status, s.data.Sessions[i].UpdatedAt = req.CurrentNode, req.Status, now
+			s.data.Sessions[i].UsageAvailable = mergedUsageAvailability(s.data.Sessions[i].UsageAvailable, req.Metadata)
 			s.data.Sessions[i].Turns++
 			s.data.Sessions[i].InputTokens += req.InputTokens
 			s.data.Sessions[i].OutputTokens += req.OutputTokens
@@ -663,7 +664,7 @@ func (s *Store) RecordTrace(req api.RecordTraceRequest) (api.AgentTrace, error) 
 		}
 	}
 	if !found {
-		s.data.Sessions = append([]api.AgentSession{{ID: req.SessionID, AgentID: req.AgentID, UserID: req.UserID, Status: req.Status, CurrentNode: req.CurrentNode, Turns: 1, InputTokens: req.InputTokens, OutputTokens: req.OutputTokens, CostUSD: req.CostUSD, StartedAt: now, UpdatedAt: now}}, s.data.Sessions...)
+		s.data.Sessions = append([]api.AgentSession{{ID: req.SessionID, AgentID: req.AgentID, UserID: req.UserID, Status: req.Status, CurrentNode: req.CurrentNode, Turns: 1, InputTokens: req.InputTokens, OutputTokens: req.OutputTokens, CostUSD: req.CostUSD, UsageAvailable: mergedUsageAvailability(nil, req.Metadata), StartedAt: now, UpdatedAt: now}}, s.data.Sessions...)
 	}
 	return trace, s.persist()
 }
