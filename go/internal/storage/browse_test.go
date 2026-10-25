@@ -68,6 +68,33 @@ func TestListObjectsWithPrefixesAndDelimiter(t *testing.T) {
 	}
 }
 
+func TestVirtualHostedBrowserUsesBucketRoot(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("X-Amz-Signature") == "" {
+			t.Error("unsigned request")
+		}
+		switch r.URL.Path {
+		case "/":
+			_, _ = w.Write([]byte(`<ListBucketResult><Contents><Key>reports/a.txt</Key></Contents></ListBucketResult>`))
+		case "/reports/a.txt":
+			_, _ = w.Write([]byte("hello"))
+		default:
+			t.Errorf("unexpected bucket path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	browser := testBrowser(server.URL)
+	browser.BucketInHost = true
+	listing, err := browser.ListObjects("data", "reports/")
+	if err != nil || len(listing.Objects) != 1 {
+		t.Fatalf("virtual-hosted browse: %+v %v", listing, err)
+	}
+	preview, err := browser.PreviewObject("data", "reports/a.txt")
+	if err != nil || preview.Content != "hello" {
+		t.Fatalf("virtual-hosted preview: %+v %v", preview, err)
+	}
+}
+
 func TestPreviewObjectBounded(t *testing.T) {
 	server := fakeS3(t)
 	defer server.Close()
