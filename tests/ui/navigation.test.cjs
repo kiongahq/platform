@@ -336,13 +336,15 @@ test('Langflow captures a saved flow into a versioned project snapshot', async t
 
 test('Langflow publishes an earlier flow revision with managed resources', async t => {
  const snapshot={id:'lfs-123',name:'Support flow',project_id:'p1',flow_id:'flow-1',owner_subject:'user-1',revision:3,history:[{revision:1},{revision:2}]};
- const app=consoleApp(['langflow'],'langflow',{
+ const app=consoleApp(['langflow','agents'],'langflow',{
    '/api/v1/langflow-workspaces':{mode:'kubernetes',items:[]},
    '/api/v1/langflow-snapshots':{items:[snapshot]},
+   '/api/v1/agents':{items:[{id:'agt-older',snapshot_id:'lfs-123',snapshot_revision:2,status:'ready'}]},
    '/api/v1/langflow-snapshots/lfs-123/publish':{id:'agt-1',status:'pending'},
  });
  t.after(()=>app.dom.window.close()); await tick();
  const d=app.w.document;
+ assert.match(d.querySelector('#langflow-snapshots').textContent,/Agent agt-older · revision 2 · ready/);
  d.querySelector('[data-langflow-publish="lfs-123"]').click();
  assert.equal(d.querySelector('#langflow-publish-dialog').open,true);
  const revision=d.querySelector('#langflow-publish-revision');

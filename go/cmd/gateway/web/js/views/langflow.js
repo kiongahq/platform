@@ -1,6 +1,7 @@
 /* Langflow is a second agent canvas, managed independently of native designs. */
 let langflowItems = [];
 let langflowSnapshots = [];
+let langflowAgents = [];
 let langflowCaptureWorkspace = '';
 let langflowManagedMode = false;
 let langflowPublishSnapshot = '';
@@ -10,8 +11,9 @@ function langflowMessage(message, error = false) {
   node.classList.toggle('error', error);
 }
 async function loadLangflow() {
-  const [data, snapshots] = await Promise.all([api('/api/v1/langflow-workspaces'), api('/api/v1/langflow-snapshots')]);
+  const [data, snapshots, agents] = await Promise.all([api('/api/v1/langflow-workspaces'), api('/api/v1/langflow-snapshots'), me.services.includes('agents') || me.roles.some(role => ['admin','operator'].includes(role)) ? api('/api/v1/agents') : Promise.resolve({items:[]})]);
   langflowSnapshots = (snapshots.items || []).filter(item => !selectedProject || item.project_id === selectedProject);
+  langflowAgents = agents.items || [];
   langflowManagedMode = data.mode === 'kubernetes';
   langflowItems = (data.items || []).filter(item => !selectedProject || item.project_id === selectedProject || item.id === 'local');
   const form = document.querySelector('#langflow-create');
@@ -27,7 +29,10 @@ async function loadLangflow() {
     <div class="button-row start"><button type="button" class="primary" data-langflow-action="open" data-langflow-id="${escapeHTML(item.id)}" ${!['ready','configured'].includes(item.state) ? 'disabled' : ''}>Open canvas</button><button type="button" data-langflow-action="flows" data-langflow-id="${escapeHTML(item.id)}" ${!['ready','configured'].includes(item.state) ? 'disabled' : ''}>Capture flow</button>
     ${item.id === 'local' ? '' : `<button type="button" data-langflow-action="${item.state === 'stopped' ? 'start' : 'stop'}" data-langflow-id="${escapeHTML(item.id)}">${item.state === 'stopped' ? 'Start' : 'Stop'}</button><button type="button" data-langflow-action="restart" data-langflow-id="${escapeHTML(item.id)}" ${item.state === 'stopped' ? 'disabled' : ''}>Restart</button><button type="button" class="danger" data-langflow-action="delete" data-langflow-id="${escapeHTML(item.id)}">Delete</button>`}</div>
   </article>`).join('') || emptyState('No Langflow workspaces', data.mode === 'local' ? 'Start the optional Langflow Compose profile to enable the local canvas.' : 'Create a workspace for this project to start building flows.');
-  document.querySelector('#langflow-snapshots').innerHTML = langflowSnapshots.map(item => `<div class="store-row"><div><b>${escapeHTML(item.name)}</b><small>${escapeHTML(projectOptions.find(project => project.id === item.project_id)?.name || item.project_id)} · ${escapeHTML(item.flow_id)}</small></div><div>${status(`revision ${item.revision}`)}<small>${escapeHTML(dateTime(item.updated_at))}</small>${langflowManagedMode && item.owner_subject === me.subject ? `<button type="button" data-langflow-publish="${escapeHTML(item.id)}">Publish</button>` : ''}</div></div>`).join('') || emptyState('No flow snapshots', 'Open a Langflow workspace and capture a saved flow.');
+  document.querySelector('#langflow-snapshots').innerHTML = langflowSnapshots.map(item => {
+    const deployments = langflowAgents.filter(agent => agent.snapshot_id === item.id).map(agent => `<small>Agent ${escapeHTML(agent.id)} · revision ${agent.snapshot_revision} · ${escapeHTML(agent.status)}</small>`).join('');
+    return `<div class="store-row"><div><b>${escapeHTML(item.name)}</b><small>${escapeHTML(projectOptions.find(project => project.id === item.project_id)?.name || item.project_id)} · ${escapeHTML(item.flow_id)}</small>${deployments}</div><div>${status(`revision ${item.revision}`)}<small>${escapeHTML(dateTime(item.updated_at))}</small>${langflowManagedMode && item.owner_subject === me.subject && (me.services.includes('agents') || me.roles.some(role => ['admin','operator'].includes(role))) ? `<button type="button" data-langflow-publish="${escapeHTML(item.id)}">Publish</button>` : ''}</div></div>`;
+  }).join('') || emptyState('No flow snapshots', 'Open a Langflow workspace and capture a saved flow.');
 }
 registerView('langflow', loadLangflow, {eyebrow: 'AGENT BUILDER', title: 'Langflow workspaces'});
 document.querySelector('#langflow-refresh').addEventListener('click', () => loadLangflow().catch(error => langflowMessage(error.message, true)));
