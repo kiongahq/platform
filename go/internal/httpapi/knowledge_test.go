@@ -1,16 +1,69 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/kiongahq/platform/internal/auth"
 	"github.com/kiongahq/platform/internal/store"
 	"github.com/kiongahq/platform/pkg/api"
 )
+
+func TestPgvectorKnowledgeRoundTrip(t *testing.T) {
+	dsn := os.Getenv("KIONGA_KNOWLEDGE_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set KIONGA_KNOWLEDGE_TEST_DSN to run against disposable pgvector schema")
+	}
+	ctx := context.Background()
+	admin, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close(ctx)
+	schema := "kionga_kb_test_" + knowledgeID()
+	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = admin.Exec(context.Background(), "DROP SCHEMA "+schema+" CASCADE") })
+	target, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := target.Query()
+	query.Set("search_path", schema+",public")
+	target.RawQuery = query.Encode()
+	t.Setenv("KIONGA_TEST_PGVECTOR_DSN", target.String())
+	repository := store.New()
+	project, err := repository.CreateProject(api.CreateProjectRequest{Name: "pgvector project"}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := domainServer(repository, auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}})
+	body := `{"project_id":"` + project.ID + `","name":"pgvector-docs","backend":"pgvector","dimensions":3,"dsn_ref":"env:KIONGA_TEST_PGVECTOR_DSN"}`
+	created := call(t, server, http.MethodPost, "/api/v1/admin/knowledge-bases", body)
+	if created.Code != 201 {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	var base knowledgeSummary
+	if err := json.Unmarshal(created.Body.Bytes(), &base); err != nil {
+		t.Fatal(err)
+	}
+	added := call(t, server, http.MethodPost, "/api/v1/knowledge-bases/"+base.ID+"/chunks", `{"text":"Vector fact","vector":[1,0,0],"metadata":{"source":"test"}}`)
+	if added.Code != 201 {
+		t.Fatalf("add: %d %s", added.Code, added.Body.String())
+	}
+	found := call(t, server, http.MethodPost, "/api/v1/knowledge-bases/"+base.ID+"/search", `{"vector":[1,0,0],"limit":2}`)
+	if found.Code != 200 || !strings.Contains(found.Body.String(), "Vector fact") || !strings.Contains(found.Body.String(), `"score":1`) {
+		t.Fatalf("search: %d %s", found.Code, found.Body.String())
+	}
+}
 
 func TestQdrantKnowledgeIsProjectScopedAndCredentialsStayServerSide(t *testing.T) {
 	t.Setenv("KIONGA_QDRANT_TEST_KEY", "qdrant-secret-value")
