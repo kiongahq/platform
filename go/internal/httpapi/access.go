@@ -160,12 +160,10 @@ func filterModels(items []api.Model, allowed map[string]bool) []api.Model {
 }
 
 func filterAgents(items []api.Agent, allowed map[string]bool) []api.Agent {
-	if allowed == nil {
-		return items
-	}
 	result := make([]api.Agent, 0)
 	for _, item := range items {
-		if allowed[item.ProjectID] {
+		if allowed == nil || allowed[item.ProjectID] {
+			item.FlowJSON = ""
 			result = append(result, item)
 		}
 	}
@@ -388,6 +386,10 @@ func enforceAgentResources(repository store.Repository, value auth.Principal, re
 	if err != nil {
 		return err
 	}
+	if req.FlowJSON != "" {
+		requested.cpuMilli += agentSidecarCPUMilli * int64(requested.replicas)
+		requested.memoryBytes += agentSidecarMemoryBytes * int64(requested.replicas)
+	}
 	total := requested
 	allowed := allowedProjectIDs(repository, value)
 	for _, agent := range repository.Agents() {
@@ -403,6 +405,10 @@ func enforceAgentResources(repository store.Repository, value auth.Principal, re
 		used, capacityErr := agentCapacity(agent.Autoscaling, agent.Resources, agent.Replicas)
 		if capacityErr != nil {
 			return fmt.Errorf("existing agent %s has invalid resources: %w", agent.ID, capacityErr)
+		}
+		if agent.FlowJSON != "" {
+			used.cpuMilli += agentSidecarCPUMilli * int64(used.replicas)
+			used.memoryBytes += agentSidecarMemoryBytes * int64(used.replicas)
 		}
 		total.add(used)
 	}

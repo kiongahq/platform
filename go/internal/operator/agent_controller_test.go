@@ -105,3 +105,48 @@ func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
 		t.Fatalf("available workload was not reflected as Ready: %#v", current.Status)
 	}
 }
+
+func TestAgentControllerMountsPublishedLangflowSnapshot(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+	_ = autoscalingv2.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = mlaiopsv1.AddToScheme(scheme)
+	agent := &mlaiopsv1.KiongaAgent{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "mlaiops.io/v1alpha1", Kind: "KiongaAgent"},
+		ObjectMeta: metav1.ObjectMeta{Name: "published-flow", Namespace: "team-a"},
+		Spec:       mlaiopsv1.KiongaAgentSpec{Version: "r2", Image: "registry/langflow:1.13", GraphModule: "agents.langflow_adapter:build_langflow", FlowJSON: `{"data":{"nodes":[{"id":"input"}],"edges":[]}}`, ProjectID: "prj-demo", OwnerSubject: "alice", Replicas: mlaiopsv1.ReplicaSpec{Min: 1, Max: 1}},
+	}
+	client := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(agent, &appsv1.Deployment{}).WithObjects(agent).Build()
+	reconciler := &AgentReconciler{Client: client, LangflowSidecarImage: "registry/kionga-api:1", GatewayURL: "http://gateway:8080"}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: agent.Name, Namespace: agent.Namespace}}
+	if _, err := reconciler.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	var deployment appsv1.Deployment
+	name := platformapi.AgentDNSName(agent.Name)
+	if err := client.Get(context.Background(), types.NamespacedName{Name: name, Namespace: agent.Namespace}, &deployment); err != nil {
+		t.Fatal(err)
+	}
+	if len(deployment.Spec.Template.Spec.Volumes) != 1 || len(deployment.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 {
+		t.Fatalf("published flow is not mounted: %#v", deployment.Spec.Template.Spec)
+	}
+	var config corev1.ConfigMap
+	configName := deployment.Spec.Template.Spec.Volumes[0].ConfigMap.Name
+	if err := client.Get(context.Background(), types.NamespacedName{Name: configName, Namespace: agent.Namespace}, &config); err != nil {
+		t.Fatal(err)
+	}
+	if config.Data["flow.json"] != agent.Spec.FlowJSON {
+		t.Fatal("mounted flow differs from the published snapshot")
+	}
+	if len(deployment.Spec.Template.Spec.Containers) != 3 || deployment.Spec.Template.Spec.Containers[2].Name != "kionga-api" {
+		t.Fatal("published flow requires an authenticated Kionga resource sidecar")
+	}
+	var secret corev1.Secret
+	if err := client.Get(context.Background(), types.NamespacedName{Name: platformapi.AgentAPISecretName(agent.Name), Namespace: agent.Namespace}, &secret); err != nil {
+		t.Fatal(err)
+	}
+	if len(secret.Data["api-token"]) < 32 {
+		t.Fatal("published agent API identity token was not provisioned")
+	}
+}

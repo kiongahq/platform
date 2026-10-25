@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kiongahq/platform/internal/auth"
+	platformapi "github.com/kiongahq/platform/pkg/api"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -97,5 +98,41 @@ func TestWorkspaceIdentityKubernetes(t *testing.T) {
 	}
 	if got := request("a-long-independent-workspace-api-token"); got != 403 {
 		t.Fatalf("disabled workspace accepted: %d", got)
+	}
+}
+
+func TestWorkspaceIdentityPublishedAgent(t *testing.T) {
+	name := "kionga-agent-published"
+	token := "an-independent-published-agent-api-token"
+	agent := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "mlaiops.io/v1alpha1", "kind": "KiongaAgent", "metadata": map[string]interface{}{"name": name, "namespace": "workspaces"}, "spec": map[string]interface{}{"flowJSON": `{"data":{"nodes":[]}}`, "ownerSubject": "alice", "projectID": "project-a"}}}
+	secret := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]interface{}{"name": platformapi.AgentAPISecretName(name), "namespace": "workspaces", "annotations": map[string]interface{}{"mlaiops.io/subject": "alice"}}, "data": map[string]interface{}{"api-token": base64.StdEncoding.EncodeToString([]byte(token))}}}
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{workspaceResource: "KiongaWorkspaceList", agentIdentityResource: "KiongaAgentList", secretResource: "SecretList"}, agent, secret)
+	h := WorkspaceIdentity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFrom(r.Context())
+		if !ok || principal.Subject != "alice" || principal.WorkspaceProjectID != "project-a" || principal.Credential != "workspace" {
+			t.Fatalf("wrong published agent principal: %#v", principal)
+		}
+		w.WriteHeader(200)
+	}), client, "workspaces", "", "")
+	request := func(value string) int {
+		r := httptest.NewRequest("GET", "/api/v1/models", nil)
+		r.Header.Set("X-Kionga-Workspace-Name", name)
+		r.Header.Set("X-Kionga-Workspace-Token", value)
+		response := httptest.NewRecorder()
+		h.ServeHTTP(response, r)
+		return response.Code
+	}
+	if got := request(token); got != 200 {
+		t.Fatalf("valid published agent rejected: %d", got)
+	}
+	if got := request("wrong"); got != 401 {
+		t.Fatalf("invalid published agent token accepted: %d", got)
+	}
+	_ = unstructured.SetNestedField(agent.Object, "", "spec", "flowJSON")
+	if _, err := client.Resource(agentIdentityResource).Namespace("workspaces").Update(t.Context(), agent, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := request(token); got != 403 {
+		t.Fatalf("revoked published agent accepted: %d", got)
 	}
 }

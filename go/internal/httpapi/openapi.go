@@ -34,6 +34,7 @@ func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 			"/api/v1/langflow-workspaces/{id}/snapshots": map[string]any{"post": map[string]any{"summary": "Capture a versioned, project-scoped Langflow flow snapshot"}},
 			"/api/v1/langflow-snapshots":                 map[string]any{"get": map[string]any{"summary": "List Kionga flow snapshots"}},
 			"/api/v1/langflow-snapshots/{id}":            map[string]any{"get": map[string]any{"summary": "Read flow snapshot metadata and revision history"}},
+			"/api/v1/langflow-snapshots/{id}/publish":    map[string]any{"post": map[string]any{"summary": "Publish a snapshot revision as an independently managed agent"}},
 			"/api/v1/connections/{id}/activate":          map[string]any{"post": map[string]any{"summary": "Verify and persist the Prefect or OpenFaaS runtime for new operations"}},
 			"/api/v1/health":                             map[string]any{"get": map[string]any{"summary": "Gateway health"}},
 			"/api/v1/me":                                 map[string]any{"get": map[string]any{"summary": "Caller identity, roles and effective permissions"}},

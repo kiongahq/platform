@@ -2,6 +2,8 @@
 let langflowItems = [];
 let langflowSnapshots = [];
 let langflowCaptureWorkspace = '';
+let langflowManagedMode = false;
+let langflowPublishSnapshot = '';
 function langflowMessage(message, error = false) {
   const node = document.querySelector('#langflow-message');
   node.textContent = message;
@@ -10,6 +12,7 @@ function langflowMessage(message, error = false) {
 async function loadLangflow() {
   const [data, snapshots] = await Promise.all([api('/api/v1/langflow-workspaces'), api('/api/v1/langflow-snapshots')]);
   langflowSnapshots = (snapshots.items || []).filter(item => !selectedProject || item.project_id === selectedProject);
+  langflowManagedMode = data.mode === 'kubernetes';
   langflowItems = (data.items || []).filter(item => !selectedProject || item.project_id === selectedProject || item.id === 'local');
   const form = document.querySelector('#langflow-create');
   form.hidden = data.mode !== 'kubernetes' || me.roles.includes('viewer');
@@ -24,7 +27,7 @@ async function loadLangflow() {
     <div class="button-row start"><button type="button" class="primary" data-langflow-action="open" data-langflow-id="${escapeHTML(item.id)}" ${!['ready','configured'].includes(item.state) ? 'disabled' : ''}>Open canvas</button><button type="button" data-langflow-action="flows" data-langflow-id="${escapeHTML(item.id)}" ${!['ready','configured'].includes(item.state) ? 'disabled' : ''}>Capture flow</button>
     ${item.id === 'local' ? '' : `<button type="button" data-langflow-action="${item.state === 'stopped' ? 'start' : 'stop'}" data-langflow-id="${escapeHTML(item.id)}">${item.state === 'stopped' ? 'Start' : 'Stop'}</button><button type="button" data-langflow-action="restart" data-langflow-id="${escapeHTML(item.id)}" ${item.state === 'stopped' ? 'disabled' : ''}>Restart</button><button type="button" class="danger" data-langflow-action="delete" data-langflow-id="${escapeHTML(item.id)}">Delete</button>`}</div>
   </article>`).join('') || emptyState('No Langflow workspaces', data.mode === 'local' ? 'Start the optional Langflow Compose profile to enable the local canvas.' : 'Create a workspace for this project to start building flows.');
-  document.querySelector('#langflow-snapshots').innerHTML = langflowSnapshots.map(item => `<div class="store-row"><div><b>${escapeHTML(item.name)}</b><small>${escapeHTML(projectOptions.find(project => project.id === item.project_id)?.name || item.project_id)} · ${escapeHTML(item.flow_id)}</small></div><div>${status(`revision ${item.revision}`)}<small>${escapeHTML(dateTime(item.updated_at))}</small></div></div>`).join('') || emptyState('No flow snapshots', 'Open a Langflow workspace and capture a saved flow.');
+  document.querySelector('#langflow-snapshots').innerHTML = langflowSnapshots.map(item => `<div class="store-row"><div><b>${escapeHTML(item.name)}</b><small>${escapeHTML(projectOptions.find(project => project.id === item.project_id)?.name || item.project_id)} · ${escapeHTML(item.flow_id)}</small></div><div>${status(`revision ${item.revision}`)}<small>${escapeHTML(dateTime(item.updated_at))}</small>${langflowManagedMode && item.owner_subject === me.subject ? `<button type="button" data-langflow-publish="${escapeHTML(item.id)}">Publish</button>` : ''}</div></div>`).join('') || emptyState('No flow snapshots', 'Open a Langflow workspace and capture a saved flow.');
 }
 registerView('langflow', loadLangflow, {eyebrow: 'AGENT BUILDER', title: 'Langflow workspaces'});
 document.querySelector('#langflow-refresh').addEventListener('click', () => loadLangflow().catch(error => langflowMessage(error.message, true)));
@@ -93,4 +96,25 @@ document.querySelector('#langflow-capture-form').addEventListener('submit', asyn
     langflowMessage('Flow snapshot saved as a new Kionga revision.');
     await loadLangflow();
   } catch (error) { document.querySelector('#langflow-capture-error').textContent = error.message; }
+});
+document.querySelector('#langflow-snapshots').addEventListener('click', event => {
+  const button = event.target.closest('[data-langflow-publish]');
+  if (!button) return;
+  const snapshot = langflowSnapshots.find(item => item.id === button.dataset.langflowPublish);
+  if (!snapshot) return;
+  langflowPublishSnapshot = snapshot.id;
+  const revisions = [snapshot.revision, ...(snapshot.history || []).map(item => item.revision)].sort((a,b) => b-a);
+  document.querySelector('#langflow-publish-revision').innerHTML = revisions.map(revision => `<option value="${revision}">Revision ${revision}${revision === snapshot.revision ? ' · latest' : ''}</option>`).join('');
+  document.querySelector('#langflow-publish-error').textContent = '';
+  document.querySelector('#langflow-publish-dialog').showModal();
+});
+document.querySelector('#langflow-publish-cancel').addEventListener('click', () => document.querySelector('#langflow-publish-dialog').close());
+document.querySelector('#langflow-publish-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const payload = {revision: Number(document.querySelector('#langflow-publish-revision').value), autoscaling: {min_replicas: Number(document.querySelector('#langflow-publish-min').value), max_replicas: Number(document.querySelector('#langflow-publish-max').value)}, resources: {cpu: document.querySelector('#langflow-publish-cpu').value, memory: document.querySelector('#langflow-publish-memory').value}};
+  try {
+    await withBusy(event.submitter, () => api(`/api/v1/langflow-snapshots/${encodeURIComponent(langflowPublishSnapshot)}/publish`, {method:'POST', body:JSON.stringify(payload)}));
+    document.querySelector('#langflow-publish-dialog').close();
+    langflowMessage(`Revision ${payload.revision} queued as a managed agent. Open Agents to check deployment status.`);
+  } catch (error) { document.querySelector('#langflow-publish-error').textContent = error.message; }
 });

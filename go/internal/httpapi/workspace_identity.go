@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/kiongahq/platform/internal/auth"
+	platformapi "github.com/kiongahq/platform/pkg/api"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -16,6 +18,7 @@ import (
 )
 
 var workspaceResource = schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: "kiongaworkspaces"}
+var agentIdentityResource = schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: "kiongaagents"}
 var secretResource = schema.GroupVersionResource{Version: "v1", Resource: "secrets"}
 
 // WorkspaceIdentity authenticates only requests arriving on the internal-only
@@ -40,19 +43,35 @@ func WorkspaceIdentity(next http.Handler, client dynamic.Interface, namespace, l
 				return
 			}
 			workspace, err := client.Resource(workspaceResource).Namespace(namespace).Get(r.Context(), name, metav1.GetOptions{})
-			if err != nil {
+			secretName := name + "-auth"
+			if apierrors.IsNotFound(err) {
+				agent, agentErr := client.Resource(agentIdentityResource).Namespace(namespace).Get(r.Context(), name, metav1.GetOptions{})
+				if agentErr != nil {
+					http.Error(w, "workspace credential rejected", http.StatusUnauthorized)
+					return
+				}
+				flow, _, _ := unstructured.NestedString(agent.Object, "spec", "flowJSON")
+				subject, _, _ = unstructured.NestedString(agent.Object, "spec", "ownerSubject")
+				projectID, _, _ = unstructured.NestedString(agent.Object, "spec", "projectID")
+				if flow == "" || subject == "" || projectID == "" {
+					http.Error(w, "agent access revoked", http.StatusForbidden)
+					return
+				}
+				secretName = platformapi.AgentAPISecretName(name)
+			} else if err != nil {
 				http.Error(w, "workspace credential rejected", http.StatusUnauthorized)
 				return
+			} else {
+				disabled, _, _ := unstructured.NestedBool(workspace.Object, "spec", "disabled")
+				services, _, _ := unstructured.NestedStringSlice(workspace.Object, "spec", "services")
+				subject, _, _ = unstructured.NestedString(workspace.Object, "spec", "subject")
+				projectID, _, _ = unstructured.NestedString(workspace.Object, "spec", "projectID")
+				if disabled || subject == "" || (!slices.Contains(services, "workbench") && !slices.Contains(services, "ide") && !slices.Contains(services, "langflow")) {
+					http.Error(w, "workspace access revoked", http.StatusForbidden)
+					return
+				}
 			}
-			disabled, _, _ := unstructured.NestedBool(workspace.Object, "spec", "disabled")
-			services, _, _ := unstructured.NestedStringSlice(workspace.Object, "spec", "services")
-			subject, _, _ = unstructured.NestedString(workspace.Object, "spec", "subject")
-			projectID, _, _ = unstructured.NestedString(workspace.Object, "spec", "projectID")
-			if disabled || subject == "" || (!slices.Contains(services, "workbench") && !slices.Contains(services, "ide") && !slices.Contains(services, "langflow")) {
-				http.Error(w, "workspace access revoked", http.StatusForbidden)
-				return
-			}
-			secret, err := client.Resource(secretResource).Namespace(namespace).Get(r.Context(), name+"-auth", metav1.GetOptions{})
+			secret, err := client.Resource(secretResource).Namespace(namespace).Get(r.Context(), secretName, metav1.GetOptions{})
 			if err != nil {
 				http.Error(w, "workspace credential rejected", http.StatusUnauthorized)
 				return

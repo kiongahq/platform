@@ -527,7 +527,7 @@ func (p *Postgres) DeployAgent(req api.DeployAgentRequest, actor string) (api.Ag
 	if !p.exists("project", req.ProjectID) {
 		return api.Agent{}, ErrNotFound
 	}
-	agent := api.Agent{ID: id("agt"), ProjectID: req.ProjectID, OwnerSubject: req.OwnerSubject, Name: req.Name, Version: req.Version, Image: req.Image, GraphModule: req.GraphModule, LLMBackend: req.LLMBackend, Status: "pending", Replicas: req.Replicas, Autoscaling: req.Autoscaling, Resources: req.Resources, Tools: req.Tools, CreatedAt: time.Now().UTC()}
+	agent := api.Agent{ID: id("agt"), ProjectID: req.ProjectID, OwnerSubject: req.OwnerSubject, Name: req.Name, Version: req.Version, Image: req.Image, GraphModule: req.GraphModule, FlowJSON: req.FlowJSON, SnapshotID: req.SnapshotID, SnapshotRev: req.SnapshotRev, LLMBackend: req.LLMBackend, Status: "pending", Replicas: req.Replicas, Autoscaling: req.Autoscaling, Resources: req.Resources, Tools: req.Tools, CreatedAt: time.Now().UTC()}
 	return agent, p.write("agent", agent.ID, agent, "agent.deployed", actor, nil)
 }
 

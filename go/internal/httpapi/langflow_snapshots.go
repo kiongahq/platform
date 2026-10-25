@@ -13,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kiongahq/platform/internal/auth"
 	"github.com/kiongahq/platform/internal/store"
+	"github.com/kiongahq/platform/pkg/api"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -333,4 +335,84 @@ func (s *Server) captureLangflowSnapshot(w http.ResponseWriter, r *http.Request)
 		status = 201
 	}
 	writeJSON(w, status, snapshotSummary(item))
+}
+
+func (s *Server) publishLangflowSnapshot(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !langflowSnapshotID.MatchString(id) {
+		writeError(w, 404, "not_found", "snapshot not found")
+		return
+	}
+	snapshot, err := store.GetDoc[langflowSnapshotRecord](s.store, langflowSnapshotKind, id)
+	if err != nil || snapshot.OwnerSubject != principal(r).Subject || !projectAllowed(s.store, principal(r), snapshot.ProjectID) {
+		writeError(w, 404, "not_found", "snapshot not found")
+		return
+	}
+	if !auth.Allowed(principal(r), http.MethodPost, "/api/v1/agents") {
+		writeError(w, 403, "access_denied", "Agent deployment service is not assigned to this user")
+		return
+	}
+	if langflowLocalMode() || os.Getenv("AGENT_RUNTIME_URL") != "" {
+		writeError(w, 503, "managed_runtime_unavailable", "Publishing Langflow flows requires a Kubernetes managed agent runtime")
+		return
+	}
+	image := strings.TrimSpace(os.Getenv("KIONGA_LANGFLOW_AGENT_IMAGE"))
+	if image == "" {
+		writeError(w, 503, "managed_runtime_unavailable", "KIONGA_LANGFLOW_AGENT_IMAGE is not configured")
+		return
+	}
+	var req struct {
+		Revision    int                  `json:"revision"`
+		Autoscaling api.AgentAutoscaling `json:"autoscaling"`
+		Resources   api.AgentResources   `json:"resources"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	if err := decode(r, &req); err != nil {
+		writeError(w, 400, "invalid_request", err.Error())
+		return
+	}
+	flow, revision := snapshot.Flow, snapshot.Revision
+	if req.Revision != 0 && req.Revision != snapshot.Revision {
+		flow = nil
+		for _, old := range snapshot.History {
+			if old.Revision == req.Revision {
+				flow, revision = old.Flow, old.Revision
+				break
+			}
+		}
+	}
+	if len(flow) == 0 {
+		writeError(w, 404, "not_found", "snapshot revision not found")
+		return
+	}
+	if len(flow) > 512*1024 {
+		writeError(w, 422, "validation_error", "flow exceeds the 512 KiB managed deployment limit")
+		return
+	}
+	if _, err := validateLangflowExport(flow); err != nil {
+		writeError(w, 422, "validation_error", err.Error())
+		return
+	}
+	name := "langflow-" + strings.TrimPrefix(id, "lfs-")
+	request := api.DeployAgentRequest{
+		ProjectID: snapshot.ProjectID, OwnerSubject: principal(r).Subject,
+		Name: name, Version: fmt.Sprintf("r%d", revision), Image: image,
+		GraphModule: "agents.langflow_adapter:build_langflow", FlowJSON: string(flow),
+		SnapshotID: id, SnapshotRev: revision, Autoscaling: req.Autoscaling, Resources: req.Resources,
+	}
+	if err := store.NormalizeAgentRequest(&request); err != nil {
+		writeError(w, 422, "validation_error", err.Error())
+		return
+	}
+	if err := enforceAgentResources(s.store, principal(r), request); err != nil {
+		writeError(w, 403, "resource_not_provisioned", err.Error())
+		return
+	}
+	agent, err := s.store.DeployAgent(request, actor(r))
+	if err != nil {
+		writeMutation(w, agent, err, 202)
+		return
+	}
+	agent.FlowJSON = ""
+	writeJSON(w, 202, agent)
 }

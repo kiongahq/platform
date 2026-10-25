@@ -75,6 +75,11 @@ func (d *Dispatcher) Dispatch(ctx context.Context, record KafkaRecord) error {
 			"llm":      map[string]any{"backend": resource["llm_backend"]}, "tools": toolRefs(resource["tools"]),
 			"trafficPolicy": map[string]any{"canaryWeight": resource["canary_weight"]},
 		}
+		if flow, ok := resource["flow_json"].(string); ok && flow != "" {
+			spec["flowJSON"] = flow
+			spec["projectID"] = resource["project_id"]
+			spec["ownerSubject"] = resource["owner_subject"]
+		}
 		resources, err := agentResourceRequirements(resource["resources"])
 		if err != nil {
 			return fmt.Errorf("invalid agent resources: %w", err)

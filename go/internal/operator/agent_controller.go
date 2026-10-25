@@ -2,7 +2,11 @@ package operator
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -17,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	platformapi "github.com/kiongahq/platform/pkg/api"
 	mlaiopsv1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
 
@@ -24,7 +29,9 @@ const agentFinalizer = "mlaiops.io/agent-cleanup"
 
 type AgentReconciler struct {
 	client.Client
-	TraceProxyImage string
+	TraceProxyImage      string
+	LangflowSidecarImage string
+	GatewayURL           string
 	// ImagePullSecrets name registry credentials in the agent namespace for
 	// private agent and trace-proxy images (KIONGA_IMAGE_PULL_SECRETS).
 	ImagePullSecrets []corev1.LocalObjectReference
@@ -71,6 +78,46 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 	if traceProxyImage == "" {
 		traceProxyImage = plan.Workload.Containers[1].Image
 	}
+	flowNameHash := fmt.Sprintf("%x", sha256.Sum256([]byte(plan.Workload.Name)))
+	flowConfigName := "kionga-flow-" + flowNameHash[:24]
+	agentTokenHash := ""
+	if agent.Spec.FlowJSON != "" {
+		if agent.Spec.GraphModule != "agents.langflow_adapter:build_langflow" {
+			return r.fail(ctx, &agent, "InvalidSpec", fmt.Errorf("flowJSON requires the Langflow adapter"))
+		}
+		if agent.Spec.ProjectID == "" || agent.Spec.OwnerSubject == "" || r.LangflowSidecarImage == "" || r.GatewayURL == "" {
+			return r.fail(ctx, &agent, "InvalidSpec", fmt.Errorf("published Langflow agents require project, owner, API sidecar and gateway"))
+		}
+		flowConfig := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: flowConfigName, Namespace: agent.Namespace}}
+		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, flowConfig, func() error {
+			flowConfig.Data = map[string]string{"flow.json": agent.Spec.FlowJSON}
+			return controllerutil.SetControllerReference(&agent, flowConfig, r.Scheme())
+		}); err != nil {
+			return ctrl.Result{}, err
+		}
+		apiSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: platformapi.AgentAPISecretName(agent.Name), Namespace: agent.Namespace}}
+		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, apiSecret, func() error {
+			if apiSecret.Annotations == nil {
+				apiSecret.Annotations = map[string]string{}
+			}
+			previous := apiSecret.Annotations["mlaiops.io/subject"]
+			apiSecret.Annotations["mlaiops.io/subject"] = agent.Spec.OwnerSubject
+			if apiSecret.Data == nil {
+				apiSecret.Data = map[string][]byte{}
+			}
+			if previous != agent.Spec.OwnerSubject || len(apiSecret.Data["api-token"]) == 0 {
+				secret := make([]byte, 24)
+				if _, err := rand.Read(secret); err != nil {
+					return err
+				}
+				apiSecret.Data["api-token"] = []byte(base64.RawURLEncoding.EncodeToString(secret))
+			}
+			return controllerutil.SetControllerReference(&agent, apiSecret, r.Scheme())
+		}); err != nil {
+			return ctrl.Result{}, err
+		}
+		agentTokenHash = fmt.Sprintf("%x", sha256.Sum256(apiSecret.Data["api-token"]))
+	}
 	deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: plan.Workload.Name, Namespace: agent.Namespace}}
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
 		replicas := int32(plan.Workload.Replicas) // #nosec G115 -- source is an int32 replica count
@@ -82,10 +129,29 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 		}
 		deployment.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"mlaiops.io/agent": agent.Name, "mlaiops.io/version": agent.Spec.Version}}
 		deployment.Spec.Template.ObjectMeta.Labels = deployment.Spec.Selector.MatchLabels
+		if agent.Spec.FlowJSON != "" {
+			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{"mlaiops.io/flow-sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(agent.Spec.FlowJSON))), "mlaiops.io/api-token-hash": agentTokenHash}
+			deployment.Spec.Template.Spec.Volumes = []corev1.Volume{{Name: "flow", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: flowConfigName}}}}}
+		}
 		deployment.Spec.Template.Spec.ImagePullSecrets = r.ImagePullSecrets
 		deployment.Spec.Template.Spec.Containers = []corev1.Container{
 			{Name: "agent", Image: agent.Spec.Image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}, Env: append(envVars(plan.Workload.Containers[0].Env), corev1.EnvVar{Name: "MLAIOPS_AGENT_ID", Value: resourceID}, corev1.EnvVar{Name: "MLAIOPS_RUNTIME_PORT", Value: "8080"}), Resources: resources, ReadinessProbe: httpProbe("/healthz", "http", 2), LivenessProbe: httpProbe("/healthz", "http", 10), SecurityContext: hardenedSecurityContext()},
 			{Name: "trace-proxy", Image: traceProxyImage, Ports: []corev1.ContainerPort{{Name: "proxy", ContainerPort: 8081}}, Env: envVars(plan.Workload.Containers[1].Env), Resources: traceProxyResources(), ReadinessProbe: httpProbe("/healthz", "proxy", 2), LivenessProbe: httpProbe("/healthz", "proxy", 10), SecurityContext: hardenedSecurityContext()},
+		}
+		if agent.Spec.FlowJSON != "" {
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{{Name: "flow", MountPath: "/app/flows", ReadOnly: true}}
+			deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "MLAIOPS_URL", Value: "http://127.0.0.1:8890"})
+			deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
+				Name: "kionga-api", Image: r.LangflowSidecarImage,
+				ReadinessProbe: &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt(8890)}}, PeriodSeconds: 5},
+				Env: []corev1.EnvVar{
+					{Name: "KIONGA_GATEWAY_INTERNAL_URL", Value: strings.Replace(r.GatewayURL, ":8080", ":8087", 1)},
+					{Name: "KIONGA_WORKSPACE_NAME", Value: agent.Name},
+					{Name: "KIONGA_WORKSPACE_API_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: platformapi.AgentAPISecretName(agent.Name)}, Key: "api-token"}}},
+				},
+				Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")}},
+				SecurityContext: hardenedSecurityContext(),
+			})
 		}
 		return controllerutil.SetControllerReference(&agent, deployment, r.Scheme())
 	})
@@ -155,7 +221,7 @@ func (r *AgentReconciler) fail(ctx context.Context, agent *mlaiopsv1.KiongaAgent
 }
 
 func (r *AgentReconciler) SetupWithManager(manager ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(manager).For(&mlaiopsv1.KiongaAgent{}).Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&autoscalingv2.HorizontalPodAutoscaler{}).Complete(r)
+	return ctrl.NewControllerManagedBy(manager).For(&mlaiopsv1.KiongaAgent{}).Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&corev1.ConfigMap{}).Owns(&corev1.Secret{}).Owns(&autoscalingv2.HorizontalPodAutoscaler{}).Complete(r)
 }
 
 func resolvedAgentResources(value corev1.ResourceRequirements) (corev1.ResourceRequirements, error) {

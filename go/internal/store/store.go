@@ -598,7 +598,7 @@ func (s *Store) DeployAgent(req api.DeployAgentRequest, actor string) (api.Agent
 	if !hasProject(s.data.Projects, req.ProjectID) {
 		return api.Agent{}, ErrNotFound
 	}
-	a := api.Agent{ID: id("agt"), ProjectID: req.ProjectID, OwnerSubject: req.OwnerSubject, Name: req.Name, Version: req.Version, Image: req.Image, GraphModule: req.GraphModule, LLMBackend: req.LLMBackend, Replicas: req.Replicas, Autoscaling: req.Autoscaling, Resources: req.Resources, Tools: req.Tools, Status: "pending", CreatedAt: time.Now().UTC()}
+	a := api.Agent{ID: id("agt"), ProjectID: req.ProjectID, OwnerSubject: req.OwnerSubject, Name: req.Name, Version: req.Version, Image: req.Image, GraphModule: req.GraphModule, FlowJSON: req.FlowJSON, SnapshotID: req.SnapshotID, SnapshotRev: req.SnapshotRev, LLMBackend: req.LLMBackend, Replicas: req.Replicas, Autoscaling: req.Autoscaling, Resources: req.Resources, Tools: req.Tools, Status: "pending", CreatedAt: time.Now().UTC()}
 	s.data.Agents = append([]api.Agent{a}, s.data.Agents...)
 	s.record("agent.deployed", "agent", a.ID, actor, nil)
 	return a, s.persist()

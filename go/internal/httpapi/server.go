@@ -60,6 +60,7 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/v1/langflow-workspaces/{id}/snapshots", server.captureLangflowSnapshot)
 	mux.HandleFunc("GET /api/v1/langflow-snapshots", server.langflowSnapshots)
 	mux.HandleFunc("GET /api/v1/langflow-snapshots/{id}", server.langflowSnapshot)
+	mux.HandleFunc("POST /api/v1/langflow-snapshots/{id}/publish", server.publishLangflowSnapshot)
 	mux.HandleFunc("/workspaces/{kind}/{path...}", server.workspaceProxy)
 	mux.HandleFunc("GET /api/v1/admin/users", server.userAccess)
 	mux.HandleFunc("GET /api/v1/admin/resource-profiles", server.resourceProfiles)
@@ -1337,6 +1338,7 @@ func (s *Server) agentTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := s.store.SetAgentTraffic(r.PathValue("id"), req.CanaryWeight, actor(r))
+	item.FlowJSON = ""
 	writeMutation(w, item, err, http.StatusOK)
 }
 

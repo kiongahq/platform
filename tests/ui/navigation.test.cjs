@@ -334,6 +334,28 @@ test('Langflow captures a saved flow into a versioned project snapshot', async t
  assert.deepEqual(app.errors,[]);
 });
 
+test('Langflow publishes an earlier flow revision with managed resources', async t => {
+ const snapshot={id:'lfs-123',name:'Support flow',project_id:'p1',flow_id:'flow-1',owner_subject:'user-1',revision:3,history:[{revision:1},{revision:2}]};
+ const app=consoleApp(['langflow'],'langflow',{
+   '/api/v1/langflow-workspaces':{mode:'kubernetes',items:[]},
+   '/api/v1/langflow-snapshots':{items:[snapshot]},
+   '/api/v1/langflow-snapshots/lfs-123/publish':{id:'agt-1',status:'pending'},
+ });
+ t.after(()=>app.dom.window.close()); await tick();
+ const d=app.w.document;
+ d.querySelector('[data-langflow-publish="lfs-123"]').click();
+ assert.equal(d.querySelector('#langflow-publish-dialog').open,true);
+ const revision=d.querySelector('#langflow-publish-revision');
+ assert.deepEqual([...revision.options].map(option=>option.value),['3','2','1']);
+ revision.value='1';
+ d.querySelector('#langflow-publish-form').dispatchEvent(new app.w.Event('submit',{bubbles:true,cancelable:true})); await tick();
+ const body=app.w.__bodies.find(request=>request.path==='/api/v1/langflow-snapshots/lfs-123/publish');
+ assert.deepEqual(JSON.parse(body.body),{revision:1,autoscaling:{min_replicas:1,max_replicas:1},resources:{cpu:'500m',memory:'1Gi'}});
+ assert.equal(d.querySelector('#langflow-publish-dialog').open,false);
+ assert.match(d.querySelector('#langflow-message').textContent,/queued as a managed agent/);
+ assert.deepEqual(app.errors,[]);
+});
+
 test('Langflow availability does not replace the IDE workspace link', async t => {
  const app=consoleApp(['ide','langflow'],'langflow',{
    '/api/v1/langflow-workspaces':{mode:'local',items:[]},

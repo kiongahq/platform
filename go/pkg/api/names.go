@@ -30,3 +30,10 @@ func AgentDNSName(agentID string) string {
 	}
 	return agentDNSPrefix + stem + "-" + digest
 }
+
+// AgentAPISecretName is shared by the operator and internal gateway identity
+// resolver. The digest keeps the Kubernetes name short and collision resistant.
+func AgentAPISecretName(agentName string) string {
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(agentName)))
+	return "kionga-agent-auth-" + digest[:24]
+}

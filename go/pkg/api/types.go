@@ -494,6 +494,9 @@ type Agent struct {
 	Version      string           `json:"version"`
 	Image        string           `json:"image"`
 	GraphModule  string           `json:"graph_module"`
+	FlowJSON     string           `json:"flow_json,omitempty"`
+	SnapshotID   string           `json:"snapshot_id,omitempty"`
+	SnapshotRev  int              `json:"snapshot_revision,omitempty"`
 	LLMBackend   string           `json:"llm_backend"`
 	Status       string           `json:"status"`
 	EndpointURL  string           `json:"endpoint_url,omitempty"`
@@ -512,6 +515,9 @@ type DeployAgentRequest struct {
 	Version      string           `json:"version"`
 	Image        string           `json:"image"`
 	GraphModule  string           `json:"graph_module"`
+	FlowJSON     string           `json:"-"`
+	SnapshotID   string           `json:"-"`
+	SnapshotRev  int              `json:"-"`
 	LLMBackend   string           `json:"llm_backend"`
 	Replicas     int              `json:"replicas,omitempty"`
 	Autoscaling  AgentAutoscaling `json:"autoscaling,omitempty"`

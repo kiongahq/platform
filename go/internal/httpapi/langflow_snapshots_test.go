@@ -28,7 +28,7 @@ func TestLangflowSnapshotVersionsAndRejectsEmbeddedSecrets(t *testing.T) {
 	}))
 	defer upstream.Close()
 	t.Setenv("KIONGA_LANGFLOW_UPSTREAM", upstream.URL)
-	server, _ := accessServer(t)
+	server, repository := accessServer(t)
 	request := func(method, path, body string) *http.Request {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		p := auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}}
@@ -72,5 +72,22 @@ func TestLangflowSnapshotVersionsAndRejectsEmbeddedSecrets(t *testing.T) {
 	server.ServeHTTP(rejected, request("POST", "/api/v1/langflow-workspaces/local/snapshots", `{"flow_id":"flow-1","project_id":"prj-demo"}`))
 	if rejected.Code != 422 {
 		t.Fatalf("embedded credential accepted: %d %s", rejected.Code, rejected.Body.String())
+	}
+	t.Setenv("KIONGA_WORKSPACE_NAMESPACE", "team-a")
+	t.Setenv("AGENT_RUNTIME_URL", "")
+	t.Setenv("KIONGA_LANGFLOW_AGENT_IMAGE", "ghcr.io/kiongahq/langflow-agent-runtime:1.13.0")
+	published := httptest.NewRecorder()
+	server.ServeHTTP(published, request("POST", "/api/v1/langflow-snapshots/"+saved.ID+"/publish", `{"revision":1,"autoscaling":{"min_replicas":1,"max_replicas":2}}`))
+	if published.Code != 202 || strings.Contains(published.Body.String(), `"nodes"`) || strings.Contains(published.Body.String(), `"flow_json"`) {
+		t.Fatalf("publish: %d %s", published.Code, published.Body.String())
+	}
+	agents := repository.Agents()
+	if len(agents) != 1 || agents[0].SnapshotRev != 1 || agents[0].GraphModule != "agents.langflow_adapter:build_langflow" || agents[0].FlowJSON == "" {
+		t.Fatalf("published agent did not retain revision 1: %#v", agents)
+	}
+	visible := httptest.NewRecorder()
+	server.ServeHTTP(visible, request("GET", "/api/v1/agents", ""))
+	if visible.Code != 200 || strings.Contains(visible.Body.String(), `"flow_json"`) {
+		t.Fatalf("agent API exposed flow: %d %s", visible.Code, visible.Body.String())
 	}
 }

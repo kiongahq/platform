@@ -197,6 +197,29 @@ func TestAgentCapacityUsesMaximumReplicasAndSidecarOverhead(t *testing.T) {
 	}
 }
 
+func TestPublishedLangflowCapacityIncludesResourceHelper(t *testing.T) {
+	_, repository := accessServer(t)
+	value := auth.Principal{Subject: "user-1", Roles: []string{auth.RoleUser}}
+	_, err := repository.UpsertUserAccess("user-1", api.UpsertUserAccessRequest{
+		Email: "user@example.com", Role: "user", Services: []string{"projects", "agents", "langflow"}, ProjectIDs: []string{"prj-demo"},
+		Compute: api.ComputeGrant{VCPUs: 1, MemoryGB: 2, MaxVMs: 1},
+	}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := api.DeployAgentRequest{ProjectID: "prj-demo", Name: "published", Version: "r1", Image: "runtime:1", GraphModule: "agents.langflow_adapter:build_langflow", FlowJSON: `{"data":{}}`, Resources: api.AgentResources{CPU: "850m", Memory: "1Gi"}}
+	if err := store.NormalizeAgentRequest(&request); err != nil {
+		t.Fatal(err)
+	}
+	if err := enforceAgentResources(repository, value, request); err == nil || !strings.Contains(err.Error(), "CPUs") {
+		t.Fatalf("Langflow resource helper must count against CPU grant: %v", err)
+	}
+	request.FlowJSON = ""
+	if err := enforceAgentResources(repository, value, request); err != nil {
+		t.Fatalf("same native runtime should fit the grant: %v", err)
+	}
+}
+
 func TestAgentCapacityAggregatesExistingOwnedAgents(t *testing.T) {
 	_, repository := accessServer(t)
 	value := auth.Principal{Subject: "user-1", Roles: []string{auth.RoleUser}}

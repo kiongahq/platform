@@ -33,6 +33,9 @@ type KiongaAgentSpec struct {
 	Version         string                      `json:"version"`
 	Image           string                      `json:"image"`
 	GraphModule     string                      `json:"graphModule"`
+	FlowJSON        string                      `json:"flowJSON,omitempty"`
+	ProjectID       string                      `json:"projectID,omitempty"`
+	OwnerSubject    string                      `json:"ownerSubject,omitempty"`
 	Replicas        ReplicaSpec                 `json:"replicas,omitempty"`
 	LLM             LLMSpec                     `json:"llm,omitempty"`
 	Tools           []ToolReference             `json:"tools,omitempty"`
