@@ -73,6 +73,12 @@ func TestLangflowSnapshotVersionsAndRejectsEmbeddedSecrets(t *testing.T) {
 	if rejected.Code != 422 {
 		t.Fatalf("embedded credential accepted: %d %s", rejected.Code, rejected.Body.String())
 	}
+	for _, key := range []string{"token", "Authorization", "private_key", "client_secret"} {
+		raw := `{"name":"unsafe","data":{"nodes":[{"id":"input","data":{"` + key + `":{"value":"raw-credential"}}}],"edges":[]}}`
+		if _, err := validateLangflowExport([]byte(raw)); err == nil {
+			t.Fatalf("embedded %s credential accepted", key)
+		}
+	}
 	t.Setenv("KIONGA_WORKSPACE_NAMESPACE", "team-a")
 	t.Setenv("AGENT_RUNTIME_URL", "")
 	t.Setenv("KIONGA_LANGFLOW_AGENT_IMAGE", "ghcr.io/kiongahq/langflow-agent-runtime:1.13.0")

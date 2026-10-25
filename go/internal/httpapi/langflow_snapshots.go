@@ -180,7 +180,7 @@ func hasEmbeddedSecret(value any) bool {
 	case map[string]any:
 		for key, item := range data {
 			normalized := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
-			if strings.Contains(normalized, "password") || strings.Contains(normalized, "secret") || strings.Contains(normalized, "api_key") || strings.Contains(normalized, "access_token") {
+			if strings.Contains(normalized, "password") || strings.Contains(normalized, "secret") || strings.Contains(normalized, "api_key") || strings.Contains(normalized, "apikey") || strings.Contains(normalized, "access_token") || strings.Contains(normalized, "refresh_token") || strings.Contains(normalized, "private_key") || strings.Contains(normalized, "authorization") || strings.Contains(normalized, "credential") || normalized == "token" {
 				if embeddedSecretValue(item) {
 					return true
 				}
