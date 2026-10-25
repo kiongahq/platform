@@ -64,6 +64,27 @@ test('Langflow renders when identity service grants are null', async () => {
  assert.deepEqual(app.errors,[]);
 });
 
+test('native designer adds and configures a standalone knowledge node', async () => {
+ const app=consoleApp(['agents'],'agent-designer',{
+  '/api/v1/me':{subject:'user-1',roles:['user'],services:['agents'],mode:'local',permissions:{agents_write:true},project_ids:['p1'],provisioned:true},
+  '/api/v1/agent-designs':{items:[]},
+ });
+ await tick();
+ const d=app.w.document;
+ d.querySelector('[data-design-add="knowledge"]').click();
+ assert.equal(d.querySelectorAll('.design-node').length,3);
+ assert.equal(d.querySelectorAll('.design-edge').length,1);
+ assert.match(d.querySelector('#design-inspector-content').textContent,/Knowledge base ID/);
+ const field=d.querySelector('[data-design-config="knowledge_base"]');
+ field.value='kb-1'; field.dispatchEvent(new app.w.Event('input',{bubbles:true}));
+ d.querySelector('#design-duplicate-node').click();
+ assert.equal(d.querySelectorAll('.design-node').length,4);
+ assert.equal(d.querySelectorAll('.design-edge').length,1);
+ assert.equal(d.querySelector('[data-design-config="knowledge_base"]').value,'kb-1');
+ assert.match(d.querySelector('#design-revision').textContent,/unsaved/i);
+ assert.deepEqual(app.errors,[]);
+});
+
 for(const view of ['agents','platform','functions','storage','pipelines','projects','models','features','realtime','catalog']) {
  test(`${view} loads with only its own service grant`,async t=>{
    const app=consoleApp([view],view);t.after(()=>app.dom.window.close());await tick();

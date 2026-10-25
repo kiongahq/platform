@@ -1,7 +1,7 @@
 /* Native Kionga agent graph drafts. Connections and positions are stored by
  * the platform API; the browser never stores credentials in the graph. */
 const agentDesignState = {draft: null, list: [], selected: "", connecting: "", dirty: false, models: [], tools: []};
-const designKinds = {input: "Input", prompt: "Prompt", model: "Model", tool: "Tool", output: "Output"};
+const designKinds = {input: "Input", prompt: "Prompt", model: "Model", tool: "Tool", knowledge: "Knowledge base", api: "API call", condition: "Condition", memory: "Memory", output: "Output"};
 const designNodeWidth = 190, designNodeHeight = 88;
 function blankAgentDesign() {
   return {id: "", project_id: selectedProject || projectOptions[0]?.id || "", name: "New agent", description: "", revision: 0,
@@ -56,9 +56,13 @@ function designRenderInspector() {
   const fields = node.kind === "prompt" ? [["template", "Prompt template", "textarea", "Use {input} for the agent message."]]
     : node.kind === "model" ? [["model", "Model reference", "input", "Choose a registered Kionga model by ID. This draft does not invoke it yet."]]
     : node.kind === "tool" ? [["tool", "Tool name", "input", "Choose a registered Kionga tool. This draft does not invoke it yet."]]
+    : node.kind === "knowledge" ? [["knowledge_base", "Knowledge base ID", "input", "Use a project knowledge base backed by Qdrant or pgvector."], ["query", "Search query", "textarea", "Use {input} to search with the agent message."]]
+    : node.kind === "api" ? [["connection", "Approved API connection ID", "input", "Use a connection registered for this project."], ["request", "Request template", "textarea", "Describe the request using {input} where needed."]]
+    : node.kind === "condition" ? [["expression", "Condition", "textarea", "Describe the branch rule for the runtime implementation."]]
+    : node.kind === "memory" ? [["strategy", "Memory strategy", "input", "Describe what conversation context to retain."]]
     : [];
   panel.innerHTML = `<span class="tag">${escapeHTML(designKinds[node.kind])}</span><label>Node label<input id="design-node-name" maxlength="100" value="${escapeHTML(node.name)}"></label><p class="field-help">ID: <code>${escapeHTML(node.id)}</code></p>${fields.map(([key,label,tag,hint]) => `<label>${label}${tag === "textarea" ? `<textarea data-design-config="${key}" rows="7" spellcheck="false">${escapeHTML(node.config?.[key] || "")}</textarea>` : `<input data-design-config="${key}" ${key === "model" ? 'list="design-model-options"' : key === "tool" ? 'list="design-tool-options"' : ""} value="${escapeHTML(node.config?.[key] || "")}">`}<small>${hint}</small></label>`).join("")}
-    <div class="design-inspector-actions">${!["input", "output"].includes(node.kind) ? `<button type="button" class="danger" id="design-remove-node">Remove node</button>` : ""}<button type="button" id="design-remove-edges">Remove connections</button></div>`;
+    <div class="design-inspector-actions">${!["input", "output"].includes(node.kind) ? `<button type="button" id="design-duplicate-node">Duplicate node</button><button type="button" class="danger" id="design-remove-node">Remove node</button>` : ""}<button type="button" id="design-remove-edges">Remove connections</button></div>`;
 }
 async function loadAgentDesigner() {
   const [data, models, tools] = await Promise.all([
@@ -89,10 +93,12 @@ document.querySelector("#design-project").addEventListener("change", event => { 
 for (const [selector, field] of [["#design-name", "name"], ["#design-description", "description"]]) document.querySelector(selector).addEventListener("input", event => { agentDesignState.draft[field] = event.target.value; designMarkDirty(); });
 document.querySelectorAll("[data-design-add]").forEach(button => button.addEventListener("click", () => {
   if (!can("agents_write")) return;
+  if (agentDesignState.draft.nodes.length >= 100) { designMessage("A design can have at most 100 nodes.", true); return; }
   const kind = button.dataset.designAdd, id = `${kind}-${Math.random().toString(36).slice(2, 9)}`;
   const count = agentDesignState.draft.nodes.length;
   agentDesignState.draft.nodes.push({id, kind, name: designKinds[kind], x: 250 + (Math.floor((count - 2) / 4) * 205), y: 250 + ((count - 2) % 4) * 130, config: {}});
   agentDesignState.selected = id; designMarkDirty(); designRender();
+  designMessage(`${designKinds[kind]} node added. You can save it before connecting it.`);
 }));
 document.querySelector("#design-nodes").addEventListener("click", event => {
   const out = event.target.closest("[data-design-out]"), input = event.target.closest("[data-design-in]");
@@ -118,7 +124,7 @@ function designRenderEdgesOnly() {
   document.querySelectorAll("#design-edges .design-edge").forEach(path => { const [fromID,toID] = path.dataset.designEdge.split(">"); const from = nodes.get(fromID), to = nodes.get(toID); if (!from || !to) return; const x1=from.x+designNodeWidth,y1=from.y+designNodeHeight/2,x2=to.x,y2=to.y+designNodeHeight/2; path.setAttribute("d",`M ${x1} ${y1} C ${x1+75} ${y1}, ${x2-75} ${y2}, ${x2} ${y2}`); });
 }
 document.querySelector("#design-inspector-content").addEventListener("input", event => { const node = agentDesignState.draft.nodes.find(item => item.id === agentDesignState.selected); if (!node) return; if (event.target.id === "design-node-name") { node.name = event.target.value; document.querySelector(`[data-design-node="${CSS.escape(node.id)}"] strong`).textContent = node.name; } else if (event.target.dataset.designConfig) { node.config ||= {}; node.config[event.target.dataset.designConfig] = event.target.value; } designMarkDirty(); });
-document.querySelector("#design-inspector-content").addEventListener("click", event => { const node = agentDesignState.draft.nodes.find(item => item.id === agentDesignState.selected); if (!node) return; if (event.target.id === "design-remove-node") { agentDesignState.draft.nodes = agentDesignState.draft.nodes.filter(item => item.id !== node.id); agentDesignState.draft.edges = agentDesignState.draft.edges.filter(edge => edge.from !== node.id && edge.to !== node.id); agentDesignState.selected = ""; designMarkDirty(); designRender(); } else if (event.target.id === "design-remove-edges") { agentDesignState.draft.edges = agentDesignState.draft.edges.filter(edge => edge.from !== node.id && edge.to !== node.id); designMarkDirty(); designRender(); } });
+document.querySelector("#design-inspector-content").addEventListener("click", event => { const node = agentDesignState.draft.nodes.find(item => item.id === agentDesignState.selected); if (!node || !can("agents_write")) return; if (event.target.id === "design-duplicate-node" && !["input", "output"].includes(node.kind)) { if (agentDesignState.draft.nodes.length >= 100) { designMessage("A design can have at most 100 nodes.", true); return; } const copy = {...node, id:`${node.kind}-${Math.random().toString(36).slice(2, 9)}`, name:`${node.name.slice(0, 95)} copy`, x:Math.min(node.x + 35, 9800), y:Math.min(node.y + 110, 9800), config:{...node.config}}; agentDesignState.draft.nodes.push(copy); agentDesignState.selected = copy.id; designMarkDirty(); designRender(); designMessage("Node duplicated without connections."); } else if (event.target.id === "design-remove-node") { agentDesignState.draft.nodes = agentDesignState.draft.nodes.filter(item => item.id !== node.id); agentDesignState.draft.edges = agentDesignState.draft.edges.filter(edge => edge.from !== node.id && edge.to !== node.id); agentDesignState.selected = ""; designMarkDirty(); designRender(); } else if (event.target.id === "design-remove-edges") { agentDesignState.draft.edges = agentDesignState.draft.edges.filter(edge => edge.from !== node.id && edge.to !== node.id); designMarkDirty(); designRender(); } });
 document.querySelector("#design-revisions").addEventListener("click", event => {
   const button = event.target.closest("[data-design-restore]"); if (!button || !can("agents_write")) return;
   const snapshot = (agentDesignState.draft.history || []).find(item => String(item.revision) === button.dataset.designRestore);

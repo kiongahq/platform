@@ -61,10 +61,12 @@ native designer remains available beside it. See the
 #### Native agent designer
 
 Open **Agents → Agent designer** (or `/console.html?view=agent-designer`) to build
-an agent graph inside the Kionga console. Add prompt, model, and tool nodes;
-connect their ports; drag nodes to arrange the canvas; then save a project-scoped
-design. The API persists the graph in the gateway's tenant-scoped document store
-and checks node identities, connections, cycles, and project access. Saves use a
+an agent graph inside the Kionga console. Add prompt, model, tool, knowledge base,
+API call, condition, and memory nodes. Nodes can be saved on their own while a
+graph is being assembled. Connect their ports, drag nodes to arrange the canvas,
+or duplicate a selected node before saving a project-scoped design. The API
+persists the graph in the gateway's tenant-scoped document store and checks node
+identities, connections, cycles, and project access. Saves use a
 revision number to reject stale edits; the 20 most recent prior revisions can
 be restored in the inspector and saved as a new revision. **Export JSON**
 downloads the design.

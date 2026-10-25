@@ -15,7 +15,7 @@ import (
 const agentDesignKind = "agent_design"
 
 var designIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
-var designNodeKinds = map[string]bool{"input": true, "prompt": true, "model": true, "tool": true, "output": true}
+var designNodeKinds = map[string]bool{"input": true, "prompt": true, "model": true, "tool": true, "knowledge": true, "api": true, "condition": true, "memory": true, "output": true}
 
 type designNode struct {
 	ID     string            `json:"id"`
@@ -151,30 +151,6 @@ func validateAgentDesign(req saveDesignRequest) []string {
 	}
 	if visited != len(nodes) {
 		issues = append(issues, "Connections contain a cycle.")
-	}
-	input := ""
-	for id, node := range nodes {
-		if node.Kind == "input" {
-			input = id
-		}
-	}
-	reachable := map[string]bool{}
-	if input != "" {
-		queue = []string{input}
-		reachable[input] = true
-		for len(queue) > 0 {
-			id := queue[0]
-			queue = queue[1:]
-			for _, to := range children[id] {
-				if !reachable[to] {
-					reachable[to] = true
-					queue = append(queue, to)
-				}
-			}
-		}
-	}
-	if len(reachable) != len(nodes) {
-		issues = append(issues, "Every node must be reachable from input.")
 	}
 	return issues
 }

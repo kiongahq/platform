@@ -78,3 +78,24 @@ func TestAgentDesignRejectsCycleAndUnassignedProject(t *testing.T) {
 		t.Fatalf("unassigned: %d", denied.Code)
 	}
 }
+
+func TestAgentDesignSavesDisconnectedDraftNodes(t *testing.T) {
+	server, repo := accessServer(t)
+	_, err := repo.UpsertUserAccess("user-1", api.UpsertUserAccessRequest{Email: "user@example.com", Role: "user", Services: []string{"agents"}, ProjectIDs: []string{"prj-demo"}, Storage: api.StorageGrant{SizeGB: 10}, Compute: api.ComputeGrant{VCPUs: 2, MemoryGB: 4, MaxVMs: 1, MaxProjects: 1, MaxRuns: 1}}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.Replace(validDesign, `{"id":"output"`, `{"id":"knowledge-1","kind":"knowledge","name":"Search docs","x":180,"y":160,"config":{"knowledge_base":"kb-1"}},{"id":"output"`, 1)
+	create := httptest.NewRecorder()
+	server.ServeHTTP(create, designRequest("POST", "/api/v1/agent-designs", body, auth.RoleUser))
+	if create.Code != 201 {
+		t.Fatalf("standalone node: %d %s", create.Code, create.Body.String())
+	}
+	var design agentDesign
+	if err := json.Unmarshal(create.Body.Bytes(), &design); err != nil {
+		t.Fatal(err)
+	}
+	if len(design.Nodes) != 3 || design.Nodes[1].Kind != "knowledge" || len(design.Edges) != 1 {
+		t.Fatalf("draft graph: %#v", design)
+	}
+}
