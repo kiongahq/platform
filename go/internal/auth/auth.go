@@ -372,7 +372,7 @@ func (v *Verifier) refresh(ctx context.Context) error {
 // engineerWrite lists what the engineer role may mutate: the ML lifecycle,
 // but not platform configuration (connections stay admin/operator-only).
 var engineerWrite = []string{
-	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents", "/api/v1/agent-designs", "/api/v1/langflow-workspaces",
+	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents", "/api/v1/agent-designs", "/api/v1/langflow-workspaces", "/api/v1/langflow-snapshots",
 	"/api/v1/tools", "/api/v1/features", "/api/v1/traces", "/api/v1/functions",
 	"/api/v1/realtime",
 }
@@ -509,6 +509,8 @@ func serviceForPath(path string) string {
 	case strings.HasPrefix(path, "/api/v1/workspaces/langflow/"):
 		return "langflow"
 	case strings.HasPrefix(path, "/api/v1/langflow-workspaces"):
+		return "langflow"
+	case strings.HasPrefix(path, "/api/v1/langflow-snapshots"):
 		return "langflow"
 	case path == "/api/v1/dashboard", path == "/api/v1/onboarding/readiness", path == "/api/v1/events":
 		return "overview"

@@ -31,6 +31,7 @@ function consoleApp(services, view, overrides={}) {
     '/api/v1/storage/buckets':{buckets:[]}, '/api/v1/components':[], '/api/v1/connections':{items:[]},
     '/api/v1/realtime':{demos:{}}, '/api/v1/catalog':[], '/api/v1/settings/tokens':{items:[]},
     '/api/v1/access-requests':{items:[]},
+    '/api/v1/langflow-snapshots':{items:[]},
     ...overrides,
   };
   const grants={projects:'projects',pipelines:'pipelines',agents:'agents',models:'models',features:'features',functions:'functions',storage:'storage',components:'platform',connections:'platform',realtime:'realtime',catalog:'catalog',prompts:'catalog',tools:'catalog',onboarding:'overview',dashboard:'overview'};
@@ -309,6 +310,27 @@ test('Langflow is a separate agent builder with project-scoped workspace control
  assert.match(app.w.document.querySelector('#langflow-list').textContent,/Support lab/);
  assert.ok(app.requests.includes('/api/v1/langflow-workspaces'));
  assert.ok(!app.requests.includes('/api/v1/agent-designs'));
+ assert.deepEqual(app.errors,[]);
+});
+
+test('Langflow captures a saved flow into a versioned project snapshot', async t => {
+ const item={id:'langflow-1234567890abcdef12345678',name:'Support lab',project_id:'p1',state:'ready',cpu:1,memory_gb:2,storage_gb:10};
+ const app=consoleApp(['langflow'],'langflow',{
+   '/api/v1/langflow-workspaces':{mode:'kubernetes',items:[item]},
+   [`/api/v1/langflow-workspaces/${item.id}/flows`]:{items:[{id:'flow-1',name:'Support flow'}]},
+   [`/api/v1/langflow-workspaces/${item.id}/snapshots`]:{id:'lfs-123',revision:1},
+ });
+ t.after(()=>app.dom.window.close()); await tick();
+ const d=app.w.document;
+ d.querySelector('[data-langflow-action="flows"]').click(); await tick();
+ assert.equal(d.querySelector('#langflow-capture-dialog').open,true);
+ assert.equal(d.querySelector('#langflow-flow-choice').value,'flow-1');
+ assert.equal(d.querySelector('#langflow-capture-project').value,'p1');
+ d.querySelector('#langflow-capture-form').dispatchEvent(new app.w.Event('submit',{bubbles:true,cancelable:true})); await tick();
+ const body=app.w.__bodies.find(request=>request.path===`/api/v1/langflow-workspaces/${item.id}/snapshots`);
+ assert.deepEqual(JSON.parse(body.body),{flow_id:'flow-1',project_id:'p1',snapshot_id:'',revision:0});
+ assert.equal(d.querySelector('#langflow-capture-dialog').open,false);
+ assert.match(d.querySelector('#langflow-message').textContent,/snapshot saved/);
  assert.deepEqual(app.errors,[]);
 });
 
