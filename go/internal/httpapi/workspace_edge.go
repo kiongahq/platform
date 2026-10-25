@@ -64,7 +64,7 @@ func parseWorkspaceHost(host, base string) (kind, slug string, ok bool) {
 		return "", "", false
 	}
 	label := strings.TrimSuffix(host, "."+base)
-	for _, candidate := range []string{"workbench", "ide"} {
+	for _, candidate := range []string{"workbench", "ide", "langflow"} {
 		prefix := candidate + "-"
 		if strings.HasPrefix(label, prefix) {
 			name := strings.TrimPrefix(label, prefix)

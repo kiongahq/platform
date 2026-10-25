@@ -78,6 +78,7 @@ type WorkspaceComputeSpec struct {
 
 type KiongaWorkspaceSpec struct {
 	Subject   string               `json:"subject"`
+	ProjectID string               `json:"projectID,omitempty"`
 	Services  []string             `json:"services,omitempty"`
 	Compute   WorkspaceComputeSpec `json:"compute"`
 	StorageGB int32                `json:"storageGB"`
@@ -89,6 +90,7 @@ type KiongaWorkspaceStatus struct {
 	ReadyReplicas      int32              `json:"readyReplicas,omitempty"`
 	WorkbenchURL       string             `json:"workbenchURL,omitempty"`
 	IDEURL             string             `json:"ideURL,omitempty"`
+	LangflowURL        string             `json:"langflowURL,omitempty"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }

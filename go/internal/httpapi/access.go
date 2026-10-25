@@ -50,6 +50,14 @@ func projectScoped(value auth.Principal) bool {
 }
 
 func allowedProjectIDs(repository store.Repository, value auth.Principal) map[string]bool {
+	if value.WorkspaceProjectID != "" {
+		for _, project := range repository.Projects() {
+			if project.ID == value.WorkspaceProjectID && (slices.Contains(value.ProjectIDs, project.ID) || project.OwnerSubject == value.Subject || privileged(value)) {
+				return map[string]bool{project.ID: true}
+			}
+		}
+		return map[string]bool{}
+	}
 	if !projectScoped(value) {
 		return nil
 	}
@@ -74,6 +82,15 @@ func projectAllowed(repository store.Repository, value auth.Principal, projectID
 }
 
 func filterProjects(items []api.Project, value auth.Principal) []api.Project {
+	if value.WorkspaceProjectID != "" {
+		result := make([]api.Project, 0, 1)
+		for _, item := range items {
+			if item.ID == value.WorkspaceProjectID && (slices.Contains(value.ProjectIDs, item.ID) || item.OwnerSubject == value.Subject || privileged(value)) {
+				result = append(result, item)
+			}
+		}
+		return result
+	}
 	if !projectScoped(value) {
 		return items
 	}

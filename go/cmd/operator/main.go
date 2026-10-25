@@ -57,7 +57,7 @@ func main() {
 		ImagePullSecrets: pullSecrets}).SetupWithManager(manager))
 	must((&platformoperator.WorkspaceReconciler{
 		Client: manager.GetClient(), WorkbenchImage: env("WORKBENCH_IMAGE", "ghcr.io/kiongahq/jupyter:latest"),
-		IDEImage: env("IDE_IMAGE", "ghcr.io/kiongahq/ide:latest"), GatewayURL: env("MLAIOPS_URL", "http://mlaiops-gateway.mlaiops-system:8080"),
+		IDEImage: env("IDE_IMAGE", "ghcr.io/kiongahq/ide:latest"), LangflowImage: env("LANGFLOW_IMAGE", "ghcr.io/kiongahq/langflow:latest"), LangflowSidecarImage: env("LANGFLOW_SIDECAR_IMAGE", "ghcr.io/kiongahq/langflow-sidecar:latest"), GatewayURL: env("MLAIOPS_URL", "http://mlaiops-gateway.mlaiops-system:8080"),
 		FeatureURL: env("WORKSPACE_FEATURE_URL", "http://mlaiops-feature-gateway.mlaiops-system:8083"), StorageURL: env("WORKSPACE_STORAGE_URL", "http://mlaiops-storage-proxy.mlaiops-system:8084"),
 		MLflowURL: env("WORKSPACE_MLFLOW_URL", "http://mlflow.mlaiops-system:5000"), PrefectURL: env("WORKSPACE_PREFECT_URL", "http://prefect-server.mlaiops-system:4200/api"),
 		LangfuseURL: env("WORKSPACE_LANGFUSE_URL", "http://langfuse.mlaiops-system:3000"), KafkaRESTURL: env("WORKSPACE_KAFKA_REST_URL", "http://kafka-rest.mlaiops-system:8082"),

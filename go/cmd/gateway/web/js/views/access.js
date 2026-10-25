@@ -1,5 +1,5 @@
 /* My access (every user) and Users & access (administrators). */
-const accessServices = ["overview", "projects", "pipelines", "functions", "models", "agents", "features", "storage", "realtime", "catalog", "platform", "git", "workbench", "ide"];
+const accessServices = ["overview", "projects", "pipelines", "functions", "models", "agents", "langflow", "features", "storage", "realtime", "catalog", "platform", "git", "workbench", "ide"];
 let accessCache = [];
 let resourceProfiles = [];
 

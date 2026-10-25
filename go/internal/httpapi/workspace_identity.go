@@ -33,7 +33,7 @@ func WorkspaceIdentity(next http.Handler, client dynamic.Interface, namespace, l
 			http.Error(w, "workspace credential required", http.StatusUnauthorized)
 			return
 		}
-		var subject string
+		var subject, projectID string
 		if namespace != "" {
 			if client == nil || name == "" {
 				http.Error(w, "workspace credential rejected", http.StatusUnauthorized)
@@ -47,7 +47,8 @@ func WorkspaceIdentity(next http.Handler, client dynamic.Interface, namespace, l
 			disabled, _, _ := unstructured.NestedBool(workspace.Object, "spec", "disabled")
 			services, _, _ := unstructured.NestedStringSlice(workspace.Object, "spec", "services")
 			subject, _, _ = unstructured.NestedString(workspace.Object, "spec", "subject")
-			if disabled || subject == "" || (!slices.Contains(services, "workbench") && !slices.Contains(services, "ide")) {
+			projectID, _, _ = unstructured.NestedString(workspace.Object, "spec", "projectID")
+			if disabled || subject == "" || (!slices.Contains(services, "workbench") && !slices.Contains(services, "ide") && !slices.Contains(services, "langflow")) {
 				http.Error(w, "workspace access revoked", http.StatusForbidden)
 				return
 			}
@@ -80,7 +81,7 @@ func WorkspaceIdentity(next http.Handler, client dynamic.Interface, namespace, l
 		if namespace == "" {
 			roles = []string{auth.RoleAdmin}
 		}
-		principal := auth.Principal{Subject: subject, Roles: roles, Credential: "workspace"}
+		principal := auth.Principal{Subject: subject, Roles: roles, Credential: "workspace", WorkspaceProjectID: projectID}
 		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
 	})
 }

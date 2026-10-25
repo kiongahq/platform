@@ -32,6 +32,7 @@
         <button class="nav-item" type="button" data-view="models"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#models"></use></svg></span>Models</button>
         <button class="nav-item" type="button" data-view="agents"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#agents"></use></svg></span>Agents</button>
         <button class="nav-item" type="button" data-view="agent-designer"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#pipelines"></use></svg></span>Agent designer</button>
+        <button class="nav-item" type="button" data-view="langflow"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#agents"></use></svg></span>Langflow</button>
         <button class="nav-item" type="button" data-view="features"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#features"></use></svg></span>Features</button>
         <button class="nav-item" type="button" data-view="storage"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#storage"></use></svg></span>Storage</button>
         <button class="nav-item" type="button" data-view="realtime"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#realtime"></use></svg></span>Real-time</button>
@@ -50,6 +51,7 @@
         <div class="cluster"><span><b>Developer workspaces</b><small id="workspace-status">Checking availability…</small></span></div>
         <a href="/workspaces/workbench/" id="workbench-link" target="_blank" rel="noopener" aria-disabled="true">Jupyter workbench ↗</a>
         <a href="/workspaces/ide/" id="ide-link" target="_blank" rel="noopener" aria-disabled="true">IDE workspace ↗</a>
+        <a href="/console.html?view=langflow" id="langflow-link" aria-disabled="true">Langflow canvas ↗</a>
         <a href="/api-docs.html" target="_blank" rel="noopener">API reference ↗</a>
         <a href="/">Kionga home</a>
         <a class="sidebar-logout logout-action" href="/auth/logout" hidden>Log out <span aria-hidden="true">↗</span></a>
@@ -143,7 +145,7 @@
       </section>
 
       <section id="agents" class="view" aria-labelledby="page-title">
-        <div class="section-heading"><div><p>Deployments, tools, live sessions, traces, prompts, token usage and cost.</p></div><div class="heading-actions"><button type="button" data-view-target="agent-designer">Open designer</button><button class="primary" type="button" id="deploy-agent" data-perm="agents_write"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg> Deploy agent</button></div></div>
+        <div class="section-heading"><div><p>Deployments, tools, live sessions, traces, prompts, token usage and cost.</p></div><div class="heading-actions"><button type="button" data-view-target="agent-designer">Native designer</button><button type="button" data-view-target="langflow">Langflow canvas</button><button class="primary" type="button" id="deploy-agent" data-perm="agents_write"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg> Deploy agent</button></div></div>
         <div data-intro="agents"></div>
         <div id="agent-summary" class="stat-grid"></div>
         <div id="agent-grid" class="card-grid"></div>
@@ -163,6 +165,14 @@
           <div class="design-canvas-scroll" aria-label="Agent graph canvas" tabindex="0"><div id="design-canvas" class="design-canvas"><svg id="design-edges" aria-hidden="true" width="2000" height="1300"></svg><div id="design-nodes"></div></div></div>
           <div class="design-inspector panel" role="region" aria-label="Selected node settings"><p class="eyebrow">NODE SETTINGS</p><div id="design-inspector-content"><p>Select a node to edit it.</p></div><div id="design-revisions"></div><datalist id="design-model-options"></datalist><datalist id="design-tool-options"></datalist></div>
         </div>
+      </section>
+
+      <section id="langflow" class="view" aria-labelledby="page-title">
+        <div class="section-heading"><div><p>Build and test flows in Langflow. Each hosted workspace has its own storage and lifecycle.</p></div><div class="heading-actions"><button type="button" data-view-target="agent-designer">Native designer</button><button type="button" id="langflow-refresh">Refresh</button></div></div>
+        <div data-intro="langflow"></div>
+        <form id="langflow-create" class="panel" hidden><div class="panel-heading"><div><p class="eyebrow">NEW WORKSPACE</p><h3>Create Langflow workspace</h3></div></div><div class="quota-grid"><label>Name<input id="langflow-name" required maxlength="80" placeholder="e.g. Support agent lab"></label><label>Project<select id="langflow-project" required></select></label><label>vCPUs<input id="langflow-cpu" type="number" min="1" max="32" value="1" required></label><label>Memory GB<input id="langflow-memory" type="number" min="1" max="128" value="2" required></label><label>Storage GB<input id="langflow-storage" type="number" min="1" max="1000" value="10" required></label></div><div class="form-actions"><button class="primary" type="submit">Create workspace</button></div></form>
+        <p id="langflow-message" role="status" aria-live="polite"></p>
+        <div id="langflow-list" class="card-grid"></div>
       </section>
 
       <section id="features" class="view" aria-labelledby="page-title">
@@ -542,6 +552,7 @@ mlaiops projects list</pre><div class="form-actions"><button class="primary" typ
   <script src="/js/views/models.js"></script>
   <script src="/js/views/agents.js"></script>
   <script src="/js/views/agent-designer.js"></script>
+  <script src="/js/views/langflow.js"></script>
   <script src="/js/views/data.js"></script>
   <script src="/js/views/platform.js"></script>
   <script src="/js/views/access.js"></script>

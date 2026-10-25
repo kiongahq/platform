@@ -299,3 +299,26 @@ test('a failed preflight keeps the run from starting and lists every failed rule
  assert.match(d.querySelector('#submit-checks .fail').textContent,/pinned by digest/);
  assert.ok(!(app.w.__bodies||[]).some(b=>b.path==='/api/v1/pipelines/submit'));
 });
+
+test('Langflow is a separate agent builder with project-scoped workspace controls', async t => {
+ const item={id:'langflow-1234567890abcdef12345678',name:'Support lab',project_id:'p1',state:'ready',cpu:1,memory_gb:2,storage_gb:10};
+ const app=consoleApp(['langflow'],'langflow',{'/api/v1/langflow-workspaces':{mode:'kubernetes',items:[item]}});
+ t.after(()=>app.dom.window.close()); await tick();
+ assert.equal(app.w.document.querySelector('.view.active').id,'langflow');
+ assert.equal(app.w.document.querySelector('#langflow-create').hidden,false);
+ assert.match(app.w.document.querySelector('#langflow-list').textContent,/Support lab/);
+ assert.ok(app.requests.includes('/api/v1/langflow-workspaces'));
+ assert.ok(!app.requests.includes('/api/v1/agent-designs'));
+ assert.deepEqual(app.errors,[]);
+});
+
+test('Langflow availability does not replace the IDE workspace link', async t => {
+ const app=consoleApp(['ide','langflow'],'langflow',{
+   '/api/v1/langflow-workspaces':{mode:'local',items:[]},
+   '/api/v1/workspaces':{items:[{id:'ide',name:'Browser IDE',available:true,message:'Ready'},{id:'langflow',name:'Langflow',available:false,message:'Choose an instance'}]},
+ });
+ t.after(()=>app.dom.window.close()); await tick();
+ assert.match(app.w.document.querySelector('#ide-link').href,/tool=ide/);
+ assert.match(app.w.document.querySelector('#langflow-link').href,/view=langflow/);
+ assert.deepEqual(app.errors,[]);
+});

@@ -87,7 +87,7 @@ func (s *Store) ReviewAccessRequest(requestID string, req api.ReviewAccessReques
 
 var validServices = []string{
 	"overview", "projects", "pipelines", "models", "agents", "features",
-	"storage", "realtime", "catalog", "platform", "functions", "git", "workbench", "ide",
+	"storage", "realtime", "catalog", "platform", "functions", "git", "workbench", "ide", "langflow",
 }
 
 // ResourceProfiles is the canonical sizing catalog used by both API

@@ -99,7 +99,7 @@ func workspaceTarget(kind string, r *http.Request) (*workspaceDestination, error
 	if os.Getenv("KIONGA_ENVIRONMENT") == "production" && os.Getenv("KIONGA_TRUSTED_WORKSPACE_PROXY") != "true" && os.Getenv("KIONGA_WORKSPACE_BASE_DOMAIN") == "" {
 		return nil, fmt.Errorf("Public same-origin workspaces are disabled. Configure isolated workspace access with your administrator")
 	}
-	key := map[string]string{"workbench": "KIONGA_JUPYTER_UPSTREAM", "ide": "KIONGA_IDE_UPSTREAM"}[kind]
+	key := map[string]string{"workbench": "KIONGA_JUPYTER_UPSTREAM", "ide": "KIONGA_IDE_UPSTREAM", "langflow": "KIONGA_LANGFLOW_UPSTREAM"}[kind]
 	if key == "" {
 		return nil, fmt.Errorf("Unknown workspace")
 	}
@@ -113,7 +113,8 @@ func workspaceTarget(kind string, r *http.Request) (*workspaceDestination, error
 		if err != nil {
 			return nil, fmt.Errorf("Workspace discovery is unavailable")
 		}
-		return discoverWorkspace(r.Context(), client, namespace, principal(r).Subject, kind)
+		selected, _ := r.Context().Value(edgeWorkspaceNameKey{}).(string)
+		return discoverWorkspaceNamed(r.Context(), client, namespace, principal(r).Subject, kind, selected)
 	}
 	raw := os.Getenv(key)
 	if raw == "" {
@@ -133,10 +134,17 @@ func workspaceTarget(kind string, r *http.Request) (*workspaceDestination, error
 	if kind == "ide" {
 		token = os.Getenv("KIONGA_IDE_PASSWORD")
 	}
+	if kind == "langflow" {
+		token = ""
+	}
 	return &workspaceDestination{URL: u, token: token}, nil
 }
 
 func discoverWorkspace(ctx context.Context, client dynamic.Interface, namespace, subject, kind string) (*workspaceDestination, error) {
+	return discoverWorkspaceNamed(ctx, client, namespace, subject, kind, "")
+}
+
+func discoverWorkspaceNamed(ctx context.Context, client dynamic.Interface, namespace, subject, kind, selected string) (*workspaceDestination, error) {
 	gvr := schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: "kiongaworkspaces"}
 	list, err := client.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -147,6 +155,17 @@ func discoverWorkspace(ctx context.Context, client dynamic.Interface, namespace,
 		item := &list.Items[i]
 		owner, _, _ := unstructured.NestedString(item.Object, "spec", "subject")
 		if owner != subject {
+			continue
+		}
+		services, _, _ := unstructured.NestedStringSlice(item.Object, "spec", "services")
+		assigned := false
+		for _, service := range services {
+			if service == kind {
+				assigned = true
+				break
+			}
+		}
+		if !assigned || (selected != "" && item.GetName() != selected) {
 			continue
 		}
 		if match != nil {
@@ -180,9 +199,9 @@ func discoverWorkspace(ctx context.Context, client dynamic.Interface, namespace,
 	if err != nil || len(token) == 0 {
 		return nil, fmt.Errorf("Your workspace credentials are invalid")
 	}
-	port := "8888"
-	if kind == "ide" {
-		port = "8080"
+	port := map[string]string{"workbench": "8888", "ide": "8080", "langflow": "7860"}[kind]
+	if port == "" {
+		return nil, fmt.Errorf("Unknown workspace")
 	}
 	target, _ := url.Parse("http://" + match.GetName() + "." + namespace + ".svc:" + port)
 	return &workspaceDestination{URL: target, token: string(token), name: match.GetName()}, nil
@@ -196,6 +215,9 @@ func (s *Server) projectOptions(w http.ResponseWriter, r *http.Request) {
 	assigned := allowedProjectIDs(s.store, principal(r))
 	a := s.authorizerFor(r)
 	for _, p := range s.store.Projects() {
+		if restricted := principal(r).WorkspaceProjectID; restricted != "" && (p.ID != restricted || !projectAllowed(s.store, principal(r), p.ID)) {
+			continue
+		}
 		decision := a.check(policy.ProjectRead, policy.ProjectResource(p.ID))
 		explicitDeny := !decision.Allowed && decision.DecidedBy != policy.DefaultDeny && decision.DecidedBy != "coarse-gate"
 		if explicitDeny || !(decision.Allowed || assigned == nil || assigned[p.ID]) {
@@ -256,10 +278,10 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 		URL       string `json:"url,omitempty"`
 		Message   string `json:"message"`
 	}
-	items := make([]entry, 2)
+	items := make([]entry, 3)
 	var wg sync.WaitGroup
-	for i, kind := range []string{"workbench", "ide"} {
-		items[i] = entry{ID: kind, Name: map[string]string{"workbench": "JupyterLab", "ide": "Browser IDE"}[kind]}
+	for i, kind := range []string{"workbench", "ide", "langflow"} {
+		items[i] = entry{ID: kind, Name: map[string]string{"workbench": "JupyterLab", "ide": "Browser IDE", "langflow": "Langflow"}[kind]}
 		wg.Add(1)
 		go func(i int, kind string) {
 			defer wg.Done()
@@ -267,6 +289,12 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 			if !auth.Allowed(principal(r), http.MethodGet, "/workspaces/"+kind+"/") {
 				e.State = workspaceForbidden
 				e.Message = "Request access to use this workspace"
+				return
+			}
+			if kind == "langflow" && os.Getenv("KIONGA_WORKSPACE_NAMESPACE") != "" {
+				e.State = "managed"
+				e.Message = "Choose an instance in Langflow"
+				e.URL = "/console.html?view=langflow"
 				return
 			}
 			target, err := workspaceTarget(kind, r)
@@ -279,12 +307,15 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 			if kind == "workbench" {
 				endpoint = strings.TrimRight(target.String(), "/") + "/workspaces/workbench/api"
 			}
+			if kind == "langflow" {
+				endpoint = strings.TrimRight(target.String(), "/") + "/health_check"
+			}
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			defer cancel()
 			request, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil) // #nosec G704 -- upstream is operator config or KiongaWorkspace discovery, validated by workspaceTarget
 			if kind == "workbench" {
 				request.Header.Set("Authorization", "token "+target.token)
-			} else {
+			} else if kind == "ide" {
 				cookie, err := ideSession(ctx, target)
 				if err != nil {
 					e.State = workspaceUnauthorized
@@ -370,6 +401,10 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request) {
 			p.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/workspaces/ide")
 			p.Out.URL.RawPath = ""
 		}
+		if kind == "langflow" {
+			p.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/workspaces/langflow")
+			p.Out.URL.RawPath = ""
+		}
 		p.Out.Header.Del("Cookie")
 		p.Out.Header.Del("Authorization")
 		if ideCookie != "" {
@@ -389,9 +424,13 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "workspace_unavailable", "Workspace is offline. Return to Kionga and retry when it is ready.")
 	},
 		ModifyResponse: func(response *http.Response) error {
-			response.Header.Del("Set-Cookie")
+			if kind != "langflow" {
+				response.Header.Del("Set-Cookie")
+			}
 			if r.Context().Value(edgeContextKey{}) == true {
 				rewriteWorkspaceFramePolicy(response.Header, os.Getenv("MLAIOPS_ALLOWED_ORIGIN"))
+			} else if kind == "langflow" {
+				rewriteWorkspaceFramePolicy(response.Header, "'self'")
 			}
 			if kind == "ide" {
 				if path := response.Header.Get("Location"); strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//") {

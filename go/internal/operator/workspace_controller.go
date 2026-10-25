@@ -28,16 +28,18 @@ import (
 // resources; the pod is scaled to zero as soon as the grant is suspended.
 type WorkspaceReconciler struct {
 	client.Client
-	WorkbenchImage string
-	IDEImage       string
-	GatewayURL     string
-	FeatureURL     string
-	StorageURL     string
-	MLflowURL      string
-	PrefectURL     string
-	LangfuseURL    string
-	KafkaRESTURL   string
-	StorageClass   string
+	WorkbenchImage       string
+	IDEImage             string
+	LangflowImage        string
+	LangflowSidecarImage string
+	GatewayURL           string
+	FeatureURL           string
+	StorageURL           string
+	MLflowURL            string
+	PrefectURL           string
+	LangfuseURL          string
+	KafkaRESTURL         string
+	StorageClass         string
 	// AllowedStorageClasses, when set, is the only set of classes tenant
 	// workspace claims may use (WORKSPACE_ALLOWED_STORAGE_CLASSES).
 	AllowedStorageClasses []string
@@ -98,7 +100,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 			delete(authSecret.Data, "api-token")
 			delete(authSecret.Data, "token")
 		}
-		for _, key := range []string{"token", "api-token"} {
+		for _, key := range []string{"token", "api-token", "langflow-secret"} {
 			if len(authSecret.Data[key]) == 0 {
 				token := make([]byte, 24)
 				if _, randomErr := rand.Read(token); randomErr != nil {
@@ -128,6 +130,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 			deployment.Spec.Template.Annotations = make(map[string]string)
 		}
 		deployment.Spec.Template.Annotations["mlaiops.io/api-token-hash"] = fmt.Sprintf("%x", sha256.Sum256(authSecret.Data["api-token"]))
+		deployment.Spec.Template.Annotations["mlaiops.io/restart-at"] = workspace.Annotations["mlaiops.io/restart-at"]
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{FSGroup: ptrInt64(1000), RunAsNonRoot: ptrBool(true), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
 		deployment.Spec.Template.Spec.Containers = containers
 		deployment.Spec.Template.Spec.Volumes = volumes
@@ -153,20 +156,30 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	workspace.Status.Phase = "Ready"
+	workspace.Status.Phase = "Starting"
+	if deployment.Status.ReadyReplicas > 0 {
+		workspace.Status.Phase = "Ready"
+	}
 	if workspace.Spec.Disabled {
 		workspace.Status.Phase = "Suspended"
 	}
 	workspace.Status.ReadyReplicas = deployment.Status.ReadyReplicas
 	workspace.Status.ObservedGeneration = workspace.Generation
-	workspace.Status.WorkbenchURL, workspace.Status.IDEURL = "", ""
+	workspace.Status.WorkbenchURL, workspace.Status.IDEURL, workspace.Status.LangflowURL = "", "", ""
 	if slices.Contains(workspace.Spec.Services, "workbench") {
 		workspace.Status.WorkbenchURL = fmt.Sprintf("http://%s.%s.svc:8888", service.Name, service.Namespace)
 	}
 	if slices.Contains(workspace.Spec.Services, "ide") {
 		workspace.Status.IDEURL = fmt.Sprintf("http://%s.%s.svc:8080", service.Name, service.Namespace)
 	}
-	apimeta.SetStatusCondition(&workspace.Status.Conditions, metav1.Condition{Type: "Ready", Status: metav1.ConditionTrue, Reason: "WorkspaceReconciled", Message: "Persistent workspace and assigned services reconciled"})
+	if slices.Contains(workspace.Spec.Services, "langflow") {
+		workspace.Status.LangflowURL = fmt.Sprintf("http://%s.%s.svc:7860", service.Name, service.Namespace)
+	}
+	readyCondition := metav1.ConditionFalse
+	if !workspace.Spec.Disabled && deployment.Status.ReadyReplicas > 0 {
+		readyCondition = metav1.ConditionTrue
+	}
+	apimeta.SetStatusCondition(&workspace.Status.Conditions, metav1.Condition{Type: "Ready", Status: readyCondition, Reason: "WorkspaceReconciled", Message: "Persistent workspace and assigned services reconciled"})
 	if err := r.Status().Update(ctx, &workspace); err != nil && !apierrors.IsConflict(err) {
 		return ctrl.Result{}, err
 	}
@@ -174,8 +187,8 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 }
 
 func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.KiongaWorkspace, authSecret string) []corev1.Container {
-	services := make([]string, 0, 2)
-	for _, service := range []string{"workbench", "ide"} {
+	services := make([]string, 0, 3)
+	for _, service := range []string{"workbench", "ide", "langflow"} {
 		if slices.Contains(workspace.Spec.Services, service) {
 			services = append(services, service)
 		}
@@ -190,6 +203,13 @@ func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.KiongaWorkspace, au
 		image, port := r.WorkbenchImage, int32(8888)
 		if service == "ide" {
 			image, port = r.IDEImage, 8080
+		}
+		if service == "langflow" {
+			image, port = r.LangflowImage, 7860
+		}
+		if service == "langflow" {
+			cpu = *resource.NewMilliQuantity(cpu.MilliValue()*9/10, resource.DecimalSI)
+			memory = *resource.NewQuantity(memory.Value()*9/10, resource.BinarySI)
 		}
 		resources := corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: cpu, corev1.ResourceMemory: memory}, Limits: corev1.ResourceList{corev1.ResourceCPU: cpu, corev1.ResourceMemory: memory}}
 		if service == "workbench" && workspace.Spec.Compute.GPUs > 0 {
@@ -211,30 +231,74 @@ func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.KiongaWorkspace, au
 				environment[i].Value = strings.Replace(environment[i].Value, ":8080", ":8087", 1)
 			}
 		}
-		environment = append(environment, corev1.EnvVar{Name: "KIONGA_WORKSPACE_API_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: authSecret}, Key: "api-token"}}})
+		if service != "langflow" {
+			environment = append(environment, corev1.EnvVar{Name: "KIONGA_WORKSPACE_API_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: authSecret}, Key: "api-token"}}})
+		}
 		credentialName := "PASSWORD"
 		if service == "workbench" {
 			credentialName = "JUPYTER_TOKEN"
 			environment = append(environment, corev1.EnvVar{Name: "S3_MOUNT_OPTIONAL", Value: "true"})
 		}
-		environment = append(environment, corev1.EnvVar{Name: credentialName, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: authSecret}, Key: "token"}}})
-		result = append(result, corev1.Container{
+		if service == "langflow" {
+			environment = append(environment,
+				corev1.EnvVar{Name: "LANGFLOW_ROOT_PATH", Value: "/workspaces/langflow"},
+				corev1.EnvVar{Name: "LANGFLOW_CONFIG_DIR", Value: "/workspace/.langflow"},
+				corev1.EnvVar{Name: "LANGFLOW_SAVE_DB_IN_CONFIG_DIR", Value: "true"},
+				corev1.EnvVar{Name: "LANGFLOW_AUTO_LOGIN", Value: "true"},
+				corev1.EnvVar{Name: "LANGFLOW_RESTRICT_LOCAL_FILE_ACCESS", Value: "true"},
+				corev1.EnvVar{Name: "LANGFLOW_COMPONENTS_PATH", Value: "/app/kionga-components"},
+				corev1.EnvVar{Name: "LANGFLOW_AGENTIC_EXPERIENCE", Value: "false"},
+				corev1.EnvVar{Name: "LANGFLOW_SUPERUSER_PASSWORD", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: authSecret}, Key: "token"}}},
+				corev1.EnvVar{Name: "LANGFLOW_SECRET_KEY", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: authSecret}, Key: "langflow-secret"}}},
+			)
+			credentialName = ""
+		}
+		if credentialName != "" {
+			environment = append(environment, corev1.EnvVar{Name: credentialName, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: authSecret}, Key: "token"}}})
+		}
+		container := corev1.Container{
 			Name: service, Image: image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: port}},
 			Env:       environment,
 			Resources: resources, VolumeMounts: []corev1.VolumeMount{{Name: "workspace", MountPath: "/workspace"}},
 			SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptrBool(false), RunAsNonRoot: ptrBool(true), RunAsUser: ptrInt64(1000), RunAsGroup: ptrInt64(1000), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
-		})
+		}
+		if service == "langflow" {
+			container.ReadinessProbe = httpProbe("/health_check", "http", 20)
+			container.LivenessProbe = httpProbe("/health_check", "http", 60)
+			container.StartupProbe = httpProbe("/health_check", "http", 0)
+			container.StartupProbe.FailureThreshold = 60
+		}
+		result = append(result, container)
+		if service == "langflow" {
+			sidecarCPU := *resource.NewMilliQuantity(int64(workspace.Spec.Compute.VCPUs)*100/int64(len(services)), resource.DecimalSI)
+			sidecarMemory := *resource.NewQuantity(int64(workspace.Spec.Compute.MemoryGB)*1024*1024*1024/10/int64(len(services)), resource.BinarySI)
+			result = append(result, corev1.Container{
+				Name: "kionga-api", Image: r.LangflowSidecarImage,
+				Ports:          []corev1.ContainerPort{{Name: "api", ContainerPort: 8890}},
+				ReadinessProbe: &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt(8890)}}, PeriodSeconds: 5},
+				Env: []corev1.EnvVar{
+					{Name: "KIONGA_GATEWAY_INTERNAL_URL", Value: strings.Replace(r.GatewayURL, ":8080", ":8087", 1)},
+					{Name: "KIONGA_WORKSPACE_NAME", Value: workspace.Name},
+					{Name: "KIONGA_WORKSPACE_API_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: authSecret}, Key: "api-token"}}},
+				},
+				Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: sidecarCPU, corev1.ResourceMemory: sidecarMemory}, Limits: corev1.ResourceList{corev1.ResourceCPU: sidecarCPU, corev1.ResourceMemory: sidecarMemory}},
+				SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptrBool(false), RunAsNonRoot: ptrBool(true), RunAsUser: ptrInt64(1000), RunAsGroup: ptrInt64(1000), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
+			})
+		}
 	}
 	return result
 }
 
 func workspacePorts(services []string) []corev1.ServicePort {
-	result := make([]corev1.ServicePort, 0, 2)
+	result := make([]corev1.ServicePort, 0, 3)
 	if slices.Contains(services, "workbench") {
 		result = append(result, corev1.ServicePort{Name: "workbench", Port: 8888, TargetPort: intstr.FromInt(8888)})
 	}
 	if slices.Contains(services, "ide") {
 		result = append(result, corev1.ServicePort{Name: "ide", Port: 8080, TargetPort: intstr.FromInt(8080)})
+	}
+	if slices.Contains(services, "langflow") {
+		result = append(result, corev1.ServicePort{Name: "langflow", Port: 7860, TargetPort: intstr.FromInt(7860)})
 	}
 	return result
 }

@@ -44,9 +44,12 @@ type Principal struct {
 	Namespaces    []string
 	Services      []string
 	ProjectIDs    []string
-	Disabled      bool
-	Provisioned   bool
-	Credential    string
+	// WorkspaceProjectID confines a project-specific workspace even when its
+	// owner has wider platform grants (including an administrator role).
+	WorkspaceProjectID string
+	Disabled           bool
+	Provisioned        bool
+	Credential         string
 }
 
 type contextKey struct{}
@@ -369,7 +372,7 @@ func (v *Verifier) refresh(ctx context.Context) error {
 // engineerWrite lists what the engineer role may mutate: the ML lifecycle,
 // but not platform configuration (connections stay admin/operator-only).
 var engineerWrite = []string{
-	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents", "/api/v1/agent-designs",
+	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents", "/api/v1/agent-designs", "/api/v1/langflow-workspaces",
 	"/api/v1/tools", "/api/v1/features", "/api/v1/traces", "/api/v1/functions",
 	"/api/v1/realtime",
 }
@@ -382,7 +385,7 @@ var serviceWrite = []string{
 }
 
 var userWrite = []string{
-	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents", "/api/v1/agent-designs",
+	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents", "/api/v1/agent-designs", "/api/v1/langflow-workspaces",
 	"/api/v1/tools", "/api/v1/features", "/api/v1/traces", "/api/v1/functions",
 	"/api/v1/realtime",
 }
@@ -497,10 +500,16 @@ func serviceForPath(path string) string {
 		return "workbench"
 	case strings.HasPrefix(path, "/workspaces/ide/"):
 		return "ide"
+	case strings.HasPrefix(path, "/workspaces/langflow/"):
+		return "langflow"
 	case strings.HasPrefix(path, "/api/v1/workspaces/workbench/"):
 		return "workbench"
 	case strings.HasPrefix(path, "/api/v1/workspaces/ide/"):
 		return "ide"
+	case strings.HasPrefix(path, "/api/v1/workspaces/langflow/"):
+		return "langflow"
+	case strings.HasPrefix(path, "/api/v1/langflow-workspaces"):
+		return "langflow"
 	case path == "/api/v1/dashboard", path == "/api/v1/onboarding/readiness", path == "/api/v1/events":
 		return "overview"
 	case strings.HasPrefix(path, "/api/v1/project-templates"):

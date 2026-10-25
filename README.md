@@ -50,7 +50,15 @@ make build && bin/mlaiops-cli project list
 To run the gateway alone during development, with a file-backed store and no other
 services, use `make run`.
 
-### Native agent designer
+### Agent builders
+
+For the full Langflow canvas, open **Agents → Langflow canvas** (or
+`/console.html?view=langflow`). Kionga manages separate, persistent Langflow
+workspaces on Kubernetes and offers an optional local Compose instance. The
+native designer remains available beside it. See the
+[Langflow guide](https://kiongahq.github.io/docs/guides/langflow/).
+
+#### Native agent designer
 
 Open **Agents → Agent designer** (or `/console.html?view=agent-designer`) to build
 an agent graph inside the Kionga console. Add prompt, model, and tool nodes;

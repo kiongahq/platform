@@ -225,7 +225,7 @@ const viewLoaders = {};
 const viewMeta = {};
 /* Views whose data the project selector filters. Others hide the selector so
  * it never appears to do something it does not. */
-const projectScopedViews = new Set(["overview", "projects", "pipelines", "functions", "models", "agents", "agent-designer", "logs"]);
+const projectScopedViews = new Set(["overview", "projects", "pipelines", "functions", "models", "agents", "agent-designer", "langflow", "logs"]);
 const adminViews = new Set(["access"]);
 const ungatedViews = new Set(["access", "profile", "settings", "blogs"]);
 
@@ -274,7 +274,7 @@ function routeURL(id, resource = selectedResource) {
 }
 
 /* Views backed by another service's API (logs belong to pipelines). */
-const serviceForView = id => ({logs: "pipelines", "agent-designer": "agents"})[id] || id;
+const serviceForView = id => ({logs: "pipelines", "agent-designer": "agents", "langflow": "langflow"})[id] || id;
 function canOpenView(id) {
   if (!ungatedViews.has(id) && !hasService(serviceForView(id))) return "This service has not been assigned to you.";
   if (adminViews.has(id) && !isAdmin()) return "Administrator access is required.";
@@ -348,15 +348,15 @@ async function loadWorkspaces() {
   const data = await api("/api/v1/workspaces");
   for (const item of data.items) {
     workspaceState[item.id] = item;
-    const ids = item.id === "workbench" ? ["workbench-link", "settings-jupyter"] : ["ide-link", "settings-ide"];
+    const ids = ({workbench: ["workbench-link", "settings-jupyter"], ide: ["ide-link", "settings-ide"], langflow: ["langflow-link"]})[item.id] || [];
     for (const id of ids) {
       const link = document.getElementById(id);
       if (!link) continue;
-      link.href = item.available ? workspaceURL(item.id, selectedProject) : "/console.html?view=profile";
-      link.dataset.available = String(item.available);
+      link.href = item.id === "langflow" ? "/console.html?view=langflow" : item.available ? workspaceURL(item.id, selectedProject) : "/console.html?view=profile";
+      link.dataset.available = String(item.id === "langflow" ? hasService("langflow") : item.available);
       link.dataset.message = item.message;
       link.title = `${item.name}: ${item.message}`;
-      link.setAttribute("aria-disabled", String(!item.available));
+      link.setAttribute("aria-disabled", String(item.id === "langflow" ? !hasService("langflow") : !item.available));
       const detail = link.querySelector("small");
       if (detail) detail.textContent = item.message;
     }

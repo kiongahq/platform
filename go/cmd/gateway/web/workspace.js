@@ -1,7 +1,8 @@
 const query = new URLSearchParams(location.search);
 const project = query.get("project") || "";
+const instance = query.get("instance") || "";
 const tool = document.querySelector("#workspace-tool");
-tool.value = ["workbench","ide"].includes(query.get("tool")) ? query.get("tool") : "workbench";
+tool.value = ["workbench","ide","langflow"].includes(query.get("tool")) ? query.get("tool") : "workbench";
 document.querySelector("#back-console").href = `/console.html${project ? `?project=${encodeURIComponent(project)}` : ""}`;
 const message = document.querySelector("#workspace-message");
 const loading = document.querySelector(".workspace-loading");
@@ -20,15 +21,17 @@ async function launch() {
   document.querySelector("#workspace-status").textContent="Opening workspace…";
   try {
     const [workspaces, projects] = await Promise.all([workspaceAPI("/api/v1/workspaces"), workspaceAPI("/api/v1/project-options")]);
-    for (const option of tool.options) { const state=workspaces.items.find(item=>item.id===option.value);option.disabled=!state?.available; }
+    for (const option of tool.options) { const state=workspaces.items.find(item=>item.id===option.value);option.disabled=option.value === "langflow" ? !instance : !state?.available; }
     if (tool.selectedOptions[0]?.disabled) {
       const available=Array.from(tool.options).find(option=>!option.disabled);
       if (available) tool.value=available.value;
     }
     const state=workspaces.items.find(item=>item.id===tool.value);
-    if (!state?.available) throw new Error(state?.message || "Workspace is unavailable.");
+    if (tool.value !== "langflow" && !state?.available) throw new Error(state?.message || "Workspace is unavailable.");
     document.querySelector("#workspace-project").textContent=projects.items.find(item=>item.id===project)?.name || "Shared workspace";
-    const result=await workspaceAPI(`/api/v1/workspaces/${tool.value}/launch`,{method:"POST",body:JSON.stringify({project_id:project})});
+    if (tool.value === "langflow" && !instance) { location.assign(`/console.html?view=langflow${project ? `&project=${encodeURIComponent(project)}` : ""}`); return; }
+    const launchPath = tool.value === "langflow" ? `/api/v1/langflow-workspaces/${encodeURIComponent(instance)}/launch` : `/api/v1/workspaces/${tool.value}/launch`;
+    const result=await workspaceAPI(launchPath,{method:"POST",body:JSON.stringify({project_id:project})});
     if (result.ticket) {
       const origin = new URL(result.url).origin;
       if (origin === location.origin || !origin.startsWith("https://")) throw new Error("Workspace isolation is misconfigured.");
@@ -45,9 +48,9 @@ async function launch() {
       frame.src=result.url;
     }
     loading.hidden=true;
-    document.querySelector("#workspace-status").textContent="Shared files · signed in with Kionga";
+    document.querySelector("#workspace-status").textContent=tool.value === "langflow" ? "Langflow · signed in with Kionga" : "Shared files · signed in with Kionga";
     query.set("tool",tool.value);history.replaceState({},"",`${location.pathname}?${query}`);
   } catch(error) { frame.hidden=true;message.textContent=error.message;retry.hidden=false;document.querySelector("#workspace-status").textContent="Workspace unavailable"; }
   finally { tool.disabled=false; }
 }
-tool.addEventListener("change",launch);retry.addEventListener("click",launch);launch();
+tool.addEventListener("change",() => { if (tool.value === "langflow" && !instance) { location.assign("/console.html?view=langflow"); return; } launch(); });retry.addEventListener("click",launch);launch();
