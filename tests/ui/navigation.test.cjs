@@ -33,6 +33,7 @@ function consoleApp(services, view, overrides={}) {
     '/api/v1/access-requests':{items:[]},
     '/api/v1/langflow-snapshots':{items:[]},
     '/api/v1/knowledge-bases':{items:[]},
+    '/api/v1/agent-api-connections':{items:[]},
     ...overrides,
   };
   const grants={projects:'projects',pipelines:'pipelines',agents:'agents',models:'models',features:'features',functions:'functions',storage:'storage',components:'platform',connections:'platform',realtime:'realtime',catalog:'catalog',prompts:'catalog',tools:'catalog',onboarding:'overview',dashboard:'overview'};
@@ -345,6 +346,28 @@ test('Langflow shows project knowledge and registers an admin pgvector base with
  form.dispatchEvent(new app.w.Event('submit',{bubbles:true,cancelable:true}));await tick();
  const body=app.w.__bodies.find(item=>item.path==='/api/v1/admin/knowledge-bases');
  assert.deepEqual(JSON.parse(body.body),{project_id:'p1',name:'new-docs',backend:'pgvector',dimensions:1536,dsn_ref:'env:KIONGA_KNOWLEDGE_DSN'});
+ assert.deepEqual(app.errors,[]);
+});
+
+test('Langflow lists approved project APIs and registers a secret reference',async t=>{
+ const identity={subject:'admin',roles:['admin'],services:['langflow','agents'],mode:'local',permissions:{},project_ids:['p1'],provisioned:true};
+ const app=consoleApp(['langflow','agents'],'langflow',{
+  '/api/v1/me':identity,
+  '/api/v1/langflow-workspaces':{mode:'local',items:[]},
+  '/api/v1/agent-api-connections':{items:[{id:'api-1',project_id:'p1',name:'support-lookup',description:'Look up cases'}]},
+  '/api/v1/admin/agent-api-connections':{id:'api-2',name:'new-operation'},
+ });
+ t.after(()=>app.dom.window.close());await tick();
+ const d=app.w.document;
+ assert.match(d.querySelector('#langflow-api-connections').textContent,/support-lookup/);
+ const form=d.querySelector('#langflow-api-create');
+ assert.equal(form.hidden,false);
+ form.elements.name.value='new-operation';
+ form.elements.endpoint.value='https://api.example.com/lookup';
+ form.elements.secret_ref.value='env:KIONGA_SUPPORT_API_TOKEN';
+ form.dispatchEvent(new app.w.Event('submit',{bubbles:true,cancelable:true}));await tick();
+ const body=app.w.__bodies.find(item=>item.path==='/api/v1/admin/agent-api-connections');
+ assert.deepEqual(JSON.parse(body.body),{project_id:'p1',name:'new-operation',description:'',endpoint:'https://api.example.com/lookup',secret_ref:'env:KIONGA_SUPPORT_API_TOKEN'});
  assert.deepEqual(app.errors,[]);
 });
 

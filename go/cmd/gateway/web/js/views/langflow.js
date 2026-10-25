@@ -11,7 +11,7 @@ function langflowMessage(message, error = false) {
   node.classList.toggle('error', error);
 }
 async function loadLangflow() {
-  const [data, snapshots, agents, knowledge] = await Promise.all([api('/api/v1/langflow-workspaces'), api('/api/v1/langflow-snapshots'), me.services.includes('agents') || me.roles.some(role => ['admin','operator'].includes(role)) ? api('/api/v1/agents') : Promise.resolve({items:[]}), api('/api/v1/knowledge-bases')]);
+  const [data, snapshots, agents, knowledge, connections] = await Promise.all([api('/api/v1/langflow-workspaces'), api('/api/v1/langflow-snapshots'), me.services.includes('agents') || me.roles.some(role => ['admin','operator'].includes(role)) ? api('/api/v1/agents') : Promise.resolve({items:[]}), api('/api/v1/knowledge-bases'), api('/api/v1/agent-api-connections')]);
   langflowSnapshots = (snapshots.items || []).filter(item => !selectedProject || item.project_id === selectedProject);
   langflowAgents = agents.items || [];
   langflowManagedMode = data.mode === 'kubernetes';
@@ -22,6 +22,12 @@ async function loadLangflow() {
   knowledgeForm.hidden = !me.roles.some(role => ['admin','operator'].includes(role));
   knowledgeForm.elements.project_id.innerHTML = projectOptions.map(item => `<option value="${escapeHTML(item.id)}">${escapeHTML(item.name)}</option>`).join('');
   if (selectedProject) knowledgeForm.elements.project_id.value = selectedProject;
+  const apis = (connections.items || []).filter(item => !selectedProject || item.project_id === selectedProject);
+  document.querySelector('#langflow-api-connections').innerHTML = apis.map(item => `<div class="store-row"><div><b>${escapeHTML(item.name)}</b><small>${escapeHTML(item.description || 'Approved API operation')}</small></div><div><code>${escapeHTML(item.id)}</code><small>${escapeHTML(projectOptions.find(project => project.id === item.project_id)?.name || item.project_id)}</small></div></div>`).join('') || emptyState('No approved API connections', 'An administrator can register a project API operation.');
+  const apiForm = document.querySelector('#langflow-api-create');
+  apiForm.hidden = !me.roles.some(role => ['admin','operator'].includes(role));
+  apiForm.elements.project_id.innerHTML = projectOptions.map(item => `<option value="${escapeHTML(item.id)}">${escapeHTML(item.name)}</option>`).join('');
+  if (selectedProject) apiForm.elements.project_id.value = selectedProject;
   const form = document.querySelector('#langflow-create');
   form.hidden = data.mode !== 'kubernetes' || me.roles.includes('viewer');
   const project = document.querySelector('#langflow-project');
@@ -60,6 +66,19 @@ document.querySelector('#langflow-knowledge-create').addEventListener('submit', 
     form.reset();
     form.elements.backend.dispatchEvent(new Event('change'));
     toast('Knowledge base registered for this project.');
+    await loadLangflow();
+  } catch (failure) { error.textContent = failure.message; }
+});
+document.querySelector('#langflow-api-create').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.target;
+  const error = document.querySelector('#langflow-api-error');
+  error.textContent = '';
+  try {
+    const payload = Object.fromEntries(new FormData(form));
+    await withBusy(event.submitter, () => api('/api/v1/admin/agent-api-connections', {method:'POST', body:JSON.stringify(payload)}));
+    form.reset();
+    toast('Agent API operation registered for this project.');
     await loadLangflow();
   } catch (failure) { error.textContent = failure.message; }
 });
