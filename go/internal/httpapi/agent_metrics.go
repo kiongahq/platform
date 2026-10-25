@@ -52,18 +52,29 @@ func (s *Server) agentMetrics(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, agentLiveMetrics{})
 		return
 	}
+	ownedPods, err := client.Resource(schema.GroupVersionResource{Version: "v1", Resource: "pods"}).Namespace(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: "mlaiops.io/agent=" + name})
+	if err != nil {
+		writeJSON(w, 200, agentLiveMetrics{})
+		return
+	}
+	allowedNames := map[string]bool{}
+	for _, pod := range ownedPods.Items {
+		if pod.GetLabels()["mlaiops.io/agent"] == name {
+			allowedNames[pod.GetName()] = true
+		}
+	}
 	pods, err := client.Resource(schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}).Namespace(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: "mlaiops.io/agent=" + name})
 	if err != nil {
 		writeJSON(w, 200, agentLiveMetrics{})
 		return
 	}
-	writeJSON(w, 200, summarizeAgentPodMetrics(pods, name))
+	writeJSON(w, 200, summarizeAgentPodMetrics(pods, allowedNames))
 }
 
-func summarizeAgentPodMetrics(pods *unstructured.UnstructuredList, name string) agentLiveMetrics {
+func summarizeAgentPodMetrics(pods *unstructured.UnstructuredList, allowedNames map[string]bool) agentLiveMetrics {
 	metrics := agentLiveMetrics{Available: true}
 	for _, pod := range pods.Items {
-		if pod.GetLabels()["mlaiops.io/agent"] != name {
+		if !allowedNames[pod.GetName()] {
 			continue
 		}
 		containers, _, _ := unstructured.NestedSlice(pod.Object, "containers")
