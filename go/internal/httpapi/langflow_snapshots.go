@@ -78,13 +78,13 @@ func langflowLocalMode() bool {
 func readLangflowFlow(r *http.Request, target *workspaceDestination, path string) (json.RawMessage, error) {
 	ctx := r.Context()
 	upstream := strings.TrimRight(target.String(), "/") + path
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, upstream, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, upstream, nil) // #nosec G704 -- target comes from validated operator configuration or KiongaWorkspace discovery; path is fixed or a validated flow ID
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("Accept", "application/json")
 	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
-	response, err := client.Do(request)
+	response, err := client.Do(request) // #nosec G704 -- the validated workspace target is internal and redirects are disabled
 	if err != nil {
 		return nil, fmt.Errorf("Langflow is unavailable: %w", err)
 	}
