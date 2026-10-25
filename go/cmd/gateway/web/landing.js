@@ -100,6 +100,80 @@ previewTabs.forEach((tab, index) => {
   });
 });
 
+const workspaceTabs = [...document.querySelectorAll("[data-workspace-tab]")];
+const workspaceContent = document.querySelector("#workspace-preview-content");
+const notebookPreview = workspaceContent?.innerHTML || "";
+const trainPreview = `
+  <p class="preview-note">Preview file · churn-model/train.py</p>
+  <pre class="workspace-source"><span class="muted">01</span> <span class="blue">from</span> pathlib <span class="blue">import</span> Path
+<span class="muted">02</span> <span class="blue">import</span> mlflow
+<span class="muted">03</span> <span class="blue">from</span> sklearn.metrics <span class="blue">import</span> roc_auc_score
+<span class="muted">04</span> <span class="blue">from</span> churn_model.data <span class="blue">import</span> load_dataset
+<span class="muted">05</span> <span class="blue">from</span> churn_model.model <span class="blue">import</span> fit_classifier
+<span class="muted">06</span>
+<span class="muted">07</span> <span class="blue">def</span> <span class="green">train</span>(dataset: Path) -> float:
+<span class="muted">08</span>     features, labels = load_dataset(dataset)
+<span class="muted">09</span>     model = fit_classifier(features, labels)
+<span class="muted">10</span>     score = roc_auc_score(labels, model.predict_proba(features)[:, 1])
+<span class="muted">11</span>     mlflow.log_metric(<span class="green">"auc"</span>, score)
+<span class="muted">12</span>     mlflow.sklearn.log_model(model, <span class="green">"churn-classifier"</span>)
+<span class="muted">13</span>     <span class="blue">return</span> score</pre>
+  <p class="preview-footnote">Generated code preview. Open Jupyter or the IDE to work in your own workspace.</p>`;
+let workspaceRunTimer;
+
+function wireWorkspaceRun() {
+  const runButton = workspaceContent.querySelector("[data-workspace-run]");
+  const output = workspaceContent.querySelector("[data-workspace-output]");
+  if (!runButton || !output) return;
+  runButton.addEventListener("click", () => {
+    clearTimeout(workspaceRunTimer);
+    runButton.disabled = true;
+    runButton.textContent = "Running preview…";
+    output.replaceChildren();
+    const steps = [
+      "Created project structure",
+      "Added training pipeline and evaluation",
+      "Connected MLflow model registration",
+      "8 sample tests passed"
+    ];
+    const showStep = index => {
+      const line = document.createElement("div");
+      line.className = "preview-output-line";
+      line.textContent = `✓ ${steps[index]}`;
+      output.append(line);
+      if (index + 1 < steps.length) {
+        workspaceRunTimer = setTimeout(() => showStep(index + 1),
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 370);
+      } else {
+        runButton.disabled = false;
+        runButton.innerHTML = 'Run again <span aria-hidden="true">↻</span>';
+      }
+    };
+    showStep(0);
+  });
+}
+
+workspaceTabs.forEach((tab, index) => {
+  tab.addEventListener("click", () => {
+    clearTimeout(workspaceRunTimer);
+    workspaceTabs.forEach(item => {
+      const selected = item === tab;
+      item.classList.toggle("active", selected);
+      item.setAttribute("aria-selected", String(selected));
+    });
+    workspaceContent.setAttribute("aria-labelledby", tab.id);
+    workspaceContent.innerHTML = tab.dataset.workspaceTab === "train" ? trainPreview : notebookPreview;
+    wireWorkspaceRun();
+  });
+  tab.addEventListener("keydown", event => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    workspaceTabs[(index + direction + workspaceTabs.length) % workspaceTabs.length].focus();
+  });
+});
+if (workspaceContent) wireWorkspaceRun();
+
 fetch("/api/v1/blogs")
   .then(response => response.ok ? response.json() : Promise.reject(new Error("blog unavailable")))
   .then(data => {

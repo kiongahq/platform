@@ -93,7 +93,21 @@
 
     <section class="workspace-section" id="workspaces">
       <div class="workspace-copy"><p class="kicker">A HOME FOR THE WORK</p><h2>Start where builders already think.</h2><p>Jupyter is the primary exploration surface. A browser IDE shares the same persistent workspace. Codex, Claude Code, and other agents can scaffold production-shaped projects directly beside your notebooks.</p><ul><li><span>✓</span> Shared notebook and IDE filesystem</li><li><span>✓</span> Natural-language coding in Jupyter</li><li><span>✓</span> One-command project scaffolding</li><li><span>✓</span> Governed access to platform services</li></ul><div class="hero-actions"><a class="button primary workbench-link" href="#">Open Jupyter <span>↗</span></a><a class="button quiet ide-link" href="#">Open IDE <span>↗</span></a></div></div>
-      <div class="code-window"><div class="code-tabs"><span class="active">notebook.ipynb</span><span>train.py</span><i></i></div><div class="code-body"><div class="prompt"><span>›</span><p>Build a reproducible churn classifier, register the best model, and add tests.</p></div><pre><span class="muted">$</span> kionga scaffold churn-model <span class="blue">--template ml</span>\n  <span class="blue">--agent codex</span> <span class="muted">--prompt</span> <span class="green">\"production ready\"</span>\n\n<span class="green">✓</span> Created project structure\n<span class="green">✓</span> Added training pipeline and evaluation\n<span class="green">✓</span> Connected MLflow model registration\n<span class="green">✓</span> 8 tests passing</pre></div></div>
+      <div class="code-window" aria-label="Interactive workspace preview">
+        <div class="code-tabs" role="tablist" aria-label="Workspace preview files">
+          <button class="active" type="button" role="tab" id="workspace-tab-notebook" aria-selected="true" aria-controls="workspace-preview-content" data-workspace-tab="notebook">notebook.ipynb</button>
+          <button type="button" role="tab" id="workspace-tab-train" aria-selected="false" aria-controls="workspace-preview-content" data-workspace-tab="train">train.py</button>
+          <span class="code-live" aria-hidden="true"></span>
+        </div>
+        <div class="code-body" id="workspace-preview-content" role="tabpanel" aria-labelledby="workspace-tab-notebook" aria-live="polite">
+          <p class="preview-note">Interactive preview · no project is created</p>
+          <div class="prompt"><span aria-hidden="true">›</span><p>Build a reproducible churn classifier, register the best model, and add tests.</p></div>
+          <pre class="workspace-command"><span class="muted">$</span> kionga scaffold churn-model <span class="blue">--template ml</span>
+  <span class="blue">--agent codex</span> <span class="muted">--prompt</span> <span class="green">"production ready"</span></pre>
+          <button class="preview-run" type="button" data-workspace-run>Run preview <span aria-hidden="true">▶</span></button>
+          <div class="preview-output" data-workspace-output role="status" aria-live="polite">Select Run preview to see the scaffold steps.</div>
+        </div>
+      </div>
     </section>
 
     <section class="security-section" id="security">
