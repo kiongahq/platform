@@ -120,12 +120,15 @@ func queryAgentGPU(ctx context.Context, namespace string, podNames map[string]bo
 	query := `avg(` + metric + `{namespace="` + namespace + `",pod=~"` + strings.Join(names, "|") + `"})`
 	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + "/api/v1/query"
 	endpoint.RawQuery = url.Values{"query": {query}}.Encode()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	// The destination is an operator-set gateway environment value. Pod names
+	// and namespace come from Kubernetes and are validated above; callers do
+	// not supply URLs. Redirects are disabled below.
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil) // #nosec G704
 	if err != nil {
 		return 0, false
 	}
 	client := &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	response, err := client.Do(request)
+	response, err := client.Do(request) // #nosec G704 -- validated operator endpoint, no redirects
 	if err != nil {
 		return 0, false
 	}
