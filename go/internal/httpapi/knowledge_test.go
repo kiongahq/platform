@@ -27,6 +27,9 @@ func TestPgvectorKnowledgeRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer admin.Close(ctx)
+	if _, err := admin.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS vector"); err != nil {
+		t.Fatal(err)
+	}
 	schema := "kionga_kb_test_" + knowledgeID()
 	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
 		t.Fatal(err)
