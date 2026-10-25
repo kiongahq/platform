@@ -11,11 +11,17 @@ function langflowMessage(message, error = false) {
   node.classList.toggle('error', error);
 }
 async function loadLangflow() {
-  const [data, snapshots, agents, knowledge, connections] = await Promise.all([api('/api/v1/langflow-workspaces'), api('/api/v1/langflow-snapshots'), me.services.includes('agents') || me.roles.some(role => ['admin','operator'].includes(role)) ? api('/api/v1/agents') : Promise.resolve({items:[]}), api('/api/v1/knowledge-bases'), api('/api/v1/agent-api-connections')]);
+  const [data, snapshots, agents, datasets, knowledge, connections] = await Promise.all([api('/api/v1/langflow-workspaces'), api('/api/v1/langflow-snapshots'), me.services.includes('agents') || me.roles.some(role => ['admin','operator'].includes(role)) ? api('/api/v1/agents') : Promise.resolve({items:[]}), api('/api/v1/datasets'), api('/api/v1/knowledge-bases'), api('/api/v1/agent-api-connections')]);
   langflowSnapshots = (snapshots.items || []).filter(item => !selectedProject || item.project_id === selectedProject);
   langflowAgents = agents.items || [];
   langflowManagedMode = data.mode === 'kubernetes';
   langflowItems = (data.items || []).filter(item => !selectedProject || item.project_id === selectedProject || item.id === 'local');
+  const projectDatasets = (datasets.items || []).filter(item => !selectedProject || item.project_id === selectedProject);
+  document.querySelector('#langflow-datasets').innerHTML = projectDatasets.map(item => `<div class="store-row"><div><b>${escapeHTML(item.name)}</b><small>${escapeHTML(item.description || 'Project dataset')} · <code>${escapeHTML(item.id)}</code></small></div><div><span class="tag">${escapeHTML(item.bucket)}</span><small>${escapeHTML(item.prefix || 'Entire bucket')}</small></div></div>`).join('') || emptyState('No datasets', 'An administrator can assign a bucket prefix to this project.');
+  const datasetForm = document.querySelector('#langflow-dataset-create');
+  datasetForm.hidden = !me.roles.some(role => ['admin','operator'].includes(role));
+  datasetForm.elements.project_id.innerHTML = projectOptions.map(item => `<option value="${escapeHTML(item.id)}">${escapeHTML(item.name)}</option>`).join('');
+  if (selectedProject) datasetForm.elements.project_id.value = selectedProject;
   const bases = (knowledge.items || []).filter(item => !selectedProject || item.project_id === selectedProject);
   document.querySelector('#langflow-knowledge').innerHTML = bases.map(item => `<div class="store-row"><div><b>${escapeHTML(item.name)}</b><small>${escapeHTML(projectOptions.find(project => project.id === item.project_id)?.name || item.project_id)} · <code>${escapeHTML(item.id)}</code></small></div><div><span class="tag">${escapeHTML(item.backend)}</span><small>${Number(item.dimensions)} dimensions</small></div></div>`).join('') || emptyState('No knowledge bases', 'An administrator can register Qdrant or pgvector for this project.');
   const knowledgeForm = document.querySelector('#langflow-knowledge-create');
@@ -48,6 +54,18 @@ async function loadLangflow() {
   }).join('') || emptyState('No flow snapshots', 'Open a Langflow workspace and capture a saved flow.');
 }
 registerView('langflow', loadLangflow, {eyebrow: 'AGENT BUILDER', title: 'Langflow workspaces'});
+document.querySelector('#langflow-dataset-create').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.target;
+  const error = document.querySelector('#langflow-dataset-error');
+  error.textContent = '';
+  try {
+    await withBusy(event.submitter, () => api('/api/v1/admin/datasets', {method:'POST', body:JSON.stringify(Object.fromEntries(new FormData(form)))}));
+    form.reset();
+    toast('Dataset registered for this project.');
+    await loadLangflow();
+  } catch (failure) { error.textContent = failure.message; }
+});
 document.querySelector('#langflow-knowledge-create [name=backend]').addEventListener('change', event => {
   const postgres = event.target.value === 'pgvector';
   document.querySelectorAll('[data-knowledge-qdrant]').forEach(node => { node.hidden = postgres; });

@@ -32,6 +32,7 @@ function consoleApp(services, view, overrides={}) {
     '/api/v1/realtime':{demos:{}}, '/api/v1/catalog':[], '/api/v1/settings/tokens':{items:[]},
     '/api/v1/access-requests':{items:[]},
     '/api/v1/langflow-snapshots':{items:[]},
+    '/api/v1/datasets':{items:[]},
     '/api/v1/knowledge-bases':{items:[]},
     '/api/v1/agent-api-connections':{items:[]},
     ...overrides,
@@ -346,6 +347,28 @@ test('Langflow shows project knowledge and registers an admin pgvector base with
  form.dispatchEvent(new app.w.Event('submit',{bubbles:true,cancelable:true}));await tick();
  const body=app.w.__bodies.find(item=>item.path==='/api/v1/admin/knowledge-bases');
  assert.deepEqual(JSON.parse(body.body),{project_id:'p1',name:'new-docs',backend:'pgvector',dimensions:1536,dsn_ref:'env:KIONGA_KNOWLEDGE_DSN'});
+ assert.deepEqual(app.errors,[]);
+});
+
+test('Langflow shows assigned datasets and registers a bucket prefix',async t=>{
+ const identity={subject:'admin',roles:['admin'],services:['langflow','agents'],mode:'local',permissions:{},project_ids:['p1'],provisioned:true};
+ const app=consoleApp(['langflow','agents'],'langflow',{
+  '/api/v1/me':identity,
+  '/api/v1/langflow-workspaces':{mode:'local',items:[]},
+  '/api/v1/datasets':{items:[{id:'ds-1',project_id:'p1',name:'churn-training',bucket:'team-data',prefix:'training/churn/'}]},
+  '/api/v1/admin/datasets':{id:'ds-2',name:'new-training'},
+ });
+ t.after(()=>app.dom.window.close());await tick();
+ const d=app.w.document;
+ assert.match(d.querySelector('#langflow-datasets').textContent,/churn-training.*team-data/,d.querySelector('#view-feedback-message').textContent+' '+app.errors.join(','));
+ const form=d.querySelector('#langflow-dataset-create');
+ assert.equal(form.hidden,false);
+ form.elements.name.value='new-training';
+ form.elements.bucket.value='team-data';
+ form.elements.prefix.value='training/new/';
+ form.dispatchEvent(new app.w.Event('submit',{bubbles:true,cancelable:true}));await tick();
+ const body=app.w.__bodies.find(item=>item.path==='/api/v1/admin/datasets');
+ assert.deepEqual(JSON.parse(body.body),{project_id:'p1',name:'new-training',bucket:'team-data',prefix:'training/new/',description:''});
  assert.deepEqual(app.errors,[]);
 });
 
