@@ -7,6 +7,9 @@
 #
 #   AGENT_RUNTIME_DIR=../agent-runtime scripts/agent-designer-smoke.sh
 #
+# KEEP_RUNNING=1 leaves the gateway and runner up after the checks pass and
+# prints the URL and credentials for load tests.
+#
 # AGENT_RUNTIME_DIR must contain a .venv with its requirements installed
 # (see agent-runtime/CONTRIBUTING.md). Ports: GATEWAY_PORT (18080), RUNNER_PORT
 # (19100) and the gateway's fixed internal listener 8087.
@@ -204,3 +207,9 @@ call GET "/agent-designs/overview?project_id=$project" | tee "$WORK/overview.jso
 
 echo
 echo "PASS: design $design · version $version · hash ${hash:0:12}"
+if [ "${KEEP_RUNNING:-}" = "1" ]; then
+  # Leave the stack up for load tests (deploy/tests/load/agent-designer.js);
+  # stop it with Ctrl+C or by killing this script.
+  echo "READY MLAIOPS_URL=$ORIGIN MLAIOPS_LOCAL_USERNAME=admin MLAIOPS_LOCAL_PASSWORD=$PASSWORD"
+  wait
+fi
