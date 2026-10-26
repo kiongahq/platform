@@ -1,5 +1,8 @@
 const {test, expect, ADMIN, signIn, screenshotPath, assertLayout} = require('./fixtures.cjs');
 
+// Guide screenshots hide the fixed console chrome that would overlay a panel.
+const DOC_CAPTURE = '.app-bar, .skip-link { visibility: hidden !important; }';
+
 // Build → validate → test → save a test case → evaluate → publish, in a real
 // browser against a gateway with the Agent Designer runner (for example
 // `KEEP_RUNNING=1 scripts/agent-designer-smoke.sh`, mock model).
@@ -29,6 +32,9 @@ test('native agent studio: template to published version', async ({page}, testIn
   await expect(page.locator('[data-design-node="general"]')).toHaveClass(/run-skipped/);
   await assertLayout(page, 'agent studio playground');
   await page.screenshot({path: screenshotPath(testInfo, 'agent-studio-playground'), fullPage: true});
+  // Element captures for the user guide (no fixed console chrome).
+  await page.locator('.design-layout').screenshot({path: screenshotPath(testInfo, 'agent-studio-canvas-panel'), style: DOC_CAPTURE});
+  await page.locator('#design-drawer').screenshot({path: screenshotPath(testInfo, 'agent-studio-trace-panel'), style: DOC_CAPTURE});
 
   await page.locator('#design-run-save-case').click();
   await expect(page.locator('[data-design-panel="tests"]')).toBeVisible();
@@ -41,6 +47,7 @@ test('native agent studio: template to published version', async ({page}, testIn
   await expect(page.locator('#design-message')).toContainText('Evaluation completed', {timeout: 60_000});
   await expect(page.locator('#design-evaluations')).toContainText('passed');
   await page.screenshot({path: screenshotPath(testInfo, 'agent-studio-evaluations'), fullPage: true});
+  await page.locator('#design-drawer').screenshot({path: screenshotPath(testInfo, 'agent-studio-evaluations-panel'), style: DOC_CAPTURE});
 
   await page.locator('[data-design-tab="versions"]').click();
   await page.locator('#design-publish-evaluation').selectOption({index: 1});
@@ -50,4 +57,5 @@ test('native agent studio: template to published version', async ({page}, testIn
   await expect(page.locator('#design-versions')).toContainText('first release');
   await assertLayout(page, 'agent studio versions');
   await page.screenshot({path: screenshotPath(testInfo, 'agent-studio-versions'), fullPage: true});
+  await page.locator('#design-drawer').screenshot({path: screenshotPath(testInfo, 'agent-studio-versions-panel'), style: DOC_CAPTURE});
 });
