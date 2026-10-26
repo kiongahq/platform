@@ -82,11 +82,13 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 	flowConfigName := "kionga-flow-" + flowNameHash[:24]
 	agentTokenHash := ""
 	if agent.Spec.FlowJSON != "" {
-		if agent.Spec.GraphModule != "agents.langflow_adapter:build_langflow" {
-			return r.fail(ctx, &agent, "InvalidSpec", fmt.Errorf("flowJSON requires the Langflow adapter"))
+		// Published graphs (Langflow flows and native Agent Designer versions)
+		// are mounted read-only and reach Kionga only through the API sidecar.
+		if agent.Spec.GraphModule != "agents.langflow_adapter:build_langflow" && agent.Spec.GraphModule != "agents.native_graph:build_native" {
+			return r.fail(ctx, &agent, "InvalidSpec", fmt.Errorf("flowJSON requires the Langflow or native graph adapter"))
 		}
 		if agent.Spec.ProjectID == "" || agent.Spec.OwnerSubject == "" || r.LangflowSidecarImage == "" || r.GatewayURL == "" {
-			return r.fail(ctx, &agent, "InvalidSpec", fmt.Errorf("published Langflow agents require project, owner, API sidecar and gateway"))
+			return r.fail(ctx, &agent, "InvalidSpec", fmt.Errorf("published graph agents require project, owner, API sidecar and gateway"))
 		}
 		flowConfig := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: flowConfigName, Namespace: agent.Namespace}}
 		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, flowConfig, func() error {

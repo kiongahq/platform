@@ -19,6 +19,7 @@ const api = async (path, options = {}) => {
     error.status = response.status;
     error.details = body.details || body.errors || null;
     error.decision = body.decision || null;
+    error.body = body;
     throw error;
   }
   return body;

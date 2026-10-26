@@ -81,8 +81,9 @@ func main() {
 	}
 	handler := httpapi.New(repository, static)
 	// A separate cluster-internal listener accepts only verified workspace
-	// identities; it is never exposed through the public gateway/Ingress.
-	if namespace, localToken := os.Getenv("KIONGA_WORKSPACE_NAMESPACE"), os.Getenv("KIONGA_WORKSPACE_API_TOKEN"); namespace != "" || localToken != "" {
+	// identities and agent designer run credentials; it is never exposed
+	// through the public gateway/Ingress.
+	if namespace, localToken := os.Getenv("KIONGA_WORKSPACE_NAMESPACE"), os.Getenv("KIONGA_WORKSPACE_API_TOKEN"); namespace != "" || localToken != "" || os.Getenv("KIONGA_AGENT_DESIGNER_RUNNER_URL") != "" {
 		var workspaceClient dynamic.Interface
 		if namespace != "" {
 			config, err := rest.InClusterConfig()
@@ -98,7 +99,7 @@ func main() {
 		if localSubject == "" {
 			localSubject = "admin"
 		}
-		workspaceHandler := httpapi.WorkspaceIdentity(handler, workspaceClient, namespace, localToken, localSubject)
+		workspaceHandler := httpapi.DesignerRunIdentity(httpapi.WorkspaceIdentity(handler, workspaceClient, namespace, localToken, localSubject), handler, repository)
 		workspaceServer := &http.Server{Addr: ":8087", Handler: workspaceHandler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
 		go func() {
 			if err := workspaceServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

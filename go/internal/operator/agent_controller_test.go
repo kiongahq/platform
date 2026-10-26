@@ -150,3 +150,39 @@ func TestAgentControllerMountsPublishedLangflowSnapshot(t *testing.T) {
 		t.Fatal("published agent API identity token was not provisioned")
 	}
 }
+
+func TestAgentControllerMountsNativeVersionAndRejectsOtherModules(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+	_ = autoscalingv2.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = mlaiopsv1.AddToScheme(scheme)
+	for _, tc := range []struct {
+		module string
+		mount  bool
+	}{{"agents.native_graph:build_native", true}, {"evil.module:build", false}} {
+		agent := &mlaiopsv1.KiongaAgent{
+			TypeMeta:   metav1.TypeMeta{APIVersion: "mlaiops.io/v1alpha1", Kind: "KiongaAgent"},
+			ObjectMeta: metav1.ObjectMeta{Name: "native-agent", Namespace: "team-a"},
+			Spec:       mlaiopsv1.KiongaAgentSpec{Version: "v1", Image: "registry/agent-runtime:1", GraphModule: tc.module, FlowJSON: `{"artifact_version":1}`, ProjectID: "prj-demo", OwnerSubject: "alice", Replicas: mlaiopsv1.ReplicaSpec{Min: 1, Max: 1}},
+		}
+		client := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(agent, &appsv1.Deployment{}).WithObjects(agent).Build()
+		reconciler := &AgentReconciler{Client: client, LangflowSidecarImage: "registry/kionga-api:1", GatewayURL: "http://gateway:8080"}
+		_, _ = reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: agent.Name, Namespace: agent.Namespace}})
+		var deployment appsv1.Deployment
+		err := client.Get(context.Background(), types.NamespacedName{Name: platformapi.AgentDNSName(agent.Name), Namespace: agent.Namespace}, &deployment)
+		if !tc.mount {
+			if err == nil {
+				t.Fatalf("%s: a mounted graph must only run with a published-graph adapter", tc.module)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		mounts := deployment.Spec.Template.Spec.Containers[0].VolumeMounts
+		if len(mounts) != 1 || mounts[0].MountPath != "/app/flows" || !mounts[0].ReadOnly || len(deployment.Spec.Template.Spec.Containers) != 3 {
+			t.Fatalf("native version must be mounted read-only with the API sidecar: %#v", deployment.Spec.Template.Spec)
+		}
+	}
+}

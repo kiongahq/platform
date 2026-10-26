@@ -60,26 +60,38 @@ native designer remains available beside it. See the
 
 #### Native agent designer
 
-Open **Agents → Agent designer** (or `/console.html?view=agent-designer`) to build
-an agent graph inside the Kionga console. Add prompt, model, tool, knowledge base,
-API call, condition, and memory nodes. Nodes can be saved on their own while a
-graph is being assembled. Connect their ports, drag nodes to arrange the canvas,
-or duplicate a selected node before saving a project-scoped design. Select a node
-and use arrow keys to move it (Shift moves it faster). The inspector lists each
-connection so it can be removed individually. The canvas reports disconnected
-nodes, checks basic fields before saving, and rejects cyclic links as they are
-made. The API
-persists the graph in the gateway's tenant-scoped document store and checks node
-identities, connections, cycles, and project access. Saves use a
-revision number to reject stale edits; the 20 most recent prior revisions can
-be restored in the inspector and saved as a new revision. **Export JSON**
-downloads the design.
+Open **Agents → Agent designer** (or `/console.html?view=agent-designer`) to build,
+test, evaluate and publish agent graphs inside the Kionga console.
 
-The designer currently saves graph drafts. Testing, publishing, and deploying a
-draft as an executable agent are not yet connected to the agent runtime. Use
-**Deploy agent** with a built OCI image and Python graph module for production
-execution. Do not put credentials in node settings; reference registered platform
-resources instead.
+- **Build.** Start from a template (RAG assistant, customer support, tool-using
+  agent, structured extraction, API lookup, dataset-grounded answer), import JSON,
+  or add nodes from the palette: prompt, model, tool, knowledge base, dataset
+  object, API call, condition (true/false branches), memory, input and output.
+  The inspector is generated from the component registry and lists only the
+  models, tools, knowledge bases, datasets and API connections permitted in the
+  design's project; graphs hold resource IDs, never credentials. Undo/redo,
+  zoom-to-fit, groups, keyboard movement and revision restore (20 revisions,
+  optimistic concurrency) are built in.
+- **Validate.** Types, ports, required settings, condition grammar, cycles and
+  resource access are checked by the gateway; issues badge the affected nodes.
+- **Test.** The playground runs the saved revision in the isolated designer runner
+  (`agent-runtime`), streams a node-by-node trace (status, timing, tokens, redacted
+  input and output), supports multi-turn sessions, a "test up to this node" mode
+  and cancellation. Tools and API calls run only when you allow side effects.
+- **Evaluate.** Save runs as regression test cases, evaluate a revision or a
+  published version against a quality gate, and compare two evaluations case by
+  case.
+- **Publish and deploy.** Publishing creates an immutable version identified by a
+  behavior hash; publishing unchanged behavior returns the existing version, and
+  an evaluation can be attached as the quality gate. Versions run from the
+  designer without the draft and deploy to the managed Kubernetes agent runtime;
+  deploying an earlier version rolls back.
+
+Graph, component, run-event and artifact schemas live in
+[kiongahq/contracts `agent-graph/`](https://github.com/kiongahq/contracts/tree/main/agent-graph).
+Version 1 drafts are upgraded on read without rewriting stored revisions.
+`scripts/agent-designer-smoke.sh` exercises the whole flow across the real
+gateway and runner processes.
 
 ## Documentation
 
