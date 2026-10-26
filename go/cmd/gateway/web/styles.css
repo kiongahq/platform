@@ -1238,3 +1238,4 @@ tr.pass th, tr.pass td:first-child { box-shadow:inset 3px 0 var(--success, #1780
 :root[data-theme="dark"] .design-node-body { background:#1f2026; color:#f2f2f5; }
 .design-palette-search { display:grid; gap:5px; margin:8px 0; font-size:.8rem; font-weight:650; }
 .design-palette-search input { width:100%; }
+.design-node.multi .design-node-body { outline:3px dashed #0a8a82; outline-offset:2px; }

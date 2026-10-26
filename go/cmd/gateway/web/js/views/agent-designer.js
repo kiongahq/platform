@@ -1,7 +1,7 @@
 /* Native Kionga agent graph drafts. Connections and positions are stored by
  * the platform API; the browser never stores credentials in the graph. */
 const agentDesignState = {draft: null, list: [], selected: "", connecting: "", connectingPort: "", dirty: false, saving: false, models: [], tools: [], knowledge: [], connections: [], datasets: [],
-  registry: null, templates: [], zoom: 1, undo: [], redo: [], baseline: "", lastMark: 0, issues: [], nodeStatus: {}};
+  registry: null, templates: [], zoom: 1, multi: new Set(), clipboard: null, undo: [], redo: [], baseline: "", lastMark: 0, issues: [], nodeStatus: {}};
 const designKinds = {input: "Input", prompt: "Prompt", model: "Model", tool: "Tool", knowledge: "Knowledge base", api: "API call", condition: "Condition", memory: "Memory", storage: "Dataset object", output: "Output"};
 function designComponent(kind) { return agentDesignState.registry?.components?.find(item => item.kind === kind) || null; }
 function designOutPorts(node) { return node.kind === "condition" ? ["true", "false"] : node.kind === "output" ? [] : ["out"]; }
@@ -108,7 +108,46 @@ function designMarkDirty(coalesce = false) {
 function designFocusSelected() {
   if (agentDesignState.selected) document.querySelector(`[data-design-select="${CSS.escape(agentDesignState.selected)}"]`)?.focus();
 }
-function designSelect(id) { agentDesignState.selected = id; designRender(); designFocusSelected(); }
+function designSelect(id) { agentDesignState.selected = id; agentDesignState.multi.clear(); designRender(); designFocusSelected(); }
+// The selection is the focused node plus any shift-clicked nodes.
+function designSelection() {
+  const ids = new Set(agentDesignState.multi);
+  if (agentDesignState.selected) ids.add(agentDesignState.selected);
+  return ids;
+}
+function designCopySelection() {
+  const ids = designSelection(), draft = agentDesignState.draft;
+  const nodes = draft.nodes.filter(node => ids.has(node.id) && !["input", "output"].includes(node.kind));
+  if (!nodes.length) { designMessage("Select nodes other than input and output to copy.", true); return; }
+  const kept = new Set(nodes.map(node => node.id));
+  agentDesignState.clipboard = {nodes: structuredClone(nodes), edges: structuredClone(draft.edges.filter(edge => kept.has(edge.from) && kept.has(edge.to)))};
+  designMessage(`Copied ${nodes.length} node${nodes.length === 1 ? "" : "s"}.`);
+}
+function designPaste() {
+  const clip = agentDesignState.clipboard, draft = agentDesignState.draft;
+  if (!clip) return;
+  if (draft.nodes.length + clip.nodes.length > 100) { designMessage("A design can have at most 100 nodes.", true); return; }
+  const ids = new Map();
+  for (const node of clip.nodes) {
+    const id = `${node.kind}-${Math.random().toString(36).slice(2, 9)}`;
+    ids.set(node.id, id);
+    draft.nodes.push({...structuredClone(node), id, name: node.name.slice(0, 100), x: Math.min(node.x + 40, 9800), y: Math.min(node.y + 40, 9800)});
+  }
+  for (const edge of clip.edges) draft.edges.push({...edge, from: ids.get(edge.from), to: ids.get(edge.to)});
+  agentDesignState.multi = new Set(ids.values()); agentDesignState.selected = [...ids.values()][0];
+  clip.nodes = clip.nodes.map(node => ({...node, x: Math.min(node.x + 40, 9800), y: Math.min(node.y + 40, 9800)}));
+  designMarkDirty(); designRender();
+  designMessage(`Pasted ${ids.size} node${ids.size === 1 ? "" : "s"} with their internal connections.`);
+}
+function designDeleteSelection() {
+  const draft = agentDesignState.draft, ids = new Set([...designSelection()].filter(id => !["input", "output"].includes(draft.nodes.find(node => node.id === id)?.kind)));
+  if (!ids.size) return;
+  draft.nodes = draft.nodes.filter(node => !ids.has(node.id));
+  draft.edges = draft.edges.filter(edge => !ids.has(edge.from) && !ids.has(edge.to));
+  agentDesignState.selected = ""; agentDesignState.multi.clear();
+  designMarkDirty(); designRender();
+  designMessage(`Removed ${ids.size} node${ids.size === 1 ? "" : "s"}.`);
+}
 function designRenderCanvasBounds() {
   const nodes = agentDesignState.draft?.nodes || [];
   const width = Math.max(2000, ...nodes.map(node => Number(node.x) + designNodeWidth + 100));
@@ -143,7 +182,7 @@ function designRender() {
   document.querySelector("#design-nodes").innerHTML = draft.nodes.map(node => {
     const issues = issuesByNode[node.id] || [], errors = issues.filter(item => item.severity === "error").length, status = agentDesignState.nodeStatus[node.id];
     const ports = designOutPorts(node);
-    return `<div class="design-node ${node.id === agentDesignState.selected ? "selected" : ""} ${errors ? "has-error" : issues.length ? "has-warning" : ""} ${status ? `run-${escapeHTML(status)}` : ""}" style="left:${Number(node.x)}px;top:${Number(node.y)}px" data-design-node="${escapeHTML(node.id)}">
+    return `<div class="design-node ${node.id === agentDesignState.selected ? "selected" : ""} ${agentDesignState.multi.has(node.id) ? "multi" : ""} ${errors ? "has-error" : issues.length ? "has-warning" : ""} ${status ? `run-${escapeHTML(status)}` : ""}" style="left:${Number(node.x)}px;top:${Number(node.y)}px" data-design-node="${escapeHTML(node.id)}">
     ${node.kind !== "input" ? `<button class="design-port in" type="button" data-design-in="${escapeHTML(node.id)}" aria-label="Connect to ${escapeHTML(node.name)}" title="Connect here"></button>` : ""}
     <button type="button" class="design-node-body" data-design-select="${escapeHTML(node.id)}" aria-label="${escapeHTML(node.name)} ${escapeHTML(designKinds[node.kind] || node.kind)} node${errors ? `, ${errors} validation error${errors === 1 ? "" : "s"}` : ""}${status ? `, last run ${escapeHTML(status)}` : ""}"><span class="design-kind">${escapeHTML(designKinds[node.kind] || node.kind)}${node.group ? ` · ${escapeHTML(node.group)}` : ""}</span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(node.id)}</small>${errors || issues.length ? `<span class="design-badge ${errors ? "error" : "warning"}" aria-hidden="true">${errors || issues.length}</span>` : ""}${status ? `<span class="design-run-dot" aria-hidden="true"></span>` : ""}</button>
     ${ports.map((port, index) => `<button class="design-port out ${ports.length > 1 ? `branch branch-${port}` : ""} ${agentDesignState.connecting === node.id && (agentDesignState.connectingPort || ports[0]) === port ? "pending" : ""}" style="${ports.length > 1 ? `top:${index ? 64 : 18}px` : ""}" type="button" data-design-out="${escapeHTML(node.id)}" data-design-port="${port}" aria-label="Connect from ${escapeHTML(node.name)}${ports.length > 1 ? ` when ${port}` : ""}" title="${ports.length > 1 ? `Connect the ${port} branch` : "Connect from here"}">${ports.length > 1 ? (port === "true" ? "T" : "F") : ""}</button>`).join("")}
@@ -258,7 +297,7 @@ window.addEventListener("beforeunload", event => {
   event.returnValue = "";
 });
 function designOpen(draft, message, dirty = false) {
-  agentDesignState.draft = draft; agentDesignState.selected = ""; agentDesignState.connecting = ""; agentDesignState.dirty = dirty;
+  agentDesignState.draft = draft; agentDesignState.selected = ""; agentDesignState.connecting = ""; agentDesignState.dirty = dirty; agentDesignState.multi.clear();
   agentDesignState.issues = []; agentDesignState.nodeStatus = {};
   selectedResource = draft.id || ""; history.replaceState({}, "", routeURL("agent-designer", selectedResource));
   designResetHistory(); designMessage(message); designRender();
@@ -343,30 +382,48 @@ document.querySelector("#design-nodes").addEventListener("click", event => {
     agentDesignState.draft.edges.push(port === "out" ? {from,to} : {from, to, from_port: port}); designMarkDirty();
     designMessage("Connection added."); designRender(); return;
   }
-  const selected = event.target.closest("[data-design-select]"); if (selected) designSelect(selected.dataset.designSelect);
+  const selected = event.target.closest("[data-design-select]");
+  if (selected && event.shiftKey) {
+    const id = selected.dataset.designSelect, multi = agentDesignState.multi;
+    if (agentDesignState.selected && agentDesignState.selected !== id) multi.add(agentDesignState.selected);
+    if (multi.has(id)) { multi.delete(id); if (agentDesignState.selected === id) agentDesignState.selected = [...multi][0] || ""; }
+    else { multi.add(id); agentDesignState.selected = id; }
+    designRender(); designFocusSelected();
+    designMessage(`${designSelection().size} nodes selected. Drag to move them together; Ctrl+C copies, Delete removes.`);
+  } else if (selected) designSelect(selected.dataset.designSelect);
 });
 document.querySelector("#agent-designer").addEventListener("keydown", event => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && can("agents_write") && !event.target.closest("input, textarea, select")) {
     event.preventDefault(); designApplyHistory(event.shiftKey ? "redo" : "undo", event.shiftKey ? "undo" : "redo"); return;
   }
   if (event.key === "Escape" && agentDesignState.connecting) { agentDesignState.connecting = ""; agentDesignState.connectingPort = ""; designMessage("Connection cancelled."); designRender(); return; }
-  if (!can("agents_write") || !agentDesignState.selected || !event.target.closest(".design-canvas-scroll")) return;
+  if (!can("agents_write") || !event.target.closest(".design-canvas-scroll")) return;
+  const shortcut = (event.ctrlKey || event.metaKey) ? event.key.toLowerCase() : "";
+  if (shortcut === "v" && agentDesignState.clipboard) { event.preventDefault(); designPaste(); designFocusSelected(); return; }
+  if (!agentDesignState.selected) return;
+  if (shortcut === "c") { event.preventDefault(); designCopySelection(); return; }
+  if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); designDeleteSelection(); return; }
   const movement = {ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[event.key];
   if (!movement) return;
   event.preventDefault();
-  const node = agentDesignState.draft.nodes.find(item => item.id === agentDesignState.selected);
-  if (!node) return;
   const step = event.shiftKey ? 40 : 10;
-  node.x = Math.max(0, Math.min(9800, node.x + movement[0] * step));
-  node.y = Math.max(0, Math.min(9800, node.y + movement[1] * step));
+  for (const node of agentDesignState.draft.nodes.filter(item => designSelection().has(item.id))) {
+    node.x = Math.max(0, Math.min(9800, node.x + movement[0] * step));
+    node.y = Math.max(0, Math.min(9800, node.y + movement[1] * step));
+  }
   designMarkDirty(); designRender(); designFocusSelected();
 });
 document.querySelector("#design-nodes").addEventListener("pointerdown", event => {
   if (!can("agents_write") || event.target.closest(".design-port")) return;
   const body = event.target.closest(".design-node-body"); if (!body) return;
-  const card = body.closest(".design-node"), node = agentDesignState.draft.nodes.find(item => item.id === card.dataset.designNode);
-  const start = {x: event.clientX, y: event.clientY, nx: node.x, ny: node.y}; let moved = false;
-  const move = current => { const dx = (current.clientX - start.x) / agentDesignState.zoom, dy = (current.clientY - start.y) / agentDesignState.zoom; if (Math.abs(dx)+Math.abs(dy)<4 && !moved) return; moved = true; node.x = Math.max(0, Math.min(9800, Math.round(start.nx+dx))); node.y = Math.max(0, Math.min(9800, Math.round(start.ny+dy))); card.style.left = `${node.x}px`; card.style.top = `${node.y}px`; designRenderCanvasBounds(); designRenderEdgesOnly(); };
+  const card = body.closest(".design-node"), id = card.dataset.designNode;
+  // Dragging a node in a multi-selection moves the whole selection.
+  const group = agentDesignState.multi.has(id) ? agentDesignState.draft.nodes.filter(item => designSelection().has(item.id)) : agentDesignState.draft.nodes.filter(item => item.id === id);
+  const origins = group.map(item => ({item, x: item.x, y: item.y, card: document.querySelector(`[data-design-node="${CSS.escape(item.id)}"]`)}));
+  const start = {x: event.clientX, y: event.clientY}; let moved = false;
+  const move = current => { const dx = (current.clientX - start.x) / agentDesignState.zoom, dy = (current.clientY - start.y) / agentDesignState.zoom; if (Math.abs(dx)+Math.abs(dy)<4 && !moved) return; moved = true;
+    for (const origin of origins) { origin.item.x = Math.max(0, Math.min(9800, Math.round(origin.x+dx))); origin.item.y = Math.max(0, Math.min(9800, Math.round(origin.y+dy))); if (origin.card) { origin.card.style.left = `${origin.item.x}px`; origin.card.style.top = `${origin.item.y}px`; } }
+    designRenderCanvasBounds(); designRenderEdgesOnly(); };
   const finish = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", finish); if (moved) { designMarkDirty(); designRender(); } };
   window.addEventListener("pointermove", move); window.addEventListener("pointerup", finish, {once:true});
 });

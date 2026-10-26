@@ -224,3 +224,35 @@ test('palette search filters components by name and purpose', async () => {
   search.value = ''; search.dispatchEvent(new w.Event('input', {bubbles: true}));
   assert.equal(visible().length, 8);
 });
+
+test('multi-select moves, copies with internal connections, and deletes together', async () => {
+  const {d, w} = studioApp();
+  await tick();
+  d.querySelector('[data-design-add="prompt"]').click();
+  const prompt = d.querySelector('.design-node.selected').dataset.designNode;
+  d.querySelector('[data-design-add="model"]').click();
+  const model = d.querySelector('.design-node.selected').dataset.designNode;
+  d.querySelector(`[data-design-out="${prompt}"]`).click();
+  d.querySelector(`[data-design-in="${model}"]`).click();
+  const edgesBefore = d.querySelectorAll('.design-edge').length;
+  const key = (target, init) => target.dispatchEvent(new w.KeyboardEvent('keydown', {bubbles: true, ...init}));
+  d.querySelector(`[data-design-select="${prompt}"]`).click();
+  d.querySelector(`[data-design-select="${model}"]`).dispatchEvent(new w.MouseEvent('click', {bubbles: true, shiftKey: true}));
+  assert.equal(d.querySelectorAll('.design-node.multi').length, 2);
+  const left = id => Number(d.querySelector(`[data-design-node="${id}"]`).style.left.replace('px', ''));
+  const [p0, m0] = [left(prompt), left(model)];
+  key(d.querySelector(`[data-design-select="${model}"]`), {key: 'ArrowRight'});
+  assert.deepEqual([left(prompt), left(model)], [p0 + 10, m0 + 10], 'arrow keys move the whole selection');
+  key(d.querySelector(`[data-design-select="${model}"]`), {key: 'c', ctrlKey: true});
+  assert.match(d.querySelector('#design-message').textContent, /Copied 2 nodes/);
+  key(d.querySelector(`[data-design-select="${model}"]`), {key: 'v', metaKey: true});
+  assert.equal(d.querySelectorAll('.design-node').length, 6);
+  assert.equal(d.querySelectorAll('.design-edge').length, edgesBefore + 1, 'the internal connection is pasted, outside ones are not');
+  assert.equal(d.querySelectorAll('.design-node.multi').length, 2, 'the pasted copy becomes the selection');
+  key(d.querySelector('.design-node.selected [data-design-select]'), {key: 'Delete'});
+  assert.equal(d.querySelectorAll('.design-node').length, 4);
+  assert.equal(d.querySelectorAll('.design-edge').length, edgesBefore);
+  d.querySelector('[data-design-select="input"]').click();
+  key(d.querySelector('[data-design-select="input"]'), {key: 'Delete'});
+  assert.ok(d.querySelector('[data-design-node="input"]'), 'input and output cannot be deleted');
+});
