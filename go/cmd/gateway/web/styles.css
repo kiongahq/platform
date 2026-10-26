@@ -1267,3 +1267,21 @@ tr.pass th, tr.pass td:first-child { box-shadow:inset 3px 0 var(--success, #1780
 .design-heat { font-variant-numeric:tabular-nums; background:color-mix(in srgb, var(--success-soft, #e7f5ec) calc(var(--score) * 100%), var(--danger-soft, #fdecea)); }
 .design-slices th, .design-slices td { text-align:center; }
 .design-case-table input[type="number"] { min-width:70px; }
+.design-ops-charts { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin:12px 0; }
+.design-ops-chart { margin:0; padding:10px; border:1px solid var(--line, #cbd5df); border-radius:8px; }
+.design-ops-chart figcaption { display:flex; justify-content:space-between; font-size:.8rem; font-weight:650; margin-bottom:6px; }
+.design-ops-chart svg { display:block; width:100%; height:110px; }
+.design-ops-chart rect.requests { fill:var(--accent, #0066d6); }
+.design-ops-chart rect.errors { fill:var(--danger, #c4261d); }
+.design-ops-chart rect.cost { fill:#8a5a12; }
+.design-ops-chart polyline { stroke-width:2; }
+.design-ops-chart polyline.p50, .design-ops-legend .p50 { stroke:var(--success, #1c7c3a); background:var(--success, #1c7c3a); }
+.design-ops-chart polyline.p95, .design-ops-legend .p95 { stroke:var(--accent, #0066d6); background:var(--accent, #0066d6); }
+.design-ops-chart polyline.p99, .design-ops-legend .p99 { stroke:var(--danger, #c4261d); background:var(--danger, #c4261d); }
+.design-ops-legend { font-weight:500; }
+.design-ops-legend i { display:inline-block; width:10px; height:3px; margin:0 3px 2px 8px; vertical-align:middle; }
+.design-ops-axis { display:flex; justify-content:space-between; font-size:.68rem; color:var(--text-secondary, #5f5f66); }
+.design-ops-columns { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:16px; }
+.design-ops-timeline { padding-left:18px; font-size:.82rem; }
+.design-ops-timeline li { margin:4px 0; }
+.design-ops-timeline small { color:var(--text-secondary, #5f5f66); }

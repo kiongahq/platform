@@ -31,6 +31,7 @@ function studioTab(name) {
   if (name === "tests") studioLoadFixtures();
   if (name === "evaluations") studioLoadEvaluations();
   if (name === "versions") studioLoadVersions();
+  if (name === "operations") studioLoadOperations();
 }
 
 // Called by the designer whenever a design is opened or reloaded.
@@ -468,4 +469,67 @@ document.querySelector("#design-inspector-content").addEventListener("click", ev
   const input = document.querySelector("#design-run-input");
   if (input.value.trim()) studioStartRun({input: input.value.trim(), stopAfter: agentDesignState.selected});
   else { input.focus(); designMessage(`Enter a message to test up to ${agentDesignState.selected}.`); }
+});
+
+// --- operations: one deployed version's traffic, latency, cost and rollout ---
+designStudio.ops = {agent: "", hours: 24, data: null};
+async function studioLoadOperations() {
+  const target = document.querySelector("#design-operations");
+  if (!studioDesign()?.id) { target.innerHTML = `<p class="field-help">Save and publish the design, then deploy a version to see its operations.</p>`; return; }
+  try { designStudio.versions = (await api(studioPath("/versions"))).items || []; }
+  catch (failure) { target.innerHTML = `<p class="field-help error">${escapeHTML(failure.message)}</p>`; return; }
+  const deployments = designStudio.versions.flatMap(version => (version.deployments || []).map(agent => ({...agent, versionNumber: version.version})));
+  if (!deployments.length) { target.innerHTML = `<p class="field-help">No deployments yet. Deploy a version from the Versions tab on a Kubernetes managed runtime.</p>`; return; }
+  if (!deployments.some(agent => agent.id === designStudio.ops.agent)) designStudio.ops.agent = deployments[0].id;
+  try { designStudio.ops.data = await api(`/api/v1/agents/${encodeURIComponent(designStudio.ops.agent)}/operations?hours=${designStudio.ops.hours}`); }
+  catch (failure) { target.innerHTML = `<p class="field-help error">${escapeHTML(failure.message)}</p>`; return; }
+  studioRenderOperations(deployments);
+}
+function studioBars(series, value, label, colorClass, format) {
+  const values = series.map(value), max = Math.max(1e-9, ...values), width = 100 / series.length;
+  return `<figure class="design-ops-chart"><figcaption>${escapeHTML(label)}</figcaption><svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="${escapeHTML(label)}: ${values.map(format).join(", ")}">
+    ${values.map((item, index) => `<rect class="${colorClass}" x="${index * width + 0.3}" y="${40 - (item / max) * 38}" width="${width - 0.6}" height="${(item / max) * 38}"><title>${escapeHTML(new Date(series[index].start).toLocaleString())}: ${escapeHTML(format(item))}</title></rect>`).join("")}
+  </svg><div class="design-ops-axis"><span>${escapeHTML(new Date(series[0].start).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}))}</span><span>max ${escapeHTML(format(max === 1e-9 ? 0 : max))}</span><span>now</span></div></figure>`;
+}
+function studioLatencyChart(series) {
+  const keys = [["p50_ms", "P50"], ["p95_ms", "P95"], ["p99_ms", "P99"]], max = Math.max(1, ...series.flatMap(bucket => keys.map(([key]) => bucket[key] || 0)));
+  const step = 100 / series.length;
+  const line = key => series.map((bucket, index) => bucket[key] === null ? null : `${index * step + step / 2},${40 - (bucket[key] / max) * 38}`).filter(Boolean).join(" ");
+  return `<figure class="design-ops-chart"><figcaption>Latency (ms) <span class="design-ops-legend"><i class="p50"></i>P50 <i class="p95"></i>P95 <i class="p99"></i>P99</span></figcaption><svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="Latency percentiles per bucket, max ${max} ms">
+    ${keys.map(([key, name]) => `<polyline class="${name.toLowerCase()}" fill="none" vector-effect="non-scaling-stroke" points="${line(key)}"><title>${name}</title></polyline>`).join("")}
+  </svg><div class="design-ops-axis"><span>${designStudio.ops.hours} h ago</span><span>max ${studioNumber(max)} ms</span><span>now</span></div></figure>`;
+}
+function studioRenderOperations(deployments) {
+  const ops = designStudio.ops.data, totals = ops.totals, agent = ops.agent, writable = can("agents_write");
+  const cards = [["Status", agent.status], ["Version", agent.version], ["Canary weight", `${agent.canary_weight}%`], [`Requests (${ops.window_hours} h)`, studioNumber(totals.requests)],
+    ["Success rate", studioPercent(ops.success_rate)], ["P95 latency", totals.p95_ms === null ? "—" : `${studioNumber(totals.p95_ms)} ms`],
+    ["Tokens", `${studioNumber(totals.input_tokens)} / ${studioNumber(totals.output_tokens)}`], ["Cost", studioCost(totals.cost_usd)]];
+  const series = ops.series || [];
+  document.querySelector("#design-operations").innerHTML = `<div class="design-eval-form"><label>Deployment <select id="design-ops-agent">${deployments.map(item => `<option value="${escapeHTML(item.id)}" ${item.id === designStudio.ops.agent ? "selected" : ""}>${escapeHTML(item.name)} · v${item.versionNumber}</option>`).join("")}</select></label>
+    <label>Window <select id="design-ops-hours">${[1, 6, 24, 168].map(hours => `<option value="${hours}" ${hours === designStudio.ops.hours ? "selected" : ""}>${hours === 168 ? "7 days" : `${hours} h`}</option>`).join("")}</select></label><button type="button" id="design-ops-refresh">Refresh</button></div>
+    <div class="design-kpis">${cards.map(([label, value]) => `<div class="design-kpi"><span>${escapeHTML(label)}</span><strong>${escapeHTML(String(value))}</strong></div>`).join("")}</div>
+    ${totals.requests ? `<div class="design-ops-charts">${studioBars(series, bucket => bucket.requests, "Requests", "requests", value => studioNumber(value))}${studioBars(series, bucket => bucket.errors, "Errors", "errors", value => studioNumber(value))}${studioLatencyChart(series)}${studioBars(series, bucket => bucket.cost_usd, "Cost", "cost", value => studioCost(value))}</div>`
+      : `<p class="field-help">No traffic recorded in this window. Invoke the agent from Agents or the API to see requests, latency and cost here.</p>`}
+    <div class="design-ops-columns"><section><h3>Rollout</h3>${(ops.timeline || []).length ? `<ol class="design-ops-timeline">${ops.timeline.map(event => `<li><time datetime="${escapeHTML(event.at)}">${escapeHTML(studioWhen(event.at))}</time> ${escapeHTML(event.action === "agent.deployed" ? "Deployed" : event.action === "agent.traffic_updated" ? `Canary weight ${event.details?.canary_weight ?? "?"}%` : event.action)} · ${escapeHTML(event.version || event.agent_id)} <small>${escapeHTML(event.actor)}</small></li>`).join("")}</ol>` : `<p class="field-help">No rollout events.</p>`}</section>
+    <section><h3>Traffic</h3><label>Canary weight for ${escapeHTML(agent.version)} (%)<input id="design-ops-weight" type="number" min="0" max="100" value="${escapeHTML(agent.canary_weight)}" ${writable ? "" : "disabled"}></label><button type="button" id="design-ops-set-weight" ${writable ? "" : "disabled"}>Set canary weight</button>
+      ${(ops.siblings || []).length ? `<p class="field-help">Other deployments of this design: ${ops.siblings.map(item => `${escapeHTML(item.name)} ${escapeHTML(item.version)} (${item.canary_weight}%)`).join(", ")}. To roll back, deploy an earlier version from Versions.</p>` : `<p class="field-help">This is the only deployment of the design. To roll back, deploy an earlier version from Versions.</p>`}</section></div>
+    <h3>Recent turns</h3><div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">Time</th><th scope="col">Session</th><th scope="col">Status</th><th scope="col">Duration</th><th scope="col">Tokens</th><th scope="col">Cost</th></tr></thead><tbody>
+    ${(ops.recent_traces || []).map(trace => `<tr><td>${escapeHTML(studioWhen(trace.created_at))}</td><td><code>${escapeHTML(trace.session_id)}</code></td><td><span class="status ${escapeHTML(trace.status)}">${escapeHTML(trace.status)}</span></td><td>${studioNumber(trace.duration_ms)} ms</td><td>${studioNumber(trace.tokens)}</td><td>${studioCost(trace.cost_usd || 0)}</td></tr>`).join("") || `<tr><td colspan="6">No turns in this window.</td></tr>`}
+    </tbody></table></div>`;
+}
+document.querySelector("#design-operations").addEventListener("change", event => {
+  if (event.target.id === "design-ops-agent") { designStudio.ops.agent = event.target.value; studioLoadOperations(); }
+  if (event.target.id === "design-ops-hours") { designStudio.ops.hours = Number(event.target.value); studioLoadOperations(); }
+});
+document.querySelector("#design-operations").addEventListener("click", async event => {
+  if (event.target.id === "design-ops-refresh") studioLoadOperations();
+  if (event.target.id === "design-ops-set-weight") {
+    const weight = Number(document.querySelector("#design-ops-weight").value);
+    if (!Number.isInteger(weight) || weight < 0 || weight > 100) { designMessage("Canary weight must be a whole number from 0 to 100.", true); return; }
+    try {
+      await api(`/api/v1/agents/${encodeURIComponent(designStudio.ops.agent)}/traffic`, {method: "PUT", body: JSON.stringify({canary_weight: weight})});
+      designMessage(`Canary weight set to ${weight}%.`);
+      studioLoadOperations();
+    } catch (failure) { designMessage(failure.message, true); }
+  }
 });

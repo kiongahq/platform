@@ -412,3 +412,48 @@ test('test cases carry judge criteria, required calls and tags; results show sco
   assert.deepEqual(JSON.parse(w.__bodies.find(item => item.path.endsWith('/review')).body), {status: 'needs_changes', note: 'tone'});
   assert.match(d.querySelector('#design-eval-detail').textContent, /needs changes by user-1: tone/);
 });
+
+test('operations tab charts a deployment and sets its canary weight', async () => {
+  const agentID = 'agt-1';
+  const series = Array.from({length: 24}, (_, index) => ({start: new Date(Date.UTC(2026, 9, 27, index)).toISOString(), requests: index === 23 ? 5 : 0,
+    errors: index === 23 ? 1 : 0, p50_ms: index === 23 ? 300 : null, p95_ms: index === 23 ? 900 : null, p99_ms: index === 23 ? 1000 : null,
+    input_tokens: 0, output_tokens: 0, cost_usd: index === 23 ? 0.01 : 0}));
+  const ops = {agent: {id: agentID, name: 'native-x', version: 'v2', status: 'ready', canary_weight: 0}, window_hours: 24,
+    totals: {requests: 5, errors: 1, p50_ms: 300, p95_ms: 900, p99_ms: 1000, input_tokens: 50, output_tokens: 25, cost_usd: 0.01}, success_rate: 0.8, series,
+    recent_traces: [{created_at: '2026-10-27T10:00:00Z', session_id: 's-1', status: 'failed', duration_ms: 1000, tokens: 15, cost_usd: 0.002}],
+    timeline: [{at: '2026-10-27T09:00:00Z', action: 'agent.deployed', actor: 'user-1', agent_id: agentID, version: 'v2'}],
+    siblings: [{id: 'agt-0', name: 'native-x', version: 'v1', canary_weight: 100}]};
+  const {d, w} = studioApp({
+    '/api/v1/agent-designs': {items: [saved]},
+    [`/api/v1/agent-designs/${saved.id}/versions`]: {items: [{id: 'agv-2', version: 2, deployments: [{id: agentID, name: 'native-x', version: 'v2', status: 'ready'}]}]},
+    [`/api/v1/agents/${agentID}/operations?hours=24`]: ops,
+    [`PUT /api/v1/agents/${agentID}/traffic`]: {id: agentID, canary_weight: 25},
+  });
+  await tick();
+  d.querySelector('#design-list').value = saved.id;
+  d.querySelector('#design-list').dispatchEvent(new w.Event('change', {bubbles: true}));
+  d.querySelector('[data-design-tab="operations"]').click();
+  await tick(60);
+  const text = d.querySelector('#design-operations').textContent;
+  assert.match(text, /Success rate80%/);
+  assert.match(text, /P95 latency900 ms/);
+  assert.equal(d.querySelectorAll('.design-ops-chart').length, 4);
+  assert.equal(d.querySelectorAll('.design-ops-chart rect.requests').length, 24);
+  assert.match(text, /Deployed · v2/);
+  assert.match(text, /native-x v1 \(100%\)/);
+  d.querySelector('#design-ops-weight').value = '25';
+  d.querySelector('#design-ops-set-weight').click();
+  await tick();
+  assert.deepEqual(JSON.parse(w.__bodies.find(item => item.path.endsWith('/traffic')).body), {canary_weight: 25});
+  assert.match(d.querySelector('#design-message').textContent, /Canary weight set to 25%/);
+});
+
+test('operations tab explains when nothing is deployed', async () => {
+  const {d, w} = studioApp({'/api/v1/agent-designs': {items: [saved]}, [`/api/v1/agent-designs/${saved.id}/versions`]: {items: []}});
+  await tick();
+  d.querySelector('#design-list').value = saved.id;
+  d.querySelector('#design-list').dispatchEvent(new w.Event('change', {bubbles: true}));
+  d.querySelector('[data-design-tab="operations"]').click();
+  await tick();
+  assert.match(d.querySelector('#design-operations').textContent, /No deployments yet/);
+});
