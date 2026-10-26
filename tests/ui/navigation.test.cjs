@@ -81,7 +81,99 @@ test('native designer adds and configures a standalone knowledge node', async ()
  assert.equal(d.querySelectorAll('.design-node').length,4);
  assert.equal(d.querySelectorAll('.design-edge').length,1);
  assert.equal(d.querySelector('[data-design-config="knowledge_base"]').value,'kb-1');
+ assert.match(d.querySelector('#design-graph-summary').textContent,/4 nodes.*2 unconnected/);
  assert.match(d.querySelector('#design-revision').textContent,/unsaved/i);
+ assert.deepEqual(app.errors,[]);
+});
+
+test('native designer rejects cyclic links and removes one connection at a time', async () => {
+ const app=consoleApp(['agents'],'agent-designer',{
+  '/api/v1/me':{subject:'user-1',roles:['user'],services:['agents'],mode:'local',permissions:{agents_write:true},project_ids:['p1'],provisioned:true},
+  '/api/v1/agent-designs':{items:[]},
+ });
+ await tick();
+ const d=app.w.document;
+ d.querySelector('[data-design-add="prompt"]').click();
+ const first=d.querySelector('.design-node.selected').dataset.designNode;
+ d.querySelector('[data-design-add="tool"]').click();
+ const second=d.querySelector('.design-node.selected').dataset.designNode;
+ d.querySelector(`[data-design-out="${first}"]`).click();
+ d.querySelector(`[data-design-in="${second}"]`).click();
+ assert.equal(d.querySelectorAll('.design-edge').length,2);
+ d.querySelector(`[data-design-out="${second}"]`).click();
+ d.querySelector(`[data-design-in="${first}"]`).click();
+ assert.equal(d.querySelectorAll('.design-edge').length,2);
+ assert.match(d.querySelector('#design-message').textContent,/cycle/);
+ d.querySelector('#agent-designer').dispatchEvent(new app.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+ assert.match(d.querySelector('#design-message').textContent,/cancelled/);
+ d.querySelector(`[data-design-select="${second}"]`).click();
+ const selected=d.querySelector(`[data-design-select="${second}"]`);
+ const before=Number(selected.closest('.design-node').style.left.replace('px',''));
+ selected.dispatchEvent(new app.w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+ assert.equal(Number(d.querySelector(`[data-design-node="${second}"]`).style.left.replace('px','')),before+10);
+ for (let i=0;i<55;i++) d.querySelector(`[data-design-select="${second}"]`).dispatchEvent(new app.w.KeyboardEvent('keydown',{key:'ArrowRight',shiftKey:true,bubbles:true}));
+ assert.ok(Number(d.querySelector('#design-canvas').style.width.replace('px',''))>2000);
+ d.querySelector('[data-design-remove-edge]').click();
+ assert.equal(d.querySelectorAll('.design-edge').length,1);
+ const name=d.querySelector('#design-name'); name.value=''; name.dispatchEvent(new app.w.Event('input',{bubbles:true}));
+ assert.equal(d.querySelector('#design-save').disabled,true);
+ assert.match(d.querySelector('#design-graph-summary').textContent,/Enter a design name/);
+ assert.deepEqual(app.errors,[]);
+});
+
+test('native designer keeps edits made while a revision is saving', async () => {
+ const app=consoleApp(['agents'],'agent-designer',{
+  '/api/v1/me':{subject:'user-1',roles:['user'],services:['agents'],mode:'local',permissions:{agents_write:true},project_ids:['p1'],provisioned:true},
+  '/api/v1/agent-designs':{items:[]},
+ });
+ await tick();
+ const d=app.w.document;
+ let finish, sent;
+ const originalFetch=app.w.fetch;
+ app.w.fetch=(path,options) => path==='/api/v1/agent-designs' && options?.method==='POST' ? new Promise(resolve=>{finish=resolve;sent=JSON.parse(options.body);}) : originalFetch(path,options);
+ d.querySelector('#design-save').click();
+ assert.equal(d.querySelector('#design-save').disabled,true);
+ const name=d.querySelector('#design-name'); name.value='Edited while saving'; name.dispatchEvent(new app.w.Event('input',{bubbles:true}));
+ finish({ok:true,status:201,json:async()=>({...sent,id:'design-1',revision:1,history:[]})});
+ await tick();
+ assert.equal(d.querySelector('#design-name').value,'Edited while saving');
+ assert.match(d.querySelector('#design-revision').textContent,/unsaved changes/);
+ assert.match(d.querySelector('#design-message').textContent,/still unsaved/);
+ assert.equal(d.querySelector('#design-save').disabled,false);
+ assert.deepEqual(app.errors,[]);
+});
+
+test('native designer keeps unsaved work when project navigation is cancelled', async () => {
+ const app=consoleApp(['agents'],'agent-designer',{
+  '/api/v1/me':{subject:'user-1',roles:['user'],services:['agents'],mode:'local',permissions:{agents_write:true},project_ids:['p1','p2'],provisioned:true},
+  '/api/v1/agent-designs':{items:[]},
+ });
+ await tick();
+ app.w.document.querySelector('[data-design-add="prompt"]').click();
+ app.w.confirm=()=>false;
+ const projects=app.w.document.querySelector('#project-context');
+ projects.value='p2'; projects.dispatchEvent(new app.w.Event('change',{bubbles:true}));
+ await tick();
+ assert.equal(app.w.document.querySelector('.view.active').id,'agent-designer');
+ assert.equal(projects.value,'');
+ assert.equal(app.w.document.querySelectorAll('.design-node').length,3);
+ assert.deepEqual(app.errors,[]);
+});
+
+test('native designer explains a revision conflict without discarding the draft', async () => {
+ const app=consoleApp(['agents'],'agent-designer',{
+  '/api/v1/me':{subject:'user-1',roles:['user'],services:['agents'],mode:'local',permissions:{agents_write:true},project_ids:['p1'],provisioned:true},
+  '/api/v1/agent-designs':{items:[]},
+ });
+ await tick();
+ const d=app.w.document;
+ d.querySelector('[data-design-add="prompt"]').click();
+ const originalFetch=app.w.fetch;
+ app.w.fetch=(path,options) => path==='/api/v1/agent-designs' && options?.method==='POST' ? Promise.resolve({ok:false,status:409,json:async()=>({})}) : originalFetch(path,options);
+ d.querySelector('#design-save').click(); await tick();
+ assert.match(d.querySelector('#design-message').textContent,/changed elsewhere/);
+ assert.equal(d.querySelectorAll('.design-node').length,3);
+ assert.equal(d.querySelector('#design-save').disabled,false);
  assert.deepEqual(app.errors,[]);
 });
 

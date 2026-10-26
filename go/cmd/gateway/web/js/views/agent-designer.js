@@ -1,6 +1,6 @@
 /* Native Kionga agent graph drafts. Connections and positions are stored by
  * the platform API; the browser never stores credentials in the graph. */
-const agentDesignState = {draft: null, list: [], selected: "", connecting: "", dirty: false, models: [], tools: []};
+const agentDesignState = {draft: null, list: [], selected: "", connecting: "", dirty: false, saving: false, models: [], tools: [], knowledge: [], connections: []};
 const designKinds = {input: "Input", prompt: "Prompt", model: "Model", tool: "Tool", knowledge: "Knowledge base", api: "API call", condition: "Condition", memory: "Memory", output: "Output"};
 const designNodeWidth = 190, designNodeHeight = 88;
 function blankAgentDesign() {
@@ -16,22 +16,79 @@ function designSnapshot() {
   const draft = agentDesignState.draft;
   return {project_id: draft.project_id, name: (draft.name || "").trim(), description: (draft.description || "").trim(), revision: draft.revision, nodes: draft.nodes, edges: draft.edges};
 }
+function designReachable(start, target, edges) {
+  const seen = new Set(), pending = [start];
+  while (pending.length) {
+    const id = pending.pop();
+    if (id === target) return true;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    for (const edge of edges) if (edge.from === id) pending.push(edge.to);
+  }
+  return false;
+}
+function designConnectionIssue(from, to, draft = agentDesignState.draft) {
+  const source = draft.nodes.find(node => node.id === from), target = draft.nodes.find(node => node.id === to);
+  if (!source || !target || from === to || source.kind === "output" || target.kind === "input") return "Choose two different compatible ports.";
+  if (draft.edges.some(edge => edge.from === from && edge.to === to)) return "Those nodes are already connected.";
+  if (draft.edges.length >= 300) return "A design can have at most 300 connections.";
+  if (designReachable(to, from, draft.edges)) return "That connection would create a cycle.";
+  return "";
+}
+function designValidation(draft = agentDesignState.draft) {
+  if (!draft) return ["No design is open."];
+  const issues = [];
+  if (!draft.project_id) issues.push("Choose a project.");
+  if (!draft.name.trim()) issues.push("Enter a design name.");
+  if (draft.nodes.some(node => !node.name.trim())) issues.push("Give every node a label.");
+  if (draft.nodes.length > 100) issues.push("A design can have at most 100 nodes.");
+  if (draft.edges.length > 300) issues.push("A design can have at most 300 connections.");
+  return issues;
+}
+function designUpdateStatus() {
+  const draft = agentDesignState.draft;
+  if (!draft) return;
+  const issues = designValidation(draft);
+  const connected = new Set(draft.edges.flatMap(edge => [edge.from, edge.to]));
+  const loose = draft.nodes.filter(node => !connected.has(node.id)).length;
+  const summary = document.querySelector("#design-graph-summary");
+  summary.classList.toggle("error", issues.length > 0);
+  summary.textContent = `${draft.nodes.length} nodes · ${draft.edges.length} connections · ${loose} unconnected${issues.length ? ` · ${issues.join(" ")}` : " · ready to save"}`;
+  const save = document.querySelector("#design-save");
+  save.disabled = !can("agents_write") || agentDesignState.saving || issues.length > 0;
+  save.textContent = agentDesignState.saving ? "Saving…" : "Save revision";
+}
 function designMarkDirty() {
   agentDesignState.dirty = true;
   document.querySelector("#design-revision").textContent = agentDesignState.draft.revision ? `Revision ${agentDesignState.draft.revision} · unsaved changes` : "Unsaved";
+  designUpdateStatus();
 }
-function designSelect(id) { agentDesignState.selected = id; designRender(); }
+function designFocusSelected() {
+  if (agentDesignState.selected) document.querySelector(`[data-design-select="${CSS.escape(agentDesignState.selected)}"]`)?.focus();
+}
+function designSelect(id) { agentDesignState.selected = id; designRender(); designFocusSelected(); }
+function designRenderCanvasBounds() {
+  const nodes = agentDesignState.draft?.nodes || [];
+  const width = Math.max(2000, ...nodes.map(node => Number(node.x) + designNodeWidth + 100));
+  const height = Math.max(1300, ...nodes.map(node => Number(node.y) + designNodeHeight + 100));
+  const canvas = document.querySelector("#design-canvas"), edges = document.querySelector("#design-edges");
+  canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
+  edges.setAttribute("width", String(width)); edges.setAttribute("height", String(height));
+}
 function designRender() {
   const draft = agentDesignState.draft;
   if (!draft) return;
   document.querySelector("#design-project").value = draft.project_id;
   document.querySelector("#design-name").value = draft.name;
   document.querySelector("#design-description").value = draft.description || "";
+  document.querySelector("#design-knowledge-options").innerHTML = agentDesignState.knowledge.filter(item => item.project_id === draft.project_id).map(item => `<option value="${escapeHTML(item.id)}" label="${escapeHTML(item.name)}"></option>`).join("");
+  document.querySelector("#design-api-options").innerHTML = agentDesignState.connections.filter(item => item.project_id === draft.project_id).map(item => `<option value="${escapeHTML(item.id)}" label="${escapeHTML(item.name)}"></option>`).join("");
   for (const control of document.querySelectorAll("#agent-designer input, #agent-designer textarea, #agent-designer [data-design-add], #design-remove-node, #design-remove-edges")) control.disabled = !can("agents_write");
   document.querySelector("#design-project").disabled = !can("agents_write") || Boolean(draft.id);
   document.querySelector("#design-revision").textContent = draft.revision ? `Revision ${draft.revision}${agentDesignState.dirty ? " · unsaved changes" : ""}` : "Unsaved";
   const options = agentDesignState.list.filter(item => !selectedProject || item.project_id === selectedProject);
   document.querySelector("#design-list").innerHTML = `<option value="">New design</option>${options.map(item => `<option value="${escapeHTML(item.id)}" ${item.id === draft.id ? "selected" : ""}>${escapeHTML(item.name)} · r${item.revision}</option>`).join("")}`;
+  designRenderCanvasBounds();
   const nodes = new Map(draft.nodes.map(node => [node.id, node]));
   document.querySelector("#design-edges").innerHTML = `<defs><marker id="design-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>` + draft.edges.map(edge => {
     const from = nodes.get(edge.from), to = nodes.get(edge.to);
@@ -41,18 +98,19 @@ function designRender() {
   }).join("");
   document.querySelector("#design-nodes").innerHTML = draft.nodes.map(node => `<div class="design-node ${node.id === agentDesignState.selected ? "selected" : ""}" style="left:${Number(node.x)}px;top:${Number(node.y)}px" data-design-node="${escapeHTML(node.id)}">
     ${node.kind !== "input" ? `<button class="design-port in" type="button" data-design-in="${escapeHTML(node.id)}" aria-label="Connect to ${escapeHTML(node.name)}" title="Connect here"></button>` : ""}
-    <button type="button" class="design-node-body" data-design-select="${escapeHTML(node.id)}"><span class="design-kind">${escapeHTML(designKinds[node.kind])}</span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(node.id)}</small></button>
+    <button type="button" class="design-node-body" data-design-select="${escapeHTML(node.id)}" aria-label="${escapeHTML(node.name)} ${escapeHTML(designKinds[node.kind] || node.kind)} node"><span class="design-kind">${escapeHTML(designKinds[node.kind] || node.kind)}</span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(node.id)}</small></button>
     ${node.kind !== "output" ? `<button class="design-port out ${agentDesignState.connecting === node.id ? "pending" : ""}" type="button" data-design-out="${escapeHTML(node.id)}" aria-label="Connect from ${escapeHTML(node.name)}" title="Connect from here"></button>` : ""}
   </div>`).join("");
   designRenderInspector();
   const history = [...(draft.history || [])].reverse();
   document.querySelector("#design-revisions").innerHTML = draft.id ? `<h3>Earlier revisions</h3>${history.length ? history.map(item => `<button type="button" data-design-restore="${item.revision}" ${can("agents_write") ? "" : "disabled"}>Restore r${item.revision} <small>${escapeHTML(new Date(item.saved_at).toLocaleString())}</small></button>`).join("") : `<p class="field-help">No earlier revisions yet.</p>`}` : "";
   for (const control of document.querySelectorAll("#design-inspector-content input, #design-inspector-content textarea, #design-inspector-content button")) control.disabled = !can("agents_write");
+  designUpdateStatus();
 }
 function designRenderInspector() {
   const node = agentDesignState.draft?.nodes.find(item => item.id === agentDesignState.selected);
   const panel = document.querySelector("#design-inspector-content");
-  if (!node) { panel.innerHTML = `<p>Select a node to edit it.</p><p class="field-help">Drag nodes to arrange the canvas. Select an output port, then an input port, to connect nodes.</p>`; return; }
+  if (!node) { panel.innerHTML = `<p>Select a node to edit it.</p><p class="field-help">Drag nodes to arrange the canvas. Select an output port, then an input port, to connect nodes. With a node selected, use arrow keys to move it.</p>`; return; }
   const fields = node.kind === "prompt" ? [["template", "Prompt template", "textarea", "Use {input} for the agent message."]]
     : node.kind === "model" ? [["model", "Model reference", "input", "Choose a registered Kionga model by ID. This draft does not invoke it yet."]]
     : node.kind === "tool" ? [["tool", "Tool name", "input", "Choose a registered Kionga tool. This draft does not invoke it yet."]]
@@ -61,18 +119,23 @@ function designRenderInspector() {
     : node.kind === "condition" ? [["expression", "Condition", "textarea", "Describe the branch rule for the runtime implementation."]]
     : node.kind === "memory" ? [["strategy", "Memory strategy", "input", "Describe what conversation context to retain."]]
     : [];
-  panel.innerHTML = `<span class="tag">${escapeHTML(designKinds[node.kind])}</span><label>Node label<input id="design-node-name" maxlength="100" value="${escapeHTML(node.name)}"></label><p class="field-help">ID: <code>${escapeHTML(node.id)}</code></p>${fields.map(([key,label,tag,hint]) => `<label>${label}${tag === "textarea" ? `<textarea data-design-config="${key}" rows="7" spellcheck="false">${escapeHTML(node.config?.[key] || "")}</textarea>` : `<input data-design-config="${key}" ${key === "model" ? 'list="design-model-options"' : key === "tool" ? 'list="design-tool-options"' : ""} value="${escapeHTML(node.config?.[key] || "")}">`}<small>${hint}</small></label>`).join("")}
+  panel.innerHTML = `<span class="tag">${escapeHTML(designKinds[node.kind] || node.kind)}</span><label>Node label<input id="design-node-name" maxlength="100" value="${escapeHTML(node.name)}"></label><p class="field-help">ID: <code>${escapeHTML(node.id)}</code></p>${fields.map(([key,label,tag,hint]) => `<label>${label}${tag === "textarea" ? `<textarea data-design-config="${key}" rows="7" spellcheck="false">${escapeHTML(node.config?.[key] || "")}</textarea>` : `<input data-design-config="${key}" ${key === "model" ? 'list="design-model-options"' : key === "tool" ? 'list="design-tool-options"' : key === "knowledge_base" ? 'list="design-knowledge-options"' : key === "connection" ? 'list="design-api-options"' : ""} value="${escapeHTML(node.config?.[key] || "")}">`}<small>${hint}</small></label>`).join("")}
+    <div class="design-connections"><h3>Connections</h3>${agentDesignState.draft.edges.map((edge, index) => ({edge,index})).filter(({edge}) => edge.from === node.id || edge.to === node.id).map(({edge,index}) => `<div class="design-connection"><span>${escapeHTML(edge.from)} → ${escapeHTML(edge.to)}</span><button type="button" data-design-remove-edge="${index}" aria-label="Remove connection from ${escapeHTML(edge.from)} to ${escapeHTML(edge.to)}">Remove</button></div>`).join("") || '<p class="field-help">No connections yet.</p>'}</div>
     <div class="design-inspector-actions">${!["input", "output"].includes(node.kind) ? `<button type="button" id="design-duplicate-node">Duplicate node</button><button type="button" class="danger" id="design-remove-node">Remove node</button>` : ""}<button type="button" id="design-remove-edges">Remove connections</button></div>`;
 }
 async function loadAgentDesigner() {
-  const [data, models, tools] = await Promise.all([
+  const [data, models, tools, knowledge, connections] = await Promise.all([
     api("/api/v1/agent-designs"),
     hasService("models") ? api("/api/v1/models").catch(() => ({items: []})) : Promise.resolve({items: []}),
     hasService("catalog") ? api("/api/v1/tools").catch(() => ({items: []})) : Promise.resolve({items: []}),
+    api("/api/v1/knowledge-bases").catch(() => ({items: []})),
+    api("/api/v1/agent-api-connections").catch(() => ({items: []})),
   ]);
   agentDesignState.list = data.items || [];
   agentDesignState.models = models.items || [];
   agentDesignState.tools = tools.items || [];
+  agentDesignState.knowledge = knowledge.items || [];
+  agentDesignState.connections = connections.items || [];
   document.querySelector("#design-model-options").innerHTML = agentDesignState.models.map(item => `<option value="${escapeHTML(item.id)}" label="${escapeHTML(item.name)}"></option>`).join("");
   document.querySelector("#design-tool-options").innerHTML = agentDesignState.tools.map(item => `<option value="${escapeHTML(item.name)}"></option>`).join("");
   document.querySelector("#design-project").innerHTML = projectOptions.map(item => `<option value="${escapeHTML(item.id)}">${escapeHTML(item.name)}</option>`).join("");
@@ -86,7 +149,15 @@ async function loadAgentDesigner() {
   agentDesignState.selected = ""; agentDesignState.connecting = "";
   designRender();
 }
-registerView("agent-designer", loadAgentDesigner, {eyebrow: "AGENT BUILDER", title: "Agent designer", openResource: id => { if (!agentDesignState.list.some(item => item.id === id)) designMessage("Design not found in this project.", true); }});
+registerView("agent-designer", loadAgentDesigner, {eyebrow: "AGENT BUILDER", title: "Agent designer", beforeLeave: () => {
+  if (!agentDesignState.dirty || confirm("Discard unsaved agent design changes?")) { agentDesignState.dirty = false; return true; }
+  return false;
+}, openResource: id => { if (!agentDesignState.list.some(item => item.id === id)) designMessage("Design not found in this project.", true); }});
+window.addEventListener("beforeunload", event => {
+  if (!agentDesignState.dirty) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 document.querySelector("#design-new").addEventListener("click", () => { if (agentDesignState.dirty && !confirm("Discard unsaved design changes?")) return; agentDesignState.draft = blankAgentDesign(); agentDesignState.selected = ""; agentDesignState.connecting = ""; agentDesignState.dirty = false; selectedResource = ""; history.replaceState({}, "", routeURL("agent-designer", "")); designMessage("New design. Add nodes and save the first revision."); designRender(); });
 document.querySelector("#design-list").addEventListener("change", event => { if (agentDesignState.dirty && !confirm("Discard unsaved design changes?")) { designRender(); return; } const item = agentDesignState.list.find(value => value.id === event.target.value); agentDesignState.draft = item ? structuredClone(item) : blankAgentDesign(); agentDesignState.dirty = false; agentDesignState.selected = ""; selectedResource = item?.id || ""; history.replaceState({}, "", routeURL("agent-designer", selectedResource)); designMessage(""); designRender(); });
 document.querySelector("#design-project").addEventListener("change", event => { if (agentDesignState.draft.id) { designMessage("Create a new design to change projects.", true); designRender(); return; } agentDesignState.draft.project_id = event.target.value; designMarkDirty(); });
@@ -102,20 +173,36 @@ document.querySelectorAll("[data-design-add]").forEach(button => button.addEvent
 }));
 document.querySelector("#design-nodes").addEventListener("click", event => {
   const out = event.target.closest("[data-design-out]"), input = event.target.closest("[data-design-in]");
-  if (out && can("agents_write")) { agentDesignState.connecting = out.dataset.designOut; designMessage("Choose an input port to complete the connection."); designRender(); return; }
+  if (out && can("agents_write")) { agentDesignState.connecting = agentDesignState.connecting === out.dataset.designOut ? "" : out.dataset.designOut; designMessage(agentDesignState.connecting ? "Choose an input port, or press Escape to cancel." : "Connection cancelled."); designRender(); return; }
   if (input && agentDesignState.connecting && can("agents_write")) {
-    const from = agentDesignState.connecting, to = input.dataset.designIn; agentDesignState.connecting = "";
-    if (from !== to && !agentDesignState.draft.edges.some(edge => edge.from === from && edge.to === to)) { agentDesignState.draft.edges.push({from,to}); designMarkDirty(); }
-    designMessage(""); designRender(); return;
+    const from = agentDesignState.connecting, to = input.dataset.designIn;
+    const issue = designConnectionIssue(from, to);
+    if (issue) { designMessage(issue, true); return; }
+    agentDesignState.connecting = "";
+    agentDesignState.draft.edges.push({from,to}); designMarkDirty();
+    designMessage("Connection added."); designRender(); return;
   }
   const selected = event.target.closest("[data-design-select]"); if (selected) designSelect(selected.dataset.designSelect);
+});
+document.querySelector("#agent-designer").addEventListener("keydown", event => {
+  if (event.key === "Escape" && agentDesignState.connecting) { agentDesignState.connecting = ""; designMessage("Connection cancelled."); designRender(); return; }
+  if (!can("agents_write") || !agentDesignState.selected || !event.target.closest(".design-canvas-scroll")) return;
+  const movement = {ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[event.key];
+  if (!movement) return;
+  event.preventDefault();
+  const node = agentDesignState.draft.nodes.find(item => item.id === agentDesignState.selected);
+  if (!node) return;
+  const step = event.shiftKey ? 40 : 10;
+  node.x = Math.max(0, Math.min(9800, node.x + movement[0] * step));
+  node.y = Math.max(0, Math.min(9800, node.y + movement[1] * step));
+  designMarkDirty(); designRender(); designFocusSelected();
 });
 document.querySelector("#design-nodes").addEventListener("pointerdown", event => {
   if (!can("agents_write") || event.target.closest(".design-port")) return;
   const body = event.target.closest(".design-node-body"); if (!body) return;
   const card = body.closest(".design-node"), node = agentDesignState.draft.nodes.find(item => item.id === card.dataset.designNode);
   const start = {x: event.clientX, y: event.clientY, nx: node.x, ny: node.y}; let moved = false;
-  const move = current => { const dx = current.clientX - start.x, dy = current.clientY - start.y; if (Math.abs(dx)+Math.abs(dy)<4 && !moved) return; moved = true; node.x = Math.max(0, Math.min(9800, Math.round(start.nx+dx))); node.y = Math.max(0, Math.min(9800, Math.round(start.ny+dy))); card.style.left = `${node.x}px`; card.style.top = `${node.y}px`; designRenderEdgesOnly(); };
+  const move = current => { const dx = current.clientX - start.x, dy = current.clientY - start.y; if (Math.abs(dx)+Math.abs(dy)<4 && !moved) return; moved = true; node.x = Math.max(0, Math.min(9800, Math.round(start.nx+dx))); node.y = Math.max(0, Math.min(9800, Math.round(start.ny+dy))); card.style.left = `${node.x}px`; card.style.top = `${node.y}px`; designRenderCanvasBounds(); designRenderEdgesOnly(); };
   const finish = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", finish); if (moved) { designMarkDirty(); designRender(); } };
   window.addEventListener("pointermove", move); window.addEventListener("pointerup", finish, {once:true});
 });
@@ -123,8 +210,39 @@ function designRenderEdgesOnly() {
   const draft = agentDesignState.draft, nodes = new Map(draft.nodes.map(node => [node.id,node]));
   document.querySelectorAll("#design-edges .design-edge").forEach(path => { const [fromID,toID] = path.dataset.designEdge.split(">"); const from = nodes.get(fromID), to = nodes.get(toID); if (!from || !to) return; const x1=from.x+designNodeWidth,y1=from.y+designNodeHeight/2,x2=to.x,y2=to.y+designNodeHeight/2; path.setAttribute("d",`M ${x1} ${y1} C ${x1+75} ${y1}, ${x2-75} ${y2}, ${x2} ${y2}`); });
 }
-document.querySelector("#design-inspector-content").addEventListener("input", event => { const node = agentDesignState.draft.nodes.find(item => item.id === agentDesignState.selected); if (!node) return; if (event.target.id === "design-node-name") { node.name = event.target.value; document.querySelector(`[data-design-node="${CSS.escape(node.id)}"] strong`).textContent = node.name; } else if (event.target.dataset.designConfig) { node.config ||= {}; node.config[event.target.dataset.designConfig] = event.target.value; } designMarkDirty(); });
-document.querySelector("#design-inspector-content").addEventListener("click", event => { const node = agentDesignState.draft.nodes.find(item => item.id === agentDesignState.selected); if (!node || !can("agents_write")) return; if (event.target.id === "design-duplicate-node" && !["input", "output"].includes(node.kind)) { if (agentDesignState.draft.nodes.length >= 100) { designMessage("A design can have at most 100 nodes.", true); return; } const copy = {...node, id:`${node.kind}-${Math.random().toString(36).slice(2, 9)}`, name:`${node.name.slice(0, 95)} copy`, x:Math.min(node.x + 35, 9800), y:Math.min(node.y + 110, 9800), config:{...node.config}}; agentDesignState.draft.nodes.push(copy); agentDesignState.selected = copy.id; designMarkDirty(); designRender(); designMessage("Node duplicated without connections."); } else if (event.target.id === "design-remove-node") { agentDesignState.draft.nodes = agentDesignState.draft.nodes.filter(item => item.id !== node.id); agentDesignState.draft.edges = agentDesignState.draft.edges.filter(edge => edge.from !== node.id && edge.to !== node.id); agentDesignState.selected = ""; designMarkDirty(); designRender(); } else if (event.target.id === "design-remove-edges") { agentDesignState.draft.edges = agentDesignState.draft.edges.filter(edge => edge.from !== node.id && edge.to !== node.id); designMarkDirty(); designRender(); } });
+document.querySelector("#design-inspector-content").addEventListener("input", event => {
+  const node = agentDesignState.draft.nodes.find(item => item.id === agentDesignState.selected);
+  if (!node) return;
+  if (event.target.id === "design-node-name") {
+    node.name = event.target.value;
+    document.querySelector(`[data-design-node="${CSS.escape(node.id)}"] strong`).textContent = node.name;
+  } else if (event.target.dataset.designConfig) {
+    node.config ||= {};
+    node.config[event.target.dataset.designConfig] = event.target.value;
+  }
+  designMarkDirty();
+});
+document.querySelector("#design-inspector-content").addEventListener("click", event => {
+  const node = agentDesignState.draft.nodes.find(item => item.id === agentDesignState.selected);
+  if (!node || !can("agents_write")) return;
+  const removeEdge = event.target.closest("[data-design-remove-edge]");
+  if (removeEdge) {
+    agentDesignState.draft.edges.splice(Number(removeEdge.dataset.designRemoveEdge), 1);
+    designMarkDirty(); designRender(); designMessage("Connection removed.");
+  } else if (event.target.id === "design-duplicate-node" && !["input", "output"].includes(node.kind)) {
+    if (agentDesignState.draft.nodes.length >= 100) { designMessage("A design can have at most 100 nodes.", true); return; }
+    const copy = {...node, id:`${node.kind}-${Math.random().toString(36).slice(2, 9)}`, name:`${node.name.slice(0, 95)} copy`, x:Math.min(node.x + 35, 9800), y:Math.min(node.y + 110, 9800), config:{...node.config}};
+    agentDesignState.draft.nodes.push(copy); agentDesignState.selected = copy.id;
+    designMarkDirty(); designRender(); designMessage("Node duplicated without connections.");
+  } else if (event.target.id === "design-remove-node") {
+    agentDesignState.draft.nodes = agentDesignState.draft.nodes.filter(item => item.id !== node.id);
+    agentDesignState.draft.edges = agentDesignState.draft.edges.filter(edge => edge.from !== node.id && edge.to !== node.id);
+    agentDesignState.selected = ""; designMarkDirty(); designRender();
+  } else if (event.target.id === "design-remove-edges") {
+    agentDesignState.draft.edges = agentDesignState.draft.edges.filter(edge => edge.from !== node.id && edge.to !== node.id);
+    designMarkDirty(); designRender();
+  }
+});
 document.querySelector("#design-revisions").addEventListener("click", event => {
   const button = event.target.closest("[data-design-restore]"); if (!button || !can("agents_write")) return;
   const snapshot = (agentDesignState.draft.history || []).find(item => String(item.revision) === button.dataset.designRestore);
@@ -133,13 +251,29 @@ document.querySelector("#design-revisions").addEventListener("click", event => {
   agentDesignState.selected = ""; designMarkDirty(); designRender(); designMessage(`Revision ${snapshot.revision} loaded. Save to create a new revision.`);
 });
 document.querySelector("#design-save").addEventListener("click", async event => {
-  if (!can("agents_write")) return;
+  if (!can("agents_write") || agentDesignState.saving) return;
+  const issues = designValidation();
+  if (issues.length) { designMessage(issues.join(" "), true); return; }
   const draft = agentDesignState.draft, path = draft.id ? `/api/v1/agent-designs/${encodeURIComponent(draft.id)}` : "/api/v1/agent-designs";
+  const saved = JSON.stringify(designSnapshot());
+  agentDesignState.saving = true; designUpdateStatus();
   try {
-    const response = await fetch(path, {method:draft.id ? "PUT" : "POST", headers:{"Content-Type":"application/json","Accept":"application/json"}, body:JSON.stringify(designSnapshot())});
+    const response = await fetch(path, {method:draft.id ? "PUT" : "POST", headers:{"Content-Type":"application/json","Accept":"application/json"}, body:saved});
     const result = await response.json();
-    if (!response.ok) { designMessage((result.issues || [result.message || result.error || "Save failed."]).join(" "), true); return; }
-    agentDesignState.draft = result; agentDesignState.dirty = false; agentDesignState.list = [result,...agentDesignState.list.filter(item => item.id !== result.id)]; selectedResource = result.id; history.replaceState({}, "", routeURL("agent-designer", result.id)); designMessage(`Saved revision ${result.revision}.`); designRender();
-  } catch (failure) { designMessage(failure.message, true); }
+    if (!response.ok) { designMessage(response.status === 409 ? "This design changed elsewhere. Reload its latest revision before saving again." : (result.issues || [result.message || result.error || "Save failed."]).join(" "), true); return; }
+    agentDesignState.list = [result,...agentDesignState.list.filter(item => item.id !== result.id)];
+    if (agentDesignState.draft === draft) {
+      const changedDuringSave = JSON.stringify(designSnapshot()) !== saved;
+      if (changedDuringSave) {
+        Object.assign(draft, {id: result.id, revision: result.revision, history: result.history, updated_at: result.updated_at});
+        agentDesignState.dirty = true;
+      } else { agentDesignState.draft = result; agentDesignState.dirty = false; }
+      selectedResource = result.id;
+      history.replaceState({}, "", routeURL("agent-designer", result.id));
+      designRender();
+      designMessage(changedDuringSave ? `Saved revision ${result.revision}. Newer edits are still unsaved.` : `Saved revision ${result.revision}.`);
+    }
+  } catch (failure) { designMessage(failure.message || "Save failed.", true); }
+  finally { agentDesignState.saving = false; designUpdateStatus(); }
 });
 document.querySelector("#design-export").addEventListener("click", () => { const content = JSON.stringify(designSnapshot(), null, 2); const url = URL.createObjectURL(new Blob([content], {type:"application/json"})); const link = document.createElement("a"); link.href=url; link.download=`${agentDesignState.draft.name.trim().replace(/[^a-z0-9-]+/gi,"-").toLowerCase() || "agent"}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
