@@ -248,3 +248,34 @@ func TestConditionGrammar(t *testing.T) {
 		}
 	}
 }
+
+func TestErrorPortsAndExtract(t *testing.T) {
+	registry := Default()
+	graph := Graph{Nodes: []Node{
+		{ID: "input", Kind: "input", Name: "In"},
+		{ID: "call", Kind: "api", Name: "Call", Config: map[string]string{"connection": "c-1"}},
+		{ID: "pick", Kind: "extract", Name: "Pick", Config: map[string]string{"path": "result.items.0.name"}},
+		{ID: "fallback", Kind: "prompt", Name: "Fallback", Config: map[string]string{"template": "Sorry: {call}"}},
+		{ID: "output", Kind: "output", Name: "Out"},
+	}, Edges: []Edge{{From: "input", To: "call"}, {From: "call", To: "pick"}, {From: "call", To: "fallback", FromPort: "error"}, {From: "pick", To: "output"}, {From: "fallback", To: "output"}}}
+	registry.Normalize(&graph)
+	if issues := registry.Validate(graph, func(string, string) bool { return true }); !Runnable(issues) {
+		t.Fatalf("error branch and extract should be runnable: %+v", issues)
+	}
+	graph.Nodes[2].Config["path"] = "a..b"
+	found := false
+	for _, issue := range registry.Validate(graph, nil) {
+		found = found || (issue.Code == "invalid_setting" && issue.NodeID == "pick")
+	}
+	if !found {
+		t.Fatal("an invalid extract path was accepted")
+	}
+	graph.Edges[2].FromPort = "error"
+	graph.Edges[0] = Edge{From: "input", To: "call", FromPort: "error", ToPort: "in"}
+	if Runnable(registry.Validate(graph, nil)) {
+		t.Fatal("input has no error port")
+	}
+	if registry.Version != "1.1.0" || registry.ErrorPort == "" {
+		t.Fatalf("registry %s", registry.Version)
+	}
+}

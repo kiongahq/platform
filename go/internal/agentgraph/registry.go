@@ -9,6 +9,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
 	"sort"
 	"sync"
@@ -37,7 +38,9 @@ type Field struct {
 	Minimum   *int     `json:"minimum,omitempty"`
 	Maximum   *int     `json:"maximum,omitempty"`
 	Options   []string `json:"options,omitempty"`
+	Pattern   string   `json:"pattern,omitempty"`
 	Help      string   `json:"help,omitempty"`
+	pattern   *regexp.Regexp
 }
 
 // Component is a registered node kind.
@@ -77,6 +80,7 @@ type Registry struct {
 	Conversions        []Conversion      `json:"conversions"`
 	ConditionOperators []Operator        `json:"condition_operators"`
 	TemplateVariables  map[string]string `json:"template_variables"`
+	ErrorPort          string            `json:"error_port,omitempty"`
 	Components         []Component       `json:"components"`
 	byKind             map[string]*Component
 }
@@ -159,6 +163,15 @@ func ParseRegistry(raw []byte) (*Registry, error) {
 			return nil, fmt.Errorf("component registry: duplicate kind %q", component.Kind)
 		}
 		registry.byKind[component.Kind] = component
+		for field := range component.Config {
+			if pattern := component.Config[field].Pattern; pattern != "" {
+				compiled, err := regexp.Compile(pattern)
+				if err != nil {
+					return nil, fmt.Errorf("component registry: %s.%s pattern: %w", component.Kind, component.Config[field].Key, err)
+				}
+				component.Config[field].pattern = compiled
+			}
+		}
 	}
 	return &registry, nil
 }

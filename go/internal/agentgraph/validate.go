@@ -183,6 +183,9 @@ func (r *Registry) validateConfig(node Node, component *Component, allowed Resou
 		if field.MaxLength > 0 && len(node.Config[field.Key]) > field.MaxLength {
 			add(SeverityError, "invalid_setting", node.ID, field.Key, "%s's %s can have at most %d characters.", node.ID, strings.ToLower(field.Label), field.MaxLength)
 		}
+		if field.pattern != nil && !field.pattern.MatchString(value) {
+			add(SeverityError, "invalid_setting", node.ID, field.Key, "%s's %s %q has an invalid format.", node.ID, strings.ToLower(field.Label), value)
+		}
 		switch field.Type {
 		case "integer":
 			number, err := strconv.Atoi(value)
