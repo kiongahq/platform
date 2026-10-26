@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -881,7 +882,23 @@ func first(values []string) string {
 	}
 	return ""
 }
-func id(prefix string) string { return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano()) }
+
+// lastID makes id strictly increasing. Wall clocks with microsecond
+// resolution (macOS) otherwise give two records created in the same
+// microsecond the same ID, and the second silently replaces the first.
+var lastID atomic.Int64
+
+// id returns prefix-<n>: n is the wall clock in nanoseconds, bumped past the
+// previous ID so IDs stay unique and creation-ordered within a process.
+func id(prefix string) string {
+	for {
+		last := lastID.Load()
+		next := max(time.Now().UnixNano(), last+1)
+		if lastID.CompareAndSwap(last, next) {
+			return fmt.Sprintf("%s-%d", prefix, next)
+		}
+	}
+}
 func slug(value string) string {
 	var b strings.Builder
 	dash := false
