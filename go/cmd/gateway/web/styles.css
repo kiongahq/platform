@@ -1201,7 +1201,7 @@ pre.hint { font-family: var(--font-mono); }
 .design-tabs { display:flex; flex-wrap:wrap; gap:4px; border-bottom:1px solid var(--line, #cbd5df); margin-bottom:12px; }
 .design-tabs [role="tab"] { border:0; border-bottom:3px solid transparent; border-radius:0; background:transparent; padding:8px 12px; font-weight:650; }
 .design-tabs [role="tab"][aria-selected="true"] { border-bottom-color:#0a8079; color:#0a6e68; }
-.design-playground { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.4fr); gap:16px; }
+.design-playground { display:grid; grid-template-columns:minmax(0, 1fr); gap:16px; }
 .design-chat-log { min-height:160px; max-height:320px; overflow:auto; padding:10px; border:1px solid var(--line, #cbd5df); border-radius:10px; background:var(--surface-sunken, #f5f6f8); }
 .design-chat-turn { margin:0 0 10px; }
 .design-chat-turn span { font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--text-secondary, #53616d); }
@@ -1211,7 +1211,7 @@ pre.hint { font-family: var(--font-mono); }
 .design-run-form label { display:grid; gap:5px; margin-top:10px; font-size:.8rem; font-weight:650; }
 .design-run-form textarea { width:100%; }
 .design-run-options { display:flex; flex-wrap:wrap; align-items:end; gap:8px; margin-top:8px; }
-.design-run-options label.check, .design-eval-form label.check, #design-versions label.check { display:flex; align-items:center; gap:6px; font-weight:500; }
+.design-run-options label.checkbox, .design-eval-form label.checkbox, #design-versions label.checkbox, .design-zoom label.checkbox { margin:0; font-weight:500; }
 .design-run-summary { margin-bottom:8px; font-weight:650; }
 .design-trace th small, .design-trace td small, .design-case-table small, #design-evaluations td small, #design-versions th small, #design-versions td small { display:block; font-weight:400; color:var(--text-secondary, #53616d); overflow-wrap:anywhere; }
 .design-trace pre, #design-evaluations pre { max-height:220px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:.75rem; }
@@ -1228,10 +1228,10 @@ tr.pass th, tr.pass td:first-child { box-shadow:inset 3px 0 var(--success, #1780
 .tag.error { color:var(--danger, #b42318); }
 .design-trend { margin:0 0 14px; }
 .design-trend figcaption { font-size:.8rem; font-weight:650; margin-bottom:6px; }
-.design-trend > div { display:flex; align-items:flex-end; gap:6px; height:90px; padding:6px; border:1px solid var(--line, #cbd5df); border-radius:8px; overflow-x:auto; }
+.design-trend > div { display:flex; align-items:flex-end; gap:6px; height:110px; padding:6px 6px 22px; border:1px solid var(--line, #cbd5df); border-radius:8px; overflow-x:auto; }
 .design-trend span { position:relative; flex:0 0 28px; border-radius:4px 4px 0 0; background:var(--success, #17803d); }
 .design-trend span.fail { background:var(--danger, #b42318); }
-.design-trend i { position:absolute; bottom:-2px; left:0; right:0; transform:translateY(100%); font-size:.6rem; font-style:normal; text-align:center; }
+.design-trend i { position:absolute; bottom:-18px; left:0; right:0; font-size:.68rem; font-style:normal; text-align:center; }
 @media (max-width:900px) { .design-playground { grid-template-columns:1fr; } .design-zoom { margin-left:0; } }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .design-canvas-scroll { background:#15171c; } :root:not([data-theme="light"]) .design-node-body { background:#1f2026; color:#f2f2f5; } }
 :root[data-theme="dark"] .design-canvas-scroll { background:#15171c; }
@@ -1248,3 +1248,10 @@ tr.pass th, tr.pass td:first-child { box-shadow:inset 3px 0 var(--success, #1780
 @media (max-width:1100px) { .design-minimap { display:none; } }
 .design-port.branch-error { border-color:var(--danger, #b42318); color:var(--danger, #b42318); }
 .design-edge.branch-error { stroke:var(--danger, #b42318); stroke-dasharray:4 4; }
+.design-trace { min-width:0; }
+.design-trace .table-wrap { overflow-x:auto; }
+.design-trace td:last-child { max-width:240px; }
+.design-trace summary { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.design-run-form label.checkbox, .design-eval-form label.checkbox { display:flex; flex-direction:row; align-items:center; gap:6px; }
+@media (min-width:1800px) { .design-playground { grid-template-columns:minmax(0, 1fr) minmax(0, 1.4fr); } }
+#design-evaluations .status.completed { color:var(--success); background:var(--success-soft); }
