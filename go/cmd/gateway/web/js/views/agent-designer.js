@@ -158,6 +158,17 @@ function designRenderCanvasBounds() {
   canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
   edges.setAttribute("width", String(width)); edges.setAttribute("height", String(height));
 }
+// The overview draws every node and the visible part of the canvas.
+function designRenderMinimap() {
+  const map = document.querySelector("#design-minimap"), canvas = document.querySelector("#design-canvas"), scroller = document.querySelector(".design-canvas-scroll");
+  const draft = agentDesignState.draft;
+  if (!map || !draft) return;
+  const width = parseFloat(canvas.style.width) || 2000, height = parseFloat(canvas.style.height) || 1300, zoom = agentDesignState.zoom;
+  map.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  const view = {x: scroller.scrollLeft / zoom, y: scroller.scrollTop / zoom, w: (scroller.clientWidth || width * zoom) / zoom, h: (scroller.clientHeight || height * zoom) / zoom};
+  map.innerHTML = draft.nodes.map(node => `<rect class="minimap-node ${node.id === agentDesignState.selected ? "selected" : ""}" x="${Number(node.x)}" y="${Number(node.y)}" width="${designNodeWidth}" height="${designNodeHeight}" rx="12"></rect>`).join("")
+    + `<rect class="minimap-view" x="${view.x}" y="${view.y}" width="${view.w}" height="${view.h}"></rect>`;
+}
 function designRender() {
   const draft = agentDesignState.draft;
   if (!draft) return;
@@ -191,6 +202,7 @@ function designRender() {
   </div>`;
   }).join("");
   designRenderInspector();
+  designRenderMinimap();
   const history = [...(draft.history || [])].reverse();
   document.querySelector("#design-revisions").innerHTML = draft.id ? `<h3>Earlier revisions</h3>${history.length ? history.map(item => `<button type="button" data-design-restore="${item.revision}" ${can("agents_write") ? "" : "disabled"}>Restore r${item.revision} <small>${escapeHTML(new Date(item.saved_at).toLocaleString())}</small></button>`).join("") : `<p class="field-help">No earlier revisions yet.</p>`}` : "";
   for (const control of document.querySelectorAll("#design-inspector-content input, #design-inspector-content textarea, #design-inspector-content select, #design-inspector-content button")) control.disabled = !can("agents_write");
@@ -346,12 +358,23 @@ document.querySelector("#design-palette-search").addEventListener("input", event
   }
   document.querySelector("#design-palette-empty").hidden = shown > 0;
 });
+document.querySelector(".design-canvas-scroll").addEventListener("scroll", () => designRenderMinimap(), {passive: true});
+document.querySelector("#design-minimap").addEventListener("click", event => {
+  const map = event.currentTarget, box = map.getBoundingClientRect(), [, , width, height] = map.getAttribute("viewBox").split(" ").map(Number);
+  if (!box.width) return;
+  const scale = Math.min(box.width / width, box.height / height) || 1;
+  const x = (event.clientX - box.left) / scale, y = (event.clientY - box.top) / scale;
+  const scroller = document.querySelector(".design-canvas-scroll"), zoom = agentDesignState.zoom;
+  scroller.scrollTo?.({left: Math.max(0, x * zoom - scroller.clientWidth / 2), top: Math.max(0, y * zoom - scroller.clientHeight / 2)});
+  designRenderMinimap();
+});
 document.querySelector("#design-undo").addEventListener("click", () => can("agents_write") && designApplyHistory("undo", "redo"));
 document.querySelector("#design-redo").addEventListener("click", () => can("agents_write") && designApplyHistory("redo", "undo"));
 function designSetZoom(value) {
   agentDesignState.zoom = Math.max(0.3, Math.min(1.5, Math.round(value * 10) / 10));
   document.querySelector("#design-canvas").style.zoom = String(agentDesignState.zoom);
   document.querySelector("#design-zoom-level").textContent = `${Math.round(agentDesignState.zoom * 100)}%`;
+  designRenderMinimap();
 }
 document.querySelector("#design-zoom-in").addEventListener("click", () => designSetZoom(agentDesignState.zoom + 0.1));
 document.querySelector("#design-zoom-out").addEventListener("click", () => designSetZoom(agentDesignState.zoom - 0.1));

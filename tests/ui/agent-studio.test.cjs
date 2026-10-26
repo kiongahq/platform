@@ -269,3 +269,13 @@ test('snap to grid rounds keyboard moves to the 20 px grid', async () => {
   const node = d.querySelector(`[data-design-node="${id}"]`);
   for (const value of [node.style.left, node.style.top]) assert.equal(Number(value.replace('px', '')) % 20, 0, value);
 });
+
+test('the overview shows every node and the visible area', async () => {
+  const {d} = studioApp();
+  await tick();
+  assert.equal(d.querySelectorAll('#design-minimap .minimap-node').length, 2);
+  d.querySelector('[data-design-add="prompt"]').click();
+  assert.equal(d.querySelectorAll('#design-minimap .minimap-node').length, 3);
+  assert.equal(d.querySelectorAll('#design-minimap .minimap-node.selected').length, 1);
+  assert.ok(d.querySelector('#design-minimap .minimap-view'));
+});

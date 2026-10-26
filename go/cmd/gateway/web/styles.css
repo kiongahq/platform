@@ -1239,3 +1239,10 @@ tr.pass th, tr.pass td:first-child { box-shadow:inset 3px 0 var(--success, #1780
 .design-palette-search { display:grid; gap:5px; margin:8px 0; font-size:.8rem; font-weight:650; }
 .design-palette-search input { width:100%; }
 .design-node.multi .design-node-body { outline:3px dashed #0a8a82; outline-offset:2px; }
+.design-minimap { margin:12px 0; }
+.design-minimap figcaption { font-size:.75rem; font-weight:700; margin-bottom:4px; }
+#design-minimap { display:block; width:100%; aspect-ratio:20 / 13; border:1px solid var(--line, #cbd5df); border-radius:8px; background:var(--surface-sunken, #f5f6f8); cursor:pointer; }
+#design-minimap .minimap-node { fill:#9cbbc9; }
+#design-minimap .minimap-node.selected { fill:#0a8a82; }
+#design-minimap .minimap-view { fill:#0a8a8214; stroke:#0a8a82; stroke-width:12; }
+@media (max-width:1100px) { .design-minimap { display:none; } }
