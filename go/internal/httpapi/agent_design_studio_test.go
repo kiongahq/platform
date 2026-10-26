@@ -89,6 +89,13 @@ func (s *studio) fakeRunner(w http.ResponseWriter, r *http.Request) {
 		return
 	case "silent":
 		return
+	case "stream":
+		time.Sleep(300 * time.Millisecond) // lets the test's event stream subscribe
+		for _, word := range []string{"Hel", "lo ", "there"} {
+			emit(map[string]any{"type": "node.delta", "node_id": "model", "kind": "model", "delta": word})
+		}
+		emit(map[string]any{"type": "run.completed", "output": "Hello there", "duration_ms": 5, "usage": map[string]any{"input_tokens": 1, "output_tokens": 3, "cost_usd": 0}})
+		return
 	}
 	request, _ := http.NewRequest(http.MethodGet, payload.Gateway.URL+"/knowledge-bases", nil)
 	request.Header.Set("X-Kionga-Run-ID", payload.RunID)
@@ -748,4 +755,53 @@ func TestApprovalLifecycleAndAuthority(t *testing.T) {
 		t.Fatalf("another tenant read the approval: %d", recorder.Code)
 	}
 	s.do("POST", "/api/v1/agent-designs/"+design.ID+"/runs/"+run.ID+"/cancel", "")
+}
+
+func TestTokenDeltasStreamLiveAndAreNotStored(t *testing.T) {
+	s := newStudio(t)
+	design := s.create(runnableDesign)
+	run := decodeInto[designRun](t, s.do("POST", "/api/v1/agent-designs/"+design.ID+"/runs", `{"input":"stream"}`))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxied := designRequest(r.Method, r.URL.RequestURI(), "", auth.RoleUser)
+		proxied.Header = r.Header.Clone()
+		s.api.ServeHTTP(w, proxied.WithContext(auth.WithPrincipal(r.Context(), principal(proxied))))
+	}))
+	defer server.Close()
+	request, _ := http.NewRequest("GET", server.URL+"/api/v1/agent-designs/"+design.ID+"/runs/"+run.ID+"/events", nil)
+	request.Header.Set("Accept", "text/event-stream")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	scanner := bufio.NewScanner(response.Body)
+	deltaText, event := "", ""
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "event: ") {
+			event = strings.TrimPrefix(line, "event: ")
+		}
+		if strings.HasPrefix(line, "data: ") && event == "delta" {
+			var payload struct {
+				Delta string `json:"delta"`
+			}
+			_ = json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &payload)
+			deltaText += payload.Delta
+		}
+		if event == "end" {
+			break
+		}
+	}
+	if deltaText != "Hello there" {
+		t.Fatalf("live deltas: %q", deltaText)
+	}
+	stored := s.waitRun(design.ID, run.ID)
+	for _, raw := range stored.Events {
+		if strings.Contains(string(raw), "node.delta") {
+			t.Fatal("deltas must not be stored")
+		}
+	}
+	if stored.Output != "Hello there" {
+		t.Fatalf("output: %q", stored.Output)
+	}
 }

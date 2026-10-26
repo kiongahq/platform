@@ -504,6 +504,12 @@ func (s *Server) executeDesignRun(ctx context.Context, run designRun, graph agen
 			return
 		}
 		lastSeq = head.Seq
+		if head.Type == "node.delta" {
+			// Token deltas go live to stream subscribers on this replica and
+			// are not stored; node.completed carries the full text.
+			deltas.publish(run.ID, raw)
+			return
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		pending = append(pending, append(json.RawMessage(nil), raw...))
@@ -743,6 +749,8 @@ func (s *Server) designRunEvents(w http.ResponseWriter, r *http.Request) {
 	heartbeat := time.Now()
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
+	live, unsubscribe := deltas.subscribe(run.ID)
+	defer unsubscribe()
 	for {
 		current, err := store.GetDoc[designRun](s.store, designRunKind, run.ID)
 		if err != nil {
@@ -773,10 +781,56 @@ func (s *Server) designRunEvents(w http.ResponseWriter, r *http.Request) {
 		if time.Now().After(deadline) {
 			return
 		}
+	wait:
 		select {
 		case <-r.Context().Done():
 			return
+		case raw := <-live:
+			fmt.Fprintf(w, "event: delta\ndata: %s\n\n", raw) // #nosec G705 -- JSON event from the runner
+			flusher.Flush()
+			heartbeat = time.Now()
+			goto wait
 		case <-ticker.C:
+		}
+	}
+}
+
+// deltaHub relays token deltas from a run executing on this replica to its
+// live event streams. Delivery is best effort: a slow subscriber drops
+// deltas rather than slowing the run, and other replicas see only stored
+// events.
+type deltaHub struct {
+	mu   sync.Mutex
+	subs map[string]map[chan []byte]struct{}
+}
+
+var deltas = &deltaHub{subs: map[string]map[chan []byte]struct{}{}}
+
+func (h *deltaHub) subscribe(runID string) (<-chan []byte, func()) {
+	ch := make(chan []byte, 256)
+	h.mu.Lock()
+	if h.subs[runID] == nil {
+		h.subs[runID] = map[chan []byte]struct{}{}
+	}
+	h.subs[runID][ch] = struct{}{}
+	h.mu.Unlock()
+	return ch, func() {
+		h.mu.Lock()
+		delete(h.subs[runID], ch)
+		if len(h.subs[runID]) == 0 {
+			delete(h.subs, runID)
+		}
+		h.mu.Unlock()
+	}
+}
+
+func (h *deltaHub) publish(runID string, raw []byte) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for ch := range h.subs[runID] {
+		select {
+		case ch <- append([]byte(nil), raw...):
+		default:
 		}
 	}
 }
