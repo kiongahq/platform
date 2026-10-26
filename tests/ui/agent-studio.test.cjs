@@ -317,3 +317,45 @@ test('router gets a port per route and flows pick published versions', async () 
   const approval = d.querySelector('.design-node.selected').dataset.designNode;
   assert.deepEqual([...d.querySelectorAll(`[data-design-out="${approval}"]`)].map(port => port.dataset.designPort), ['approved', 'rejected']);
 });
+
+test('playground streams tokens and decides approvals in the chat', async () => {
+  const run = {id: 'agr-cccccccccccccccccccccccc', status: 'running', events: []};
+  const approval = 'apr-' + 'd'.repeat(24);
+  const events = [
+    {seq: 0, type: 'run.started', run_id: run.id, ts: 't'},
+    {seq: 1, type: 'approval.requested', run_id: run.id, ts: 't', node_id: 'ok', kind: 'approval', approval_id: approval, output_preview: 'Send the refund note?'},
+  ];
+  const page = {status: 'running', events, next: 1, done: false};
+  const {d, w} = studioApp({
+    '/api/v1/agent-designs': {items: [saved]},
+    [`POST /api/v1/agent-designs/${saved.id}/runs`]: run,
+    [`/api/v1/agent-designs/${saved.id}/runs/${run.id}/events?after=-1`]: () => page,
+    [`/api/v1/agent-designs/${saved.id}/runs/${run.id}/events?after=1`]: () => ({status: 'running', events: [], next: 1, done: false}),
+    [`POST /api/v1/agent-approvals/${approval}/decision`]: {id: approval, status: 'approved'},
+  });
+  await tick();
+  d.querySelector('#design-list').value = saved.id;
+  d.querySelector('#design-list').dispatchEvent(new w.Event('change', {bubbles: true}));
+  d.querySelector('#design-run-input').value = 'refund 42';
+  d.querySelector('#design-run-form').dispatchEvent(new w.Event('submit', {bubbles: true, cancelable: true}));
+  await tick(80);
+  const card = d.querySelector(`[data-approval-card="${approval}"]`);
+  assert.ok(card, 'the approval request appears in the chat');
+  assert.match(card.textContent, /Send the refund note\?/);
+  card.querySelector('input').value = 'ok to send';
+  card.querySelector('[data-approval-decision="approve"]').click();
+  await tick();
+  const body = JSON.parse(w.__bodies.find(item => item.path.endsWith('/decision')).body);
+  assert.deepEqual(body, {decision: 'approve', comment: 'ok to send'});
+  assert.match(card.textContent, /Approved/);
+  assert.equal(card.querySelector('[data-approval-decision]'), null, 'decided cards lose their buttons');
+
+  w.studioDelta({node_id: 'model', delta: 'Hel'});
+  w.studioDelta({node_id: 'model', delta: 'lo'});
+  const bubble = d.querySelector('.design-chat-turn.streaming');
+  assert.equal(bubble.querySelector('p').textContent, 'Hello');
+  assert.match(bubble.textContent, /streaming from model/);
+  w.studioHandleEvent({seq: 3, type: 'run.completed', run_id: run.id, ts: 't', output: 'Hello', usage: {}, duration_ms: 3});
+  assert.equal(d.querySelector('.design-chat-turn.streaming'), null, 'the final reply replaces the streaming bubble');
+  w.close(); // stops the playground's polling timer
+});

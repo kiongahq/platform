@@ -103,6 +103,46 @@ function studioChat(role, text, extra = "") {
   log.insertAdjacentHTML("beforeend", `<div class="design-chat-turn ${role}"><span>${role === "user" ? "You" : role === "agent" ? "Agent" : "Run"}</span><p>${escapeHTML(text)}</p>${extra}</div>`);
   log.scrollTop = log.scrollHeight;
 }
+// Live model tokens: one streaming bubble per run, replaced by the final
+// reply when run.completed arrives (deltas are best effort).
+function studioDelta(event) {
+  if (!event?.delta) return;
+  const log = document.querySelector("#design-chat-log");
+  let bubble = log.querySelector(".design-chat-turn.streaming");
+  if (!bubble) {
+    if (log.querySelector(".field-help")) log.innerHTML = "";
+    log.insertAdjacentHTML("beforeend", `<div class="design-chat-turn agent streaming" aria-live="off"><span>Agent · streaming from ${escapeHTML(event.node_id || "model")}</span><p></p></div>`);
+    bubble = log.querySelector(".design-chat-turn.streaming");
+  }
+  bubble.querySelector("p").textContent += event.delta;
+  log.scrollTop = log.scrollHeight;
+}
+// An approval node is waiting: approve or reject from the chat.
+function studioApprovalCard(event) {
+  const log = document.querySelector("#design-chat-log");
+  if (log.querySelector(".field-help")) log.innerHTML = "";
+  const writable = can("agents_write");
+  log.insertAdjacentHTML("beforeend", `<div class="design-chat-turn approval" data-approval-card="${escapeHTML(event.approval_id)}" role="group" aria-label="Approval request from ${escapeHTML(event.node_id)}">
+    <span>Approval needed · ${escapeHTML(event.node_id)}</span><p>${escapeHTML(event.output_preview || "Approve this step?")}</p>
+    <strong class="design-approval-state">Waiting for a decision</strong>
+    <div class="design-approval-actions"><input aria-label="Comment for this decision" maxlength="1000" placeholder="Comment (optional)"><button type="button" class="primary" data-approval-decision="approve" ${writable ? "" : "disabled"}>Approve</button><button type="button" data-approval-decision="reject" ${writable ? "" : "disabled"}>Reject</button></div></div>`);
+  log.scrollTop = log.scrollHeight;
+}
+document.querySelector("#design-chat-log").addEventListener("click", async event => {
+  const button = event.target.closest("[data-approval-decision]");
+  if (!button) return;
+  const card = button.closest("[data-approval-card]");
+  for (const control of card.querySelectorAll("button")) control.disabled = true;
+  try {
+    const decided = await api(`/api/v1/agent-approvals/${encodeURIComponent(card.dataset.approvalCard)}/decision`, {method: "POST",
+      body: JSON.stringify({decision: button.dataset.approvalDecision, comment: card.querySelector("input")?.value || ""})});
+    card.querySelector(".design-approval-state").textContent = decided.status === "approved" ? "Approved" : "Rejected";
+    card.querySelector(".design-approval-actions")?.remove();
+  } catch (failure) {
+    designMessage(failure.status === 409 ? "That request was already decided or has expired." : failure.message, true);
+    for (const control of card.querySelectorAll("button")) control.disabled = !can("agents_write");
+  }
+});
 function studioRenderTimeline() {
   document.querySelector("#design-run-timeline").innerHTML = [...designStudio.rows.values()].map(row => `<tr class="run-${escapeHTML(row.status)}"><th scope="row">${escapeHTML(row.name)}<small>${escapeHTML(row.kind || "")}${row.port ? ` → ${escapeHTML(row.port)}` : ""}${row.attempt > 1 ? ` · attempt ${row.attempt}` : ""}</small></th><td><span class="status ${escapeHTML(row.status)}">${escapeHTML(row.status)}</span>${row.error ? `<small>${escapeHTML(row.error)}</small>` : ""}</td><td>${row.duration === undefined ? "—" : `${studioNumber(row.duration)} ms`}</td><td>${row.usage ? `${studioNumber(row.usage.input_tokens)} / ${studioNumber(row.usage.output_tokens)}` : "—"}</td><td><details><summary>${escapeHTML((row.output || row.input || "").slice(0, 60) || "—")}</summary>${row.input ? `<p><strong>Input</strong></p><pre>${escapeHTML(row.input)}</pre>` : ""}${row.output ? `<p><strong>Output</strong></p><pre>${escapeHTML(row.output)}</pre>` : ""}</details></td></tr>`).join("");
 }
@@ -128,7 +168,13 @@ function studioHandleEvent(event) {
   }
   const summary = document.querySelector("#design-run-summary");
   if (event.type === "run.started") summary.textContent = "Running…";
+  if (event.type === "approval.requested") studioApprovalCard(event);
+  if (event.type === "approval.resolved") {
+    const card = document.querySelector(`[data-approval-card="${CSS.escape(event.approval_id || "")}"]`);
+    if (card) { card.querySelector(".design-approval-actions")?.remove(); card.querySelector(".design-approval-state").textContent = event.port === "approved" ? "Approved" : "Rejected or expired"; }
+  }
   if (event.type === "run.completed") {
+    document.querySelector("#design-chat-log .design-chat-turn.streaming")?.remove();
     const usage = event.usage || {};
     summary.textContent = `Succeeded in ${studioNumber(event.duration_ms)} ms · ${studioNumber(usage.input_tokens)} input / ${studioNumber(usage.output_tokens)} output tokens · ${studioCost(usage.cost_usd)}`;
     designStudio.lastOutput = event.output || "";
@@ -138,6 +184,7 @@ function studioHandleEvent(event) {
     document.querySelector("#design-run-save-case").disabled = !can("agents_write");
   }
   if (event.type === "run.failed" || event.type === "run.cancelled") {
+    document.querySelector("#design-chat-log .design-chat-turn.streaming")?.remove();
     const message = event.error?.message || (event.type === "run.cancelled" ? "The run was cancelled." : "The run failed.");
     summary.textContent = message;
     studioChat("system", message);
@@ -160,6 +207,7 @@ function studioFollow(path, runID) {
   const source = new EventSource(eventsPath);
   designStudio.source = source;
   source.addEventListener("run", message => { try { const event = JSON.parse(message.data); after = Math.max(after, event.seq); studioHandleEvent(event); } catch { /* ignore malformed frame */ } });
+  source.addEventListener("delta", message => { try { studioDelta(JSON.parse(message.data)); } catch { /* ignore malformed frame */ } });
   source.addEventListener("end", () => { source.close(); done(); });
   source.onerror = () => { if (finished) return; source.close(); designStudio.source = null; poll(); };
 }

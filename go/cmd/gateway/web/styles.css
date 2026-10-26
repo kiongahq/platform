@@ -1255,3 +1255,10 @@ tr.pass th, tr.pass td:first-child { box-shadow:inset 3px 0 var(--success, #1780
 .design-run-form label.checkbox, .design-eval-form label.checkbox { display:flex; flex-direction:row; align-items:center; gap:6px; }
 @media (min-width:1800px) { .design-playground { grid-template-columns:minmax(0, 1fr) minmax(0, 1.4fr); } }
 #design-evaluations .status.completed { color:var(--success); background:var(--success-soft); }
+.design-chat-turn.streaming p { border-style:dashed; }
+.design-chat-turn.approval { padding:10px; border:1px solid #b7791f; border-radius:8px; background:#fff8eb; }
+.design-chat-turn.approval p { white-space:pre-wrap; }
+.design-approval-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.design-approval-actions input { flex:1 1 200px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .design-chat-turn.approval { background:#2a2214; } }
+:root[data-theme="dark"] .design-chat-turn.approval { background:#2a2214; }
