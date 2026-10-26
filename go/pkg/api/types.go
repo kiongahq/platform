@@ -610,15 +610,19 @@ type AgentSession struct {
 }
 
 type AgentTrace struct {
-	ID         string         `json:"id"`
-	AgentID    string         `json:"agent_id"`
-	SessionID  string         `json:"session_id"`
-	Name       string         `json:"name"`
-	Status     string         `json:"status"`
-	DurationMS int64          `json:"duration_ms"`
-	Tokens     int            `json:"tokens"`
-	Metadata   map[string]any `json:"metadata,omitempty"`
-	CreatedAt  time.Time      `json:"created_at"`
+	ID         string `json:"id"`
+	AgentID    string `json:"agent_id"`
+	SessionID  string `json:"session_id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	DurationMS int64  `json:"duration_ms"`
+	Tokens     int    `json:"tokens"`
+	// Per-turn split and cost; zero on traces recorded before they existed.
+	InputTokens  int            `json:"input_tokens,omitempty"`
+	OutputTokens int            `json:"output_tokens,omitempty"`
+	CostUSD      float64        `json:"cost_usd,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+	CreatedAt    time.Time      `json:"created_at"`
 }
 
 type RecordTraceRequest struct {

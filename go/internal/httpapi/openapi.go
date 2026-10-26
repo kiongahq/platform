@@ -127,6 +127,7 @@ func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 			"/api/v1/agent-evaluations/{id}":                        map[string]any{"get": map[string]any{"summary": "Read an evaluation with per-case results"}},
 			"/api/v1/agent-evaluations/{id}/cancel":                 map[string]any{"post": map[string]any{"summary": "Cancel an evaluation"}},
 			"/api/v1/agent-evaluations/{id}/cases/{case_id}/review": map[string]any{"post": map[string]any{"summary": "Record a person's review of one evaluated case"}},
+			"/api/v1/agents/{id}/operations":                        map[string]any{"get": map[string]any{"summary": "Operations dashboard data: KPIs, series, percentiles, timeline and sibling deployments (hours=1-168)"}},
 			"/api/v1/agent-approvals":                               map[string]any{"get": map[string]any{"summary": "List approval requests (status, project_id, run_id filters)"}, "post": map[string]any{"summary": "Request a human approval (agent run or deployed agent identity only)"}},
 			"/api/v1/agent-approvals/{id}":                          map[string]any{"get": map[string]any{"summary": "Read an approval request"}},
 			"/api/v1/agent-approvals/{id}/decision":                 map[string]any{"post": map[string]any{"summary": "Approve or reject (signed-in people with agents write access)"}},

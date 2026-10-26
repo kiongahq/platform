@@ -910,3 +910,79 @@ func TestJudgedEvaluationToolAccuracySlicesAndReviews(t *testing.T) {
 		t.Fatalf("unknown case: %d", missing.Code)
 	}
 }
+
+func TestAgentOperationsDashboardFromRecordedTraces(t *testing.T) {
+	s := newStudio(t)
+	t.Setenv("KIONGA_WORKSPACE_NAMESPACE", "kionga-workspaces")
+	t.Setenv("KIONGA_NATIVE_AGENT_IMAGE", "ghcr.io/kiongahq/agent-runtime:test")
+	t.Setenv("AGENT_RUNTIME_URL", "http://127.0.0.1:1") // readiness probes fail fast
+	design := s.create(runnableDesign)
+	v1 := decodeInto[agentVersion](t, s.do("POST", "/api/v1/agent-designs/"+design.ID+"/publish", `{"revision":1}`))
+	changed := strings.Replace(strings.Replace(runnableDesign, `"revision":0`, `"revision":1`, 1), "Answer: {input}", "Reply: {input}", 1)
+	s.do("PUT", "/api/v1/agent-designs/"+design.ID, changed)
+	v2 := decodeInto[agentVersion](t, s.do("POST", "/api/v1/agent-designs/"+design.ID+"/publish", `{"revision":2}`))
+	t.Setenv("AGENT_RUNTIME_URL", "")
+	old := decodeInto[api.Agent](t, s.do("POST", "/api/v1/agent-versions/"+v1.ID+"/deploy", `{}`))
+	current := decodeInto[api.Agent](t, s.do("POST", "/api/v1/agent-versions/"+v2.ID+"/deploy", `{}`))
+	t.Setenv("AGENT_RUNTIME_URL", "http://127.0.0.1:1")
+	if traffic := s.do("PUT", "/api/v1/agents/"+current.ID+"/traffic", `{"canary_weight":20}`); traffic.Code != 200 {
+		t.Fatalf("traffic: %d %s", traffic.Code, traffic.Body.String())
+	}
+	for index, duration := range []int64{100, 200, 300, 400, 1000} {
+		status := "succeeded"
+		if index == 4 {
+			status = "failed"
+		}
+		if _, err := s.repo.RecordTrace(api.RecordTraceRequest{AgentID: current.ID, SessionID: fmt.Sprintf("s-%d", index), Status: status,
+			DurationMS: duration, InputTokens: 10, OutputTokens: 5, CostUSD: 0.002}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, _ = s.repo.RecordTrace(api.RecordTraceRequest{AgentID: old.ID, SessionID: "other", Status: "succeeded", DurationMS: 5})
+	response := s.do("GET", "/api/v1/agents/"+current.ID+"/operations?hours=6", "")
+	var ops struct {
+		Agent        api.Agent        `json:"agent"`
+		Totals       opsBucket        `json:"totals"`
+		SuccessRate  float64          `json:"success_rate"`
+		Series       []opsBucket      `json:"series"`
+		Recent       []api.AgentTrace `json:"recent_traces"`
+		Timeline     []opsEvent       `json:"timeline"`
+		Siblings     []map[string]any `json:"siblings"`
+		BucketSecond int              `json:"bucket_seconds"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &ops); err != nil || response.Code != 200 {
+		t.Fatalf("operations: %d %s", response.Code, response.Body.String())
+	}
+	if ops.Totals.Requests != 5 || ops.Totals.Errors != 1 || ops.SuccessRate != 0.8 || *ops.Totals.P50MS != 300 || *ops.Totals.P99MS != 1000 {
+		t.Fatalf("totals: %+v rate %v", ops.Totals, ops.SuccessRate)
+	}
+	if ops.Totals.InputTokens != 50 || ops.Totals.CostUSD != 0.01 || len(ops.Series) != 24 || ops.BucketSecond != 900 || ops.Series[23].Requests != 5 {
+		t.Fatalf("series: %+v", ops.Totals)
+	}
+	if ops.Series[0].P95MS != nil {
+		t.Fatal("an empty bucket must report no latency, not zero")
+	}
+	if len(ops.Recent) != 5 || ops.Agent.FlowJSON != "" || ops.Agent.Status != "pending" {
+		t.Fatalf("recent traces or agent view: %d %+v", len(ops.Recent), ops.Agent.Status)
+	}
+	if len(ops.Siblings) != 1 || ops.Siblings[0]["id"] != old.ID || ops.Siblings[0]["version_id"] != v1.ID {
+		t.Fatalf("siblings: %+v", ops.Siblings)
+	}
+	actions := []string{}
+	for _, event := range ops.Timeline {
+		actions = append(actions, event.Action+"@"+event.Version)
+	}
+	if strings.Join(actions, ",") != "agent.traffic_updated@v2,agent.deployed@v2,agent.deployed@v1" {
+		t.Fatalf("timeline: %v", actions)
+	}
+	if bad := s.do("GET", "/api/v1/agents/"+current.ID+"/operations?hours=999", ""); bad.Code != 422 {
+		t.Fatalf("window: %d", bad.Code)
+	}
+	outsider := httptest.NewRequest("GET", "/api/v1/agents/"+current.ID+"/operations", nil)
+	outsider = outsider.WithContext(auth.WithPrincipal(outsider.Context(), auth.Principal{Subject: "user-2", Roles: []string{auth.RoleUser}, Provisioned: true, Services: []string{"agents"}, ProjectIDs: []string{"prj-other"}}))
+	recorder := httptest.NewRecorder()
+	s.api.ServeHTTP(recorder, outsider)
+	if recorder.Code != 404 {
+		t.Fatalf("another tenant read operations: %d", recorder.Code)
+	}
+}

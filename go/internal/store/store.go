@@ -648,7 +648,7 @@ func (s *Store) RecordTrace(req api.RecordTraceRequest) (api.AgentTrace, error) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
-	trace := api.AgentTrace{ID: id("trace"), AgentID: req.AgentID, SessionID: req.SessionID, Name: req.Name, Status: req.Status, DurationMS: req.DurationMS, Tokens: req.InputTokens + req.OutputTokens, Metadata: req.Metadata, CreatedAt: now}
+	trace := api.AgentTrace{ID: id("trace"), AgentID: req.AgentID, SessionID: req.SessionID, Name: req.Name, Status: req.Status, DurationMS: req.DurationMS, Tokens: req.InputTokens + req.OutputTokens, InputTokens: req.InputTokens, OutputTokens: req.OutputTokens, CostUSD: req.CostUSD, Metadata: req.Metadata, CreatedAt: now}
 	s.data.Traces = append([]api.AgentTrace{trace}, s.data.Traces...)
 	found := false
 	// Sessions are scoped per agent: the same session id under two agents is

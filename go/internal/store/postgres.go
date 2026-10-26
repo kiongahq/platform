@@ -637,7 +637,7 @@ func (p *Postgres) RecordTrace(req api.RecordTraceRequest) (api.AgentTrace, erro
 		return api.AgentTrace{}, errors.New("agent_id and session_id are required")
 	}
 	now := time.Now().UTC()
-	trace := api.AgentTrace{ID: id("trace"), AgentID: req.AgentID, SessionID: req.SessionID, Name: req.Name, Status: req.Status, DurationMS: req.DurationMS, Tokens: req.InputTokens + req.OutputTokens, Metadata: req.Metadata, CreatedAt: now}
+	trace := api.AgentTrace{ID: id("trace"), AgentID: req.AgentID, SessionID: req.SessionID, Name: req.Name, Status: req.Status, DurationMS: req.DurationMS, Tokens: req.InputTokens + req.OutputTokens, InputTokens: req.InputTokens, OutputTokens: req.OutputTokens, CostUSD: req.CostUSD, Metadata: req.Metadata, CreatedAt: now}
 	if err := p.write("agent_trace", trace.ID, trace, "agent.trace_recorded", "trace-proxy", nil); err != nil {
 		return trace, err
 	}
