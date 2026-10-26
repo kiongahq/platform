@@ -256,3 +256,16 @@ test('multi-select moves, copies with internal connections, and deletes together
   key(d.querySelector('[data-design-select="input"]'), {key: 'Delete'});
   assert.ok(d.querySelector('[data-design-node="input"]'), 'input and output cannot be deleted');
 });
+
+test('snap to grid rounds keyboard moves to the 20 px grid', async () => {
+  const {d, w} = studioApp();
+  await tick();
+  d.querySelector('[data-design-add="prompt"]').click();
+  const id = d.querySelector('.design-node.selected').dataset.designNode;
+  const body = () => d.querySelector(`[data-design-select="${id}"]`);
+  body().dispatchEvent(new w.KeyboardEvent('keydown', {key: 'ArrowRight', bubbles: true}));
+  d.querySelector('#design-snap').checked = true;
+  body().dispatchEvent(new w.KeyboardEvent('keydown', {key: 'ArrowDown', bubbles: true}));
+  const node = d.querySelector(`[data-design-node="${id}"]`);
+  for (const value of [node.style.left, node.style.top]) assert.equal(Number(value.replace('px', '')) % 20, 0, value);
+});

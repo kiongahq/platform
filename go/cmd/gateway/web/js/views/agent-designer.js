@@ -6,7 +6,9 @@ const designKinds = {input: "Input", prompt: "Prompt", model: "Model", tool: "To
 function designComponent(kind) { return agentDesignState.registry?.components?.find(item => item.kind === kind) || null; }
 function designOutPorts(node) { return node.kind === "condition" ? ["true", "false"] : node.kind === "output" ? [] : ["out"]; }
 function designEdgePort(edge) { return edge.from_port || (agentDesignState.draft?.nodes.find(node => node.id === edge.from)?.kind === "condition" ? "true" : "out"); }
-const designNodeWidth = 190, designNodeHeight = 88;
+const designNodeWidth = 190, designNodeHeight = 88, designGrid = 20;
+// Snapping rounds positions to the 20 px grid drawn on the canvas.
+function designSnap(value) { return document.querySelector("#design-snap")?.checked ? Math.round(value / designGrid) * designGrid : value; }
 function blankAgentDesign() {
   return {id: "", project_id: selectedProject || projectOptions[0]?.id || "", name: "New agent", description: "", revision: 0,
     nodes: [{id: "input", kind: "input", name: "Input", x: 40, y: 100, config: {}}, {id: "output", kind: "output", name: "Output", x: 460, y: 100, config: {}}], edges: [{from: "input", to: "output"}]};
@@ -131,7 +133,7 @@ function designPaste() {
   for (const node of clip.nodes) {
     const id = `${node.kind}-${Math.random().toString(36).slice(2, 9)}`;
     ids.set(node.id, id);
-    draft.nodes.push({...structuredClone(node), id, name: node.name.slice(0, 100), x: Math.min(node.x + 40, 9800), y: Math.min(node.y + 40, 9800)});
+    draft.nodes.push({...structuredClone(node), id, name: node.name.slice(0, 100), x: designSnap(Math.min(node.x + 40, 9800)), y: designSnap(Math.min(node.y + 40, 9800))});
   }
   for (const edge of clip.edges) draft.edges.push({...edge, from: ids.get(edge.from), to: ids.get(edge.to)});
   agentDesignState.multi = new Set(ids.values()); agentDesignState.selected = [...ids.values()][0];
@@ -406,10 +408,10 @@ document.querySelector("#agent-designer").addEventListener("keydown", event => {
   const movement = {ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[event.key];
   if (!movement) return;
   event.preventDefault();
-  const step = event.shiftKey ? 40 : 10;
+  const step = document.querySelector("#design-snap").checked ? (event.shiftKey ? 2 : 1) * designGrid : event.shiftKey ? 40 : 10;
   for (const node of agentDesignState.draft.nodes.filter(item => designSelection().has(item.id))) {
-    node.x = Math.max(0, Math.min(9800, node.x + movement[0] * step));
-    node.y = Math.max(0, Math.min(9800, node.y + movement[1] * step));
+    node.x = Math.max(0, Math.min(9800, designSnap(node.x + movement[0] * step)));
+    node.y = Math.max(0, Math.min(9800, designSnap(node.y + movement[1] * step)));
   }
   designMarkDirty(); designRender(); designFocusSelected();
 });
@@ -422,7 +424,7 @@ document.querySelector("#design-nodes").addEventListener("pointerdown", event =>
   const origins = group.map(item => ({item, x: item.x, y: item.y, card: document.querySelector(`[data-design-node="${CSS.escape(item.id)}"]`)}));
   const start = {x: event.clientX, y: event.clientY}; let moved = false;
   const move = current => { const dx = (current.clientX - start.x) / agentDesignState.zoom, dy = (current.clientY - start.y) / agentDesignState.zoom; if (Math.abs(dx)+Math.abs(dy)<4 && !moved) return; moved = true;
-    for (const origin of origins) { origin.item.x = Math.max(0, Math.min(9800, Math.round(origin.x+dx))); origin.item.y = Math.max(0, Math.min(9800, Math.round(origin.y+dy))); if (origin.card) { origin.card.style.left = `${origin.item.x}px`; origin.card.style.top = `${origin.item.y}px`; } }
+    for (const origin of origins) { origin.item.x = Math.max(0, Math.min(9800, designSnap(Math.round(origin.x+dx)))); origin.item.y = Math.max(0, Math.min(9800, designSnap(Math.round(origin.y+dy)))); if (origin.card) { origin.card.style.left = `${origin.item.x}px`; origin.card.style.top = `${origin.item.y}px`; } }
     designRenderCanvasBounds(); designRenderEdgesOnly(); };
   const finish = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", finish); if (moved) { designMarkDirty(); designRender(); } };
   window.addEventListener("pointermove", move); window.addEventListener("pointerup", finish, {once:true});
