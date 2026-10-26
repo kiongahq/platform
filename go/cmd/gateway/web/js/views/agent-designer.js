@@ -293,6 +293,18 @@ document.querySelector("#design-import").addEventListener("change", async event 
     designOpen(designFromGraph(graph, parsed.name), `Imported ${file.name} as a new unsaved design.`, true);
   } catch (failure) { designMessage(failure.message || "Import failed.", true); }
 });
+// Filters palette buttons by label, kind and the registry description.
+document.querySelector("#design-palette-search").addEventListener("input", event => {
+  const query = event.target.value.trim().toLowerCase();
+  let shown = 0;
+  for (const button of document.querySelectorAll("[data-design-add]")) {
+    const component = designComponent(button.dataset.designAdd);
+    const text = `${button.textContent} ${button.dataset.designAdd} ${component?.label || ""} ${component?.description || ""} ${component?.category || ""}`.toLowerCase();
+    button.hidden = Boolean(query) && !text.includes(query);
+    if (!button.hidden) shown++;
+  }
+  document.querySelector("#design-palette-empty").hidden = shown > 0;
+});
 document.querySelector("#design-undo").addEventListener("click", () => can("agents_write") && designApplyHistory("undo", "redo"));
 document.querySelector("#design-redo").addEventListener("click", () => can("agents_write") && designApplyHistory("redo", "undo"));
 function designSetZoom(value) {

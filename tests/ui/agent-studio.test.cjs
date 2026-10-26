@@ -209,3 +209,18 @@ test('evaluations show gate outcome, failure reasons and a case comparison', asy
   assert.match(d.querySelector('#design-eval-detail').textContent, /50% → 100% \(\+50 points\)/);
   assert.match(d.querySelector('#design-eval-detail').textContent, /refund.*fixed/s);
 });
+
+test('palette search filters components by name and purpose', async () => {
+  const {d, w} = studioApp();
+  await tick();
+  const search = d.querySelector('#design-palette-search');
+  const visible = () => [...d.querySelectorAll('[data-design-add]')].filter(button => !button.hidden).map(button => button.dataset.designAdd);
+  search.value = 'knowledge base'; search.dispatchEvent(new w.Event('input', {bubbles: true}));
+  assert.deepEqual(visible(), ['knowledge']);
+  search.value = 'RustFS'; search.dispatchEvent(new w.Event('input', {bubbles: true}));
+  assert.deepEqual(visible(), ['storage'], 'registry descriptions are searchable');
+  search.value = 'zzz'; search.dispatchEvent(new w.Event('input', {bubbles: true}));
+  assert.equal(d.querySelector('#design-palette-empty').hidden, false);
+  search.value = ''; search.dispatchEvent(new w.Event('input', {bubbles: true}));
+  assert.equal(visible().length, 8);
+});
