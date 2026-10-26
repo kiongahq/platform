@@ -336,6 +336,7 @@ button[data-state="error"] { border-color: var(--danger); color: var(--danger); 
   font-size: var(--fs-sm);
   font-weight: 750;
 }
+.account-avatar .ui-icon { width: 19px; height: 19px; }
 .account-copy { display: grid; min-width: 0; max-width: 170px; text-align: left; line-height: 1.25; }
 .account-copy b, .account-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-copy b { font-size: var(--fs-sm); }

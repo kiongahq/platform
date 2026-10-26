@@ -185,7 +185,6 @@ function applyPermissions() {
   document.querySelector("#user-name").textContent = name;
   document.querySelector("#user-role").textContent = `${me.roles.join(", ") || "no role"} · ${me.mode} sign-in`;
   document.querySelector("#menu-user").textContent = name;
-  document.querySelector("#account-avatar").textContent = name.trim().charAt(0).toUpperCase() || "U";
   document.querySelectorAll(".logout-action").forEach(link => { link.hidden = false; });
   document.querySelectorAll("[data-admin-only]").forEach(node => { node.hidden = !isAdmin(); });
   document.querySelectorAll(".nav-item[data-view]").forEach(node => {
