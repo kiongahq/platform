@@ -107,7 +107,8 @@ events = [json.loads(e) if isinstance(e, str) else e for e in run["events"]]
 types = [e["type"] for e in events]
 by_node = {e.get("node_id"): e for e in events if e["type"] in ("node.completed", "node.skipped")}
 assert types[0] == "run.started" and types[-1] == "run.completed", types
-assert [e["seq"] for e in events] == list(range(len(events))), "sequence gap"
+seqs = [e["seq"] for e in events]
+assert seqs == sorted(set(seqs)), "seq must increase strictly (gaps are live-only deltas)"
 assert by_node["route"]["port"] == "true", by_node["route"]
 assert by_node["refund"]["type"] == "node.completed" and by_node["general"]["type"] == "node.skipped"
 assert run["output"], "empty reply"
@@ -196,6 +197,68 @@ finish_run "$fallback_design" "$frun" > "$WORK/fallback.json"
 [ "$(json "d['status']" < "$WORK/fallback.json")" = succeeded ] || fail "fallback run: $(cat "$WORK/fallback.json")"
 [ "$(json "d['output']" < "$WORK/fallback.json")" = "Lookup unavailable" ] || fail "fallback output: $(json "d['output']" < "$WORK/fallback.json")"
 echo "fallback branch completed: $(json "d['output']" < "$WORK/fallback.json")"
+
+step "flows: a subflow runs the published version; approval is decided over the API mid-run"
+flow_body="$("$PY" - "$project" "$version" <<'EOF'
+import json, sys
+project, version = sys.argv[1], sys.argv[2]
+n = lambda i, k, x, **c: {"id": i, "kind": k, "name": i, "x": x, "y": 0, **({"config": c} if c else {})}
+e = lambda a, b, p="out": {"from": a, "to": b, "from_port": p, "to_port": "in"}
+print(json.dumps({"project_id": project, "name": "Smoke flows", "revision": 0,
+  "nodes": [n("input", "input", 0), n("route", "router", 200, route_1="contains:refund"),
+            n("support", "subflow", 400, subflow=version), n("plain", "prompt", 400, template="plain: {input}"),
+            n("ok", "approval", 600, message="Send this? {context}", timeout_seconds="60"),
+            n("held", "prompt", 800, template="held for review"), n("reply", "model", 800, model="llm"), n("output", "output", 1000)],
+  "edges": [e("input", "route"), e("route", "support", "route_1"), e("route", "plain", "default"),
+            e("support", "ok"), e("plain", "ok"), e("ok", "reply", "approved"), e("reply", "output"), e("ok", "held", "rejected"), e("held", "output")],
+  "settings": {"max_steps": 50, "timeout_seconds": 120, "max_tokens": 50000}}))
+EOF
+)"
+flows_design="$(call POST /agent-designs "$flow_body" | json "d['id']")"
+[ "$(call POST "/agent-designs/$flows_design/validate" | json "d['runnable']")" = True ] || fail "flows design is not runnable"
+frun="$(call POST "/agent-designs/$flows_design/runs" '{"input":"I want a refund"}' | json "d['id']")"
+curl -sS -N --max-time 60 -b "$JAR" -H 'Accept: text/event-stream' "$BASE/agent-designs/$flows_design/runs/$frun/events" > "$WORK/flows-sse.txt" &
+sse_pid=$!
+approval=""
+for _ in $(seq 1 100); do
+  approval="$(call GET "/agent-approvals?status=pending&run_id=$frun" | json "(d['items'] or [{'id': ''}])[0]['id']")"
+  [ -n "$approval" ] && break; sleep 0.2
+done
+[ -n "$approval" ] || fail "no approval request appeared"
+call POST "/agent-approvals/$approval/decision" '{"decision":"approve","comment":"smoke"}' > "$WORK/decision.json"
+[ "$(json "d['status']" < "$WORK/decision.json")" = approved ] || fail "decision: $(cat "$WORK/decision.json")"
+finish_run "$flows_design" "$frun" > "$WORK/flows.json"
+wait "$sse_pid" 2>/dev/null || true
+"$PY" - "$WORK/flows.json" "$WORK/flows-sse.txt" <<'EOF' || fail "flows run is wrong"
+import json, sys
+run = json.load(open(sys.argv[1]))
+events = [json.loads(e) if isinstance(e, str) else e for e in run["events"]]
+types = [e["type"] for e in events]
+assert run["status"] == "succeeded", run
+assert run["output"].startswith("[mock]"), run["output"]
+assert "approval.requested" in types and "approval.resolved" in types, types
+resolved = next(e for e in events if e["type"] == "approval.resolved")
+assert resolved["port"] == "approved"
+assert next(e for e in events if e.get("node_id") == "plain")["type"] == "node.skipped"
+assert not any(e["type"] == "node.delta" for e in events), "deltas must not be stored"
+sse = open(sys.argv[2]).read()
+deltas = [json.loads(line[6:])["delta"] for block in sse.split("\n\n") if "event: delta" in block
+          for line in block.splitlines() if line.startswith("data: ")]
+assert deltas, "the model after the approval streamed no live delta frames"
+assert "".join(deltas) == run["output"], ("".join(deltas), run["output"])
+print(f"subflow + approval ok; {len(deltas)} live delta frame(s) reassemble the reply")
+EOF
+
+step "judge refuses honestly under the mock model"
+call PUT "/agent-designs/$design/fixtures" "{\"revision\":1,\"cases\":[{\"id\":\"judged\",\"input\":\"hello\",\"expected\":{\"judge\":{\"criteria\":[\"safety\"]}}}]}" >/dev/null
+jeval="$(call POST "/agent-designs/$design/evaluations" '{"gate":1}' | json "d['id']")"
+for _ in $(seq 1 100); do
+  [ "$(call GET "/agent-evaluations/$jeval" | json "d['status']")" = running ] || break; sleep 0.2
+done
+call GET "/agent-evaluations/$jeval" > "$WORK/judged.json"
+json "d['cases'][0]['failures'][0]" < "$WORK/judged.json" | grep -q '^judge_unavailable: ' || fail "mock judge did not refuse: $(cat "$WORK/judged.json")"
+[ "$(json "d['passed']" < "$WORK/judged.json")" = False ] || fail "an unjudged case passed the gate"
+echo "judge_unavailable reported; gate not passed"
 
 step "deploy needs the managed runtime (honest refusal in this profile)"
 code="$(curl -sS -b "$JAR" -H "Origin: $ORIGIN" -o "$WORK/deploy.json" -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' "$BASE/agent-versions/$version/deploy")"
