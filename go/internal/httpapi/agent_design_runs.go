@@ -261,7 +261,7 @@ func callerOf(r *http.Request) runCaller {
 // startDesignRun validates, records and launches a run. It returns the
 // stored run and the HTTP status to report (202 new, 200 idempotent replay).
 func (s *Server) startDesignRun(r *http.Request, design agentDesign, graph agentgraph.Graph, revision int, req runRequest, mode, versionID, evaluationID string) (designRun, int, error) {
-	run, token, status, err := s.prepareDesignRun(callerOf(r), design, graph, revision, req, mode, versionID, evaluationID)
+	run, token, flows, status, err := s.prepareDesignRun(callerOf(r), design, graph, revision, req, mode, versionID, evaluationID)
 	if err != nil || status != 202 {
 		return run, status, err
 	}
@@ -270,67 +270,71 @@ func (s *Server) startDesignRun(r *http.Request, design agentDesign, graph agent
 	runner.track(run.ID, cancel)
 	go func() {
 		defer runner.untrack(run.ID, cancel)
-		s.executeDesignRun(ctx, run, graph, req.History, token)
+		s.executeDesignRun(ctx, run, graph, flows, req.History, token)
 	}()
 	return run, 202, nil
 }
 
 // runSync records and executes a run on the calling goroutine (evaluations).
 func (s *Server) runSync(parent context.Context, caller runCaller, design agentDesign, graph agentgraph.Graph, revision int, req runRequest, mode, versionID, evaluationID string) (designRun, error) {
-	run, token, _, err := s.prepareDesignRun(caller, design, graph, revision, req, mode, versionID, evaluationID)
+	run, token, flows, _, err := s.prepareDesignRun(caller, design, graph, revision, req, mode, versionID, evaluationID)
 	if err != nil {
 		return designRun{}, err
 	}
 	ctx, cancel := context.WithTimeout(parent, time.Duration(graph.Settings.TimeoutSeconds)*time.Second+10*time.Second)
 	runner.track(run.ID, cancel)
 	defer runner.untrack(run.ID, cancel)
-	return s.executeDesignRun(ctx, run, graph, req.History, token), nil
+	return s.executeDesignRun(ctx, run, graph, flows, req.History, token), nil
 }
 
-func (s *Server) prepareDesignRun(caller runCaller, design agentDesign, graph agentgraph.Graph, revision int, req runRequest, mode, versionID, evaluationID string) (designRun, string, int, error) {
+func (s *Server) prepareDesignRun(caller runCaller, design agentDesign, graph agentgraph.Graph, revision int, req runRequest, mode, versionID, evaluationID string) (designRun, string, map[string]agentgraph.Graph, int, error) {
 	if runnerURL() == "" {
-		return designRun{}, "", 503, &runStartError{code: "runner_unavailable", message: "The agent designer runner is not configured (KIONGA_AGENT_DESIGNER_RUNNER_URL)."}
+		return designRun{}, "", nil, 503, &runStartError{code: "runner_unavailable", message: "The agent designer runner is not configured (KIONGA_AGENT_DESIGNER_RUNNER_URL)."}
 	}
 	if !auth.Allowed(caller.principal, http.MethodPost, "/api/v1/agent-designs/"+design.ID+"/runs") {
-		return designRun{}, "", 403, &runStartError{code: "access_denied", message: "Running agents is not assigned to this user."}
+		return designRun{}, "", nil, 403, &runStartError{code: "access_denied", message: "Running agents is not assigned to this user."}
 	}
 	if strings.TrimSpace(req.Input) == "" || len([]rune(req.Input)) > maxRunInputChars {
-		return designRun{}, "", 422, &runStartError{code: "validation_error", message: fmt.Sprintf("input must contain 1–%d characters", maxRunInputChars)}
+		return designRun{}, "", nil, 422, &runStartError{code: "validation_error", message: fmt.Sprintf("input must contain 1–%d characters", maxRunInputChars)}
 	}
 	if len(req.History) > 50 || len(req.SessionID) > 128 {
-		return designRun{}, "", 422, &runStartError{code: "validation_error", message: "Send at most 50 history turns and a session ID of at most 128 characters."}
+		return designRun{}, "", nil, 422, &runStartError{code: "validation_error", message: "Send at most 50 history turns and a session ID of at most 128 characters."}
 	}
 	for _, turn := range req.History {
 		if (turn.Role != "user" && turn.Role != "assistant") || len([]rune(turn.Text)) > maxRunInputChars {
-			return designRun{}, "", 422, &runStartError{code: "validation_error", message: "History turns need a user or assistant role and at most 32000 characters."}
+			return designRun{}, "", nil, 422, &runStartError{code: "validation_error", message: "History turns need a user or assistant role and at most 32000 characters."}
 		}
 	}
-	issues := agentgraph.Default().Validate(graph, s.resourceCheckerFor(caller.principal, design.ProjectID))
+	checker := s.resourceCheckerFor(caller.principal, design.ProjectID)
+	issues := agentgraph.Default().Validate(graph, checker)
+	resolved, flowIssues := s.resolveFlows(design.ProjectID, graph, checker)
+	issues = append(issues, flowIssues...)
+	flows := flowGraphs(resolved)
 	if !agentgraph.Runnable(issues) {
-		return designRun{}, "", 422, &runStartError{code: "graph_not_runnable", message: "Fix the validation errors before running.", issues: issues}
+		return designRun{}, "", nil, 422, &runStartError{code: "graph_not_runnable", message: "Fix the validation errors before running.", issues: issues}
 	}
 	if len(caller.idempotencyKey) > 128 {
-		return designRun{}, "", 422, &runStartError{code: "validation_error", message: "Idempotency-Key can have at most 128 characters."}
+		return designRun{}, "", nil, 422, &runStartError{code: "validation_error", message: "Idempotency-Key can have at most 128 characters."}
 	}
 	subject := caller.principal.Subject
 	if caller.idempotencyKey != "" {
 		for _, existing := range store.ListDocs[designRun](s.store, designRunKind) {
 			if existing.DesignID == design.ID && existing.Subject == subject && existing.IdempotencyKey == caller.idempotencyKey {
-				return existing, "", 200, nil
+				return existing, "", nil, 200, nil
 			}
 		}
 	}
 	hash, err := agentgraph.Hash(graph)
 	if err != nil {
-		return designRun{}, "", 500, err
+		return designRun{}, "", nil, 500, err
 	}
 	id, err := newOpaqueID("agr-")
 	if err != nil {
-		return designRun{}, "", 500, err
+		return designRun{}, "", nil, 500, err
 	}
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
-		return designRun{}, "", 500, err
+		return designRun{}, "", nil, 500, err
 	}
 	token := hex.EncodeToString(secret)
 	now := time.Now().UTC()
@@ -346,12 +350,12 @@ func (s *Server) prepareDesignRun(caller runCaller, design agentDesign, graph ag
 		return run, nil
 	}, "agent_design_run.started", caller.actor)
 	if err != nil {
-		return designRun{}, "", 500, err
+		return designRun{}, "", nil, 500, err
 	}
 	if mode == "playground" {
 		s.pruneDesignRuns(design.ID, caller.actor)
 	}
-	return saved, token, 202, nil
+	return saved, token, flows, 202, nil
 }
 
 func (d *designRunner) track(id string, cancel context.CancelFunc) {
@@ -387,13 +391,14 @@ func (s *Server) pruneDesignRuns(designID, actorName string) {
 }
 
 type runnerPayload struct {
-	RunID            string           `json:"run_id"`
-	Graph            agentgraph.Graph `json:"graph"`
-	Input            string           `json:"input"`
-	SessionID        string           `json:"session_id"`
-	History          []designTurn     `json:"history"`
-	AllowSideEffects bool             `json:"allow_side_effects"`
-	StopAfter        string           `json:"stop_after,omitempty"`
+	RunID            string                      `json:"run_id"`
+	Graph            agentgraph.Graph            `json:"graph"`
+	Input            string                      `json:"input"`
+	SessionID        string                      `json:"session_id"`
+	History          []designTurn                `json:"history"`
+	AllowSideEffects bool                        `json:"allow_side_effects"`
+	StopAfter        string                      `json:"stop_after,omitempty"`
+	Subflows         map[string]agentgraph.Graph `json:"subflows,omitempty"`
 	Gateway          struct {
 		URL      string `json:"url"`
 		RunToken string `json:"run_token"`
@@ -417,7 +422,7 @@ type runEventHead struct {
 
 // executeDesignRun streams the runner's NDJSON events into the run record.
 // It returns the final run so evaluations can score it synchronously.
-func (s *Server) executeDesignRun(ctx context.Context, run designRun, graph agentgraph.Graph, history []designTurn, token string) designRun {
+func (s *Server) executeDesignRun(ctx context.Context, run designRun, graph agentgraph.Graph, flows map[string]agentgraph.Graph, history []designTurn, token string) designRun {
 	started := time.Now()
 	var mu, flushMu sync.Mutex
 	pending := []json.RawMessage{}
@@ -514,7 +519,7 @@ func (s *Server) executeDesignRun(ctx context.Context, run designRun, graph agen
 		raw, _ := json.Marshal(event)
 		record(raw)
 	}
-	err := s.streamFromRunner(ctx, run, graph, history, token, record)
+	err := s.streamFromRunner(ctx, run, graph, flows, history, token, record)
 	close(stopWatch)
 	mu.Lock()
 	finished := final.Status != "running"
@@ -543,8 +548,8 @@ func (s *Server) executeDesignRun(ctx context.Context, run designRun, graph agen
 	return final
 }
 
-func (s *Server) streamFromRunner(ctx context.Context, run designRun, graph agentgraph.Graph, history []designTurn, token string, emit func([]byte)) error {
-	payload := runnerPayload{RunID: run.ID, Graph: graph, Input: run.Input, SessionID: run.SessionID, History: history, AllowSideEffects: run.AllowSideEffects, StopAfter: run.StopAfter}
+func (s *Server) streamFromRunner(ctx context.Context, run designRun, graph agentgraph.Graph, flows map[string]agentgraph.Graph, history []designTurn, token string, emit func([]byte)) error {
+	payload := runnerPayload{RunID: run.ID, Graph: graph, Input: run.Input, SessionID: run.SessionID, History: history, AllowSideEffects: run.AllowSideEffects, StopAfter: run.StopAfter, Subflows: flows}
 	if payload.History == nil {
 		payload.History = []designTurn{}
 	}

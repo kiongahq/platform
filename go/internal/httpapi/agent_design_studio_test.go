@@ -615,3 +615,57 @@ func TestRunCredentialKeepsProfilelessAdministratorRole(t *testing.T) {
 		t.Fatalf("administrator's resource callback was denied: %v", s.callbacks)
 	}
 }
+
+func subflowDesign(version string) string {
+	return fmt.Sprintf(`{"project_id":"prj-demo","name":"Parent","revision":0,"nodes":[
+{"id":"input","kind":"input","name":"In","x":0,"y":0},
+{"id":"s","kind":"subflow","name":"S","x":200,"y":0,"config":{"subflow":%q}},
+{"id":"output","kind":"output","name":"Out","x":400,"y":0}],
+"edges":[{"from":"input","to":"s"},{"from":"s","to":"output"}]}`, version)
+}
+
+// Nested versions reach the runner with the run, are embedded in the
+// published artifact, and must belong to the project and stay shallow.
+func TestFlowsResolveIntoRunsAndArtifacts(t *testing.T) {
+	s := newStudio(t)
+	child := s.create(runnableDesign)
+	leaf := decodeInto[agentVersion](t, s.do("POST", "/api/v1/agent-designs/"+child.ID+"/publish", `{"revision":1}`))
+	parent := s.create(subflowDesign(leaf.ID))
+	run := s.waitRun(parent.ID, decodeInto[designRun](t, s.do("POST", "/api/v1/agent-designs/"+parent.ID+"/runs", `{"input":"hi"}`)).ID)
+	if run.Status != "succeeded" {
+		t.Fatalf("run: %+v", run)
+	}
+	s.mu.Lock()
+	payload := s.payloads[len(s.payloads)-1]
+	s.mu.Unlock()
+	if _, ok := payload.Subflows[leaf.ID]; !ok || len(payload.Subflows) != 1 {
+		t.Fatalf("runner did not receive the nested version: %v", payload.Subflows)
+	}
+	published := decodeInto[agentVersion](t, s.do("POST", "/api/v1/agent-designs/"+parent.ID+"/publish", `{"revision":1}`))
+	if flow := published.Subflows[leaf.ID]; flow.ContentSHA256 != leaf.ContentSHA256 || len(flow.Graph.Nodes) != 4 {
+		t.Fatalf("artifact subflows: %+v", published.Subflows)
+	}
+
+	// Chain parent → middle → leaf is three levels; one more is refused.
+	middle := decodeInto[agentVersion](t, s.do("POST", "/api/v1/agent-designs/"+parent.ID+"/publish", `{"revision":1}`))
+	top := s.create(subflowDesign(middle.ID))
+	topVersion := decodeInto[agentVersion](t, s.do("POST", "/api/v1/agent-designs/"+top.ID+"/publish", `{"revision":1}`))
+	if len(topVersion.Subflows) != 2 {
+		t.Fatalf("three levels should publish with both nested versions: %+v", topVersion.Subflows)
+	}
+	tooDeep := s.create(subflowDesign(topVersion.ID))
+	validation := s.do("POST", "/api/v1/agent-designs/"+tooDeep.ID+"/validate", "")
+	if !strings.Contains(validation.Body.String(), "at most 3 levels") || !strings.Contains(validation.Body.String(), `"runnable":false`) {
+		t.Fatalf("four levels accepted: %s", validation.Body.String())
+	}
+
+	foreign := agentVersion{ID: "agv-" + strings.Repeat("f", 24), DesignID: "agd-x", ProjectID: "prj-other", Version: 1, Graph: published.Graph}
+	_, _ = store.UpdateDoc(s.repo, agentVersionKind, foreign.ID, func(agentVersion, bool) (agentVersion, error) { return foreign, nil }, "", "test")
+	for _, ref := range []string{foreign.ID, "agv-" + strings.Repeat("0", 24)} {
+		bad := s.create(subflowDesign(ref))
+		blocked := s.do("POST", "/api/v1/agent-designs/"+bad.ID+"/runs", `{"input":"x"}`)
+		if blocked.Code != 422 {
+			t.Fatalf("%s: a version outside the project ran: %d %s", ref, blocked.Code, blocked.Body.String())
+		}
+	}
+}

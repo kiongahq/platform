@@ -275,7 +275,7 @@ func TestErrorPortsAndExtract(t *testing.T) {
 	if Runnable(registry.Validate(graph, nil)) {
 		t.Fatal("input has no error port")
 	}
-	if registry.Version != "1.1.0" || registry.ErrorPort == "" {
+	if registry.Component("extract") == nil || registry.ErrorPort == "" {
 		t.Fatalf("registry %s", registry.Version)
 	}
 }

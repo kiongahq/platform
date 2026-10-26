@@ -56,6 +56,8 @@ type agentVersion struct {
 	Notes           string             `json:"notes,omitempty"`
 	Runtime         versionRuntime     `json:"runtime"`
 	Evaluation      *versionEvaluation `json:"evaluation,omitempty"`
+	// Subflows embeds every nested version, pinned at publish time.
+	Subflows map[string]resolvedFlow `json:"subflows,omitempty"`
 }
 
 type fixtureCase struct {
@@ -123,6 +125,9 @@ func (s *Server) resourceCheckerFor(value auth.Principal, projectID string) agen
 		case "connection":
 			connection, err := store.GetDoc[agentAPIConnection](s.store, agentConnectionKind, id)
 			return err == nil && connection.ProjectID == projectID
+		case "agent_version":
+			version, err := store.GetDoc[agentVersion](s.store, agentVersionKind, id)
+			return err == nil && version.ProjectID == projectID
 		}
 		return false
 	}
@@ -136,7 +141,10 @@ type validateDesignRequest struct {
 }
 
 func (s *Server) validationResult(r *http.Request, projectID string, graph agentgraph.Graph) map[string]any {
-	issues := agentgraph.Default().Validate(graph, s.designResourceChecker(r, projectID))
+	checker := s.designResourceChecker(r, projectID)
+	issues := agentgraph.Default().Validate(graph, checker)
+	_, flowIssues := s.resolveFlows(projectID, graph, checker)
+	issues = append(issues, flowIssues...)
 	hash, _ := agentgraph.Hash(graph)
 	return map[string]any{"runnable": agentgraph.Runnable(issues), "issues": issues, "content_sha256": hash, "graph": graph}
 }
@@ -265,7 +273,10 @@ func (s *Server) publishDesign(w http.ResponseWriter, r *http.Request) {
 	}
 	graph, revision, _ := designRevisionGraph(design, 0)
 	graph.Name, graph.Description = design.Name, design.Description
-	issues := agentgraph.Default().Validate(graph, s.designResourceChecker(r, design.ProjectID))
+	checker := s.designResourceChecker(r, design.ProjectID)
+	issues := agentgraph.Default().Validate(graph, checker)
+	flows, flowIssues := s.resolveFlows(design.ProjectID, graph, checker)
+	issues = append(issues, flowIssues...)
 	if !agentgraph.Runnable(issues) {
 		writeJSON(w, 422, map[string]any{"error": "graph_not_runnable", "message": "Fix the validation errors before publishing.", "issues": issues})
 		return
@@ -314,6 +325,9 @@ func (s *Server) publishDesign(w http.ResponseWriter, r *http.Request) {
 	item := agentVersion{ArtifactVersion: 1, ID: id, DesignID: design.ID, ProjectID: design.ProjectID, Version: next, ContentSHA256: hash,
 		RegistryVersion: agentgraph.Default().Version, Graph: graph, SourceRevision: revision, Author: principal(r).Subject,
 		CreatedAt: time.Now().UTC(), Notes: strings.TrimSpace(req.Notes), Runtime: versionRuntime{GraphModule: nativeGraphModule, Image: nativeAgentImage()}, Evaluation: evaluation}
+	if len(flows) > 0 {
+		item.Subflows = flows
+	}
 	saved, err := store.UpdateDoc(s.store, agentVersionKind, id, func(_ agentVersion, exists bool) (agentVersion, error) {
 		if exists {
 			return agentVersion{}, store.ErrConflict
@@ -365,7 +379,16 @@ func (s *Server) deployVersion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "managed_runtime_unavailable", "KIONGA_NATIVE_AGENT_IMAGE is not configured")
 		return
 	}
-	issues := agentgraph.Default().Validate(version.Graph, s.designResourceChecker(r, version.ProjectID))
+	checker := s.designResourceChecker(r, version.ProjectID)
+	issues := agentgraph.Default().Validate(version.Graph, checker)
+	for id, flow := range version.Subflows {
+		for _, issue := range agentgraph.Default().Validate(flow.Graph, checker) {
+			if issue.Severity == agentgraph.SeverityError {
+				issue.Message = id + ": " + issue.Message
+				issues = append(issues, issue)
+			}
+		}
+	}
 	if !agentgraph.Runnable(issues) {
 		writeJSON(w, 422, map[string]any{"error": "graph_not_runnable", "message": "A resource this version uses is no longer available to the project.", "issues": issues})
 		return
