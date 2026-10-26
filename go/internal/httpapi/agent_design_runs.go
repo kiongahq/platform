@@ -56,6 +56,17 @@ var runResourceRoutes = []*regexp.Regexp{
 	regexp.MustCompile(`^GET /api/v1/knowledge-bases$`),
 	regexp.MustCompile(`^POST /api/v1/knowledge-bases/[^/]+/search$`),
 	regexp.MustCompile(`^GET /api/v1/datasets/[^/]+/object$`),
+	regexp.MustCompile(`^POST /api/v1/agent-approvals$`),
+	regexp.MustCompile(`^GET /api/v1/agent-approvals/apr-[a-f0-9]{24}$`),
+}
+
+type runIDKey struct{}
+
+// verifiedRunID is the run a designer run credential belongs to, set only by
+// DesignerRunIdentity after the token is checked (never from a header).
+func verifiedRunID(r *http.Request) string {
+	id, _ := r.Context().Value(runIDKey{}).(string)
+	return id
 }
 
 type designTurn struct {
@@ -812,6 +823,7 @@ func DesignerRunIdentity(next, api http.Handler, docs store.Documents) http.Hand
 			roles = []string{auth.RoleUser}
 		}
 		value := auth.Principal{Subject: run.Subject, Roles: roles, Credential: designRunCredential, WorkspaceProjectID: run.ProjectID}
-		api.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), value)))
+		ctx := context.WithValue(auth.WithPrincipal(r.Context(), value), runIDKey{}, run.ID)
+		api.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

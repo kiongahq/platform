@@ -669,3 +669,83 @@ func TestFlowsResolveIntoRunsAndArtifacts(t *testing.T) {
 		}
 	}
 }
+
+// Approvals: only the requesting run may create one for itself, only a
+// signed-in person may decide it, and decisions are final.
+func TestApprovalLifecycleAndAuthority(t *testing.T) {
+	s := newStudio(t)
+	design := s.create(runnableDesign)
+	run := decodeInto[designRun](t, s.do("POST", "/api/v1/agent-designs/"+design.ID+"/runs", `{"input":"block"}`))
+	var token string
+	for deadline := time.Now().Add(3 * time.Second); token == "" && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		s.mu.Lock()
+		if len(s.payloads) > 0 {
+			token = s.payloads[0].Gateway.RunToken
+		}
+		s.mu.Unlock()
+	}
+	machine := func(method, path, body string) *http.Response {
+		request, _ := http.NewRequest(method, s.internal.URL+path, strings.NewReader(body))
+		request.Header.Set("X-Kionga-Run-ID", run.ID)
+		request.Header.Set("X-Kionga-Run-Token", token)
+		request.Header.Set("Content-Type", "application/json")
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response
+	}
+	if response := machine("POST", "/api/v1/agent-approvals", fmt.Sprintf(`{"run_id":"agr-%s","node_id":"ok","message":"m","timeout_seconds":60}`, strings.Repeat("0", 24))); response.StatusCode != 403 {
+		t.Fatalf("a run requested an approval for another run: %d", response.StatusCode)
+	}
+	response := machine("POST", "/api/v1/agent-approvals", fmt.Sprintf(`{"run_id":%q,"node_id":"ok","message":"Send it? token=hunter2","timeout_seconds":60}`, run.ID))
+	if response.StatusCode != 201 {
+		t.Fatalf("create: %d", response.StatusCode)
+	}
+	var created agentApproval
+	_ = json.NewDecoder(response.Body).Decode(&created)
+	response.Body.Close()
+	if created.ProjectID != "prj-demo" || created.Status != "pending" || strings.Contains(created.Message, "hunter2") {
+		t.Fatalf("approval: %+v", created)
+	}
+	if response := machine("POST", "/api/v1/agent-approvals/"+created.ID+"/decision", `{"decision":"approve"}`); response.StatusCode != 403 {
+		t.Fatalf("the run route allowlist must stop self-approval: %d", response.StatusCode)
+	}
+	pending := s.do("GET", "/api/v1/agent-approvals?status=pending&project_id=prj-demo", "")
+	if !strings.Contains(pending.Body.String(), created.ID) {
+		t.Fatalf("pending list: %s", pending.Body.String())
+	}
+	if bad := s.do("POST", "/api/v1/agent-approvals/"+created.ID+"/decision", `{"decision":"maybe"}`); bad.Code != 422 {
+		t.Fatalf("invalid decision: %d", bad.Code)
+	}
+	decided := s.do("POST", "/api/v1/agent-approvals/"+created.ID+"/decision", `{"decision":"approve","comment":"looks right"}`)
+	if decided.Code != 200 || decodeInto[agentApproval](t, decided).DecidedBy != "user-1" {
+		t.Fatalf("decide: %d %s", decided.Code, decided.Body.String())
+	}
+	if again := s.do("POST", "/api/v1/agent-approvals/"+created.ID+"/decision", `{"decision":"reject"}`); again.Code != 409 {
+		t.Fatalf("a decision was overwritten: %d", again.Code)
+	}
+	polled := machine("GET", "/api/v1/agent-approvals/"+created.ID, "")
+	var seen agentApproval
+	_ = json.NewDecoder(polled.Body).Decode(&seen)
+	polled.Body.Close()
+	if seen.Status != "approved" {
+		t.Fatalf("the run cannot read its decision: %+v", seen)
+	}
+	if direct := s.do("POST", "/api/v1/agent-approvals", `{"node_id":"ok","message":"m","timeout_seconds":60}`); direct.Code != 403 {
+		t.Fatalf("a person created a machine approval: %d", direct.Code)
+	}
+	expired := agentApproval{ID: "apr-" + strings.Repeat("e", 24), ProjectID: "prj-demo", NodeID: "ok", Status: "pending", ExpiresAt: time.Now().Add(-time.Second)}
+	_, _ = store.UpdateDoc(s.repo, agentApprovalKind, expired.ID, func(agentApproval, bool) (agentApproval, error) { return expired, nil }, "", "test")
+	if late := s.do("POST", "/api/v1/agent-approvals/"+expired.ID+"/decision", `{"decision":"approve"}`); late.Code != 409 {
+		t.Fatalf("an expired request was approved: %d", late.Code)
+	}
+	outsider := httptest.NewRequest("GET", "/api/v1/agent-approvals/"+created.ID, nil)
+	outsider = outsider.WithContext(auth.WithPrincipal(outsider.Context(), auth.Principal{Subject: "user-2", Roles: []string{auth.RoleUser}, Provisioned: true, Services: []string{"agents"}, ProjectIDs: []string{"prj-other"}}))
+	recorder := httptest.NewRecorder()
+	s.api.ServeHTTP(recorder, outsider)
+	if recorder.Code != 404 {
+		t.Fatalf("another tenant read the approval: %d", recorder.Code)
+	}
+	s.do("POST", "/api/v1/agent-designs/"+design.ID+"/runs/"+run.ID+"/cancel", "")
+}
