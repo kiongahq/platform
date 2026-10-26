@@ -359,3 +359,56 @@ test('playground streams tokens and decides approvals in the chat', async () => 
   assert.equal(d.querySelector('.design-chat-turn.streaming'), null, 'the final reply replaces the streaming bubble');
   w.close(); // stops the playground's polling timer
 });
+
+test('test cases carry judge criteria, required calls and tags; results show scores, slices and reviews', async () => {
+  const evaluation = {id: 'age-' + '5'.repeat(24), design_id: saved.id, project_id: 'p1', status: 'completed', gate: 0.5, pass_rate: 0.5, passed: true,
+    revision: 3, case_count: 2, completed: 2, p95_latency_ms: 10, cost_usd: 0.01, input_tokens: 1, output_tokens: 1, created_at: '2026-10-27T00:00:00Z',
+    content_sha256: 'a'.repeat(64), failure_reasons: {low_safety: 1}, judge_scores: {groundedness: 0.9, safety: 0.4}, tool_accuracy: 1,
+    judge: {backend: 'openai', model: 'judge-x', rubric_version: '1'},
+    slices: [{tag: 'billing', cases: 2, passed: 1, pass_rate: 0.5, judge_scores: {groundedness: 0.9}}],
+    cases: [{id: 'judged', input: 'q', expected: {judge: {criteria: ['groundedness', 'safety'], min_score: 0.5}}, status: 'succeeded', passed: false,
+             failures: ['low_safety: 0.40 < 0.50'], judge: {groundedness: {score: 0.9, reason: 'supported'}, safety: {score: 0.4, reason: 'rude'}}, duration_ms: 3},
+            {id: 'calls', input: 'q', expected: {calls: ['lookup']}, status: 'succeeded', passed: true, tool_accuracy: 1, duration_ms: 3}]};
+  const reviewed = {...evaluation, cases: [{...evaluation.cases[0], review: {status: 'needs_changes', reviewer: 'user-1', note: 'tone'}}, evaluation.cases[1]]};
+  const {d, w} = studioApp({
+    '/api/v1/agent-designs': {items: [saved]},
+    [`/api/v1/agent-designs/${saved.id}/fixtures`]: {design_id: saved.id, revision: 2, cases: [{id: 'c1', input: 'hello', expected: {}}]},
+    [`PUT /api/v1/agent-designs/${saved.id}/fixtures`]: options => ({...JSON.parse(options.body), design_id: saved.id, revision: 3}),
+    [`/api/v1/agent-designs/${saved.id}/evaluations`]: {items: [{...evaluation, cases: null}]},
+    [`/api/v1/agent-designs/${saved.id}/versions`]: {items: []},
+    [`/api/v1/agent-evaluations/${evaluation.id}`]: evaluation,
+    [`POST /api/v1/agent-evaluations/${evaluation.id}/cases/judged/review`]: reviewed,
+  });
+  w.prompt = () => 'tone';
+  await tick();
+  d.querySelector('#design-list').value = saved.id;
+  d.querySelector('#design-list').dispatchEvent(new w.Event('change', {bubbles: true}));
+  d.querySelector('[data-design-tab="tests"]').click();
+  await tick();
+  const set = (field, value) => { const input = d.querySelector(`[data-case-field="${field}"]`); input.value = value; input.dispatchEvent(new w.Event('input', {bubbles: true})); };
+  set('judge_criteria', 'groundedness, safety');
+  set('judge_min', '0.6');
+  set('calls', 'lookup');
+  set('tags', 'billing, vip');
+  d.querySelector('#design-case-save').click();
+  await tick();
+  const sent = JSON.parse(w.__bodies.find(item => item.path.endsWith('/fixtures')).body).cases[0];
+  assert.deepEqual(sent.expected, {judge: {criteria: ['groundedness', 'safety'], min_score: 0.6}, calls: ['lookup']});
+  assert.deepEqual(sent.tags, ['billing', 'vip']);
+
+  d.querySelector('[data-design-tab="evaluations"]').click();
+  await tick();
+  assert.match(d.querySelector('#design-evaluations').textContent, /groundedness 0\.90, safety 0\.40/);
+  d.querySelector(`[data-eval-view="${evaluation.id}"]`).click();
+  await tick(60);
+  const detail = d.querySelector('#design-eval-detail').textContent;
+  assert.match(detail, /judged by openai\/judge-x, rubric v1/);
+  assert.match(detail, /Results by tag/);
+  assert.match(detail, /safety 0\.40/);
+  const review = d.querySelector('[data-review-case="judged"]');
+  review.value = 'needs_changes';
+  review.dispatchEvent(new w.Event('change', {bubbles: true}));
+  await tick();
+  assert.deepEqual(JSON.parse(w.__bodies.find(item => item.path.endsWith('/review')).body), {status: 'needs_changes', note: 'tone'});
+  assert.match(d.querySelector('#design-eval-detail').textContent, /needs changes by user-1: tone/);
+});

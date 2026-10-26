@@ -1262,3 +1262,8 @@ tr.pass th, tr.pass td:first-child { box-shadow:inset 3px 0 var(--success, #1780
 .design-approval-actions input { flex:1 1 200px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .design-chat-turn.approval { background:#2a2214; } }
 :root[data-theme="dark"] .design-chat-turn.approval { background:#2a2214; }
+.design-score { display:inline-block; margin:2px 0; padding:1px 6px; border-radius:6px; font-size:.72rem; font-variant-numeric:tabular-nums;
+  background:color-mix(in srgb, var(--success, #1c7c3a) calc(var(--score) * 100%), var(--danger, #c4261d)); color:#fff; }
+.design-heat { font-variant-numeric:tabular-nums; background:color-mix(in srgb, var(--success-soft, #e7f5ec) calc(var(--score) * 100%), var(--danger-soft, #fdecea)); }
+.design-slices th, .design-slices td { text-align:center; }
+.design-case-table input[type="number"] { min-width:70px; }
