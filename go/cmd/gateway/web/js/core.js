@@ -298,6 +298,11 @@ async function showView(id, options = {}) {
   if (!viewLoaders[id]) id = "profile";
   const blocked = canOpenView(id);
   if (blocked) { toast(blocked, "error"); return; }
+  if ((id !== activeView || (options.project !== undefined && options.project !== selectedProject)) && viewMeta[activeView]?.beforeLeave && !viewMeta[activeView].beforeLeave()) {
+    syncProjectContext();
+    if (options.history === false) history.replaceState({}, "", routeURL(activeView, selectedResource));
+    return;
+  }
   if (options.project !== undefined) selectedProject = options.project;
   selectedResource = options.resource || "";
   activeView = id;
@@ -326,8 +331,7 @@ async function showView(id, options = {}) {
 /* navigateTo is the only way views hand off to each other. It carries the
  * project context and keeps the selector, URL and loaded data in agreement. */
 async function navigateTo(view, {project = selectedProject, resource = ""} = {}) {
-  selectedProject = project || "";
-  await showView(view, {project: selectedProject, resource});
+  await showView(view, {project: project || "", resource});
   loadWorkspaces().catch(() => {});
 }
 
@@ -527,8 +531,7 @@ document.querySelector("#project-context").addEventListener("change", event => n
 document.querySelector("#retry-view").addEventListener("click", () => initialized ? loadCurrentView() : initializeConsole());
 window.addEventListener("popstate", () => {
   const query = new URLSearchParams(location.search);
-  selectedProject = query.get("project") || "";
-  showView(query.get("view") || "overview", {history: false, resource: query.get("resource") || ""});
+  showView(query.get("view") || "overview", {history: false, project: query.get("project") || "", resource: query.get("resource") || ""});
 });
 document.querySelector("#account-button").addEventListener("click", () => showView("settings"));
 sidebarToggle.addEventListener("click", toggleSidebar);

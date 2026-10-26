@@ -64,7 +64,11 @@ Open **Agents → Agent designer** (or `/console.html?view=agent-designer`) to b
 an agent graph inside the Kionga console. Add prompt, model, tool, knowledge base,
 API call, condition, and memory nodes. Nodes can be saved on their own while a
 graph is being assembled. Connect their ports, drag nodes to arrange the canvas,
-or duplicate a selected node before saving a project-scoped design. The API
+or duplicate a selected node before saving a project-scoped design. Select a node
+and use arrow keys to move it (Shift moves it faster). The inspector lists each
+connection so it can be removed individually. The canvas reports disconnected
+nodes, checks basic fields before saving, and rejects cyclic links as they are
+made. The API
 persists the graph in the gateway's tenant-scoped document store and checks node
 identities, connections, cycles, and project access. Saves use a
 revision number to reject stale edits; the 20 most recent prior revisions can
