@@ -1,8 +1,9 @@
 /* Native Kionga agent graph drafts. Connections and positions are stored by
  * the platform API; the browser never stores credentials in the graph. */
-const agentDesignState = {draft: null, list: [], selected: "", connecting: "", connectingPort: "", dirty: false, saving: false, models: [], tools: [], knowledge: [], connections: [], datasets: [],
+const agentDesignState = {draft: null, list: [], selected: "", connecting: "", connectingPort: "", dirty: false, saving: false, models: [], tools: [], knowledge: [], connections: [], datasets: [], versions: [],
   registry: null, templates: [], zoom: 1, multi: new Set(), clipboard: null, undo: [], redo: [], baseline: "", lastMark: 0, issues: [], nodeStatus: {}};
-const designKinds = {input: "Input", prompt: "Prompt", model: "Model", tool: "Tool", knowledge: "Knowledge base", api: "API call", condition: "Condition", memory: "Memory", storage: "Dataset object", extract: "Extract field", output: "Output"};
+const designKinds = {input: "Input", prompt: "Prompt", model: "Model", tool: "Tool", knowledge: "Knowledge base", api: "API call", condition: "Condition", memory: "Memory", storage: "Dataset object", extract: "Extract field",
+  router: "Router", join: "Join", map: "Map", loop: "Bounded loop", subflow: "Subflow", approval: "Human approval", output: "Output"};
 function designComponent(kind) { return agentDesignState.registry?.components?.find(item => item.kind === kind) || null; }
 // Output ports come from the registry (condition true/false, error ports on
 // nodes that call resources); the fallback keeps the canvas usable without it.
@@ -15,7 +16,16 @@ function designEdgePort(edge) {
   const node = agentDesignState.draft?.nodes.find(item => item.id === edge.from);
   return edge.from_port || (node ? designOutPorts(node)[0] : "out") || "out";
 }
-function designPortLabel(port) { return port === "true" ? "T" : port === "false" ? "F" : port === "error" ? "!" : ""; }
+const designPortLabels = {true: "T", false: "F", error: "!", default: "D", approved: "✓", rejected: "✗", exhausted: "E",
+  route_1: "1", route_2: "2", route_3: "3", route_4: "4", out: "→"};
+function designPortLabel(port) { return designPortLabels[port] || ""; }
+// Nodes grow so every output port gets its own row (router has five).
+function designHeight(node) { return Math.max(88, designOutPorts(node).length * 24 + 16); }
+function designPortOffset(node, port) {
+  const ports = designOutPorts(node), height = designHeight(node);
+  if (ports.length <= 1) return height / 2;
+  return Math.round((height / ports.length) * (Math.max(0, ports.indexOf(port)) + 0.5));
+}
 const designNodeWidth = 190, designNodeHeight = 88, designGrid = 20;
 // Snapping rounds positions to the 20 px grid drawn on the canvas.
 function designSnap(value) { return document.querySelector("#design-snap")?.checked ? Math.round(value / designGrid) * designGrid : value; }
@@ -163,7 +173,7 @@ function designDeleteSelection() {
 function designRenderCanvasBounds() {
   const nodes = agentDesignState.draft?.nodes || [];
   const width = Math.max(2000, ...nodes.map(node => Number(node.x) + designNodeWidth + 100));
-  const height = Math.max(1300, ...nodes.map(node => Number(node.y) + designNodeHeight + 100));
+  const height = Math.max(1300, ...nodes.map(node => Number(node.y) + designHeight(node) + 100));
   const canvas = document.querySelector("#design-canvas"), edges = document.querySelector("#design-edges");
   canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
   edges.setAttribute("width", String(width)); edges.setAttribute("height", String(height));
@@ -176,7 +186,7 @@ function designRenderMinimap() {
   const width = parseFloat(canvas.style.width) || 2000, height = parseFloat(canvas.style.height) || 1300, zoom = agentDesignState.zoom;
   map.setAttribute("viewBox", `0 0 ${width} ${height}`);
   const view = {x: scroller.scrollLeft / zoom, y: scroller.scrollTop / zoom, w: (scroller.clientWidth || width * zoom) / zoom, h: (scroller.clientHeight || height * zoom) / zoom};
-  map.innerHTML = draft.nodes.map(node => `<rect class="minimap-node ${node.id === agentDesignState.selected ? "selected" : ""}" x="${Number(node.x)}" y="${Number(node.y)}" width="${designNodeWidth}" height="${designNodeHeight}" rx="12"></rect>`).join("")
+  map.innerHTML = draft.nodes.map(node => `<rect class="minimap-node ${node.id === agentDesignState.selected ? "selected" : ""}" x="${Number(node.x)}" y="${Number(node.y)}" width="${designNodeWidth}" height="${designHeight(node)}" rx="12"></rect>`).join("")
     + `<rect class="minimap-view" x="${view.x}" y="${view.y}" width="${view.w}" height="${view.h}"></rect>`;
 }
 function designRender() {
@@ -205,10 +215,10 @@ function designRender() {
   document.querySelector("#design-nodes").innerHTML = draft.nodes.map(node => {
     const issues = issuesByNode[node.id] || [], errors = issues.filter(item => item.severity === "error").length, status = agentDesignState.nodeStatus[node.id];
     const ports = designOutPorts(node);
-    return `<div class="design-node ${node.id === agentDesignState.selected ? "selected" : ""} ${agentDesignState.multi.has(node.id) ? "multi" : ""} ${errors ? "has-error" : issues.length ? "has-warning" : ""} ${status ? `run-${escapeHTML(status)}` : ""}" style="left:${Number(node.x)}px;top:${Number(node.y)}px" data-design-node="${escapeHTML(node.id)}">
+    return `<div class="design-node ${node.id === agentDesignState.selected ? "selected" : ""} ${agentDesignState.multi.has(node.id) ? "multi" : ""} ${errors ? "has-error" : issues.length ? "has-warning" : ""} ${status ? `run-${escapeHTML(status)}` : ""}" style="left:${Number(node.x)}px;top:${Number(node.y)}px;height:${designHeight(node)}px" data-design-node="${escapeHTML(node.id)}">
     ${node.kind !== "input" ? `<button class="design-port in" type="button" data-design-in="${escapeHTML(node.id)}" aria-label="Connect to ${escapeHTML(node.name)}" title="Connect here"></button>` : ""}
     <button type="button" class="design-node-body" data-design-select="${escapeHTML(node.id)}" aria-label="${escapeHTML(node.name)} ${escapeHTML(designKinds[node.kind] || node.kind)} node${errors ? `, ${errors} validation error${errors === 1 ? "" : "s"}` : ""}${status ? `, last run ${escapeHTML(status)}` : ""}"><span class="design-kind">${escapeHTML(designKinds[node.kind] || node.kind)}${node.group ? ` · ${escapeHTML(node.group)}` : ""}</span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(node.id)}</small>${errors || issues.length ? `<span class="design-badge ${errors ? "error" : "warning"}" aria-hidden="true">${errors || issues.length}</span>` : ""}${status ? `<span class="design-run-dot" aria-hidden="true"></span>` : ""}</button>
-    ${ports.map((port, index) => `<button class="design-port out ${ports.length > 1 ? `branch branch-${port}` : ""} ${agentDesignState.connecting === node.id && (agentDesignState.connectingPort || ports[0]) === port ? "pending" : ""}" style="${ports.length > 1 ? `top:${index ? 64 : 18}px` : ""}" type="button" data-design-out="${escapeHTML(node.id)}" data-design-port="${port}" aria-label="Connect from ${escapeHTML(node.name)}${ports.length > 1 ? (port === "error" ? " when it fails" : port === "out" ? "" : ` when ${port}`) : ""}" title="${port === "error" ? "Connect a fallback for failures" : ports.length > 1 ? `Connect the ${port} branch` : "Connect from here"}">${ports.length > 1 ? designPortLabel(port) : ""}</button>`).join("")}
+    ${ports.map((port, index) => `<button class="design-port out ${ports.length > 1 ? `branch branch-${port}` : ""} ${agentDesignState.connecting === node.id && (agentDesignState.connectingPort || ports[0]) === port ? "pending" : ""}" style="${ports.length > 1 ? `top:${designPortOffset(node, port) - 11}px` : ""}" type="button" data-design-out="${escapeHTML(node.id)}" data-design-port="${port}" aria-label="Connect from ${escapeHTML(node.name)}${ports.length > 1 ? (port === "error" ? " when it fails" : port === "out" ? "" : ` when ${port}`) : ""}" title="${port === "error" ? "Connect a fallback for failures" : ports.length > 1 ? `Connect the ${port} branch` : "Connect from here"}">${ports.length > 1 ? designPortLabel(port) : ""}</button>`).join("")}
   </div>`;
   }).join("");
   designRenderInspector();
@@ -219,9 +229,7 @@ function designRender() {
   designUpdateStatus();
 }
 function designEdgePath(from, to, port) {
-  const ports = designOutPorts(from);
-  const offset = ports.length > 1 ? (ports.indexOf(port) > 0 ? 73 : 27) : designNodeHeight / 2;
-  const x1 = from.x + designNodeWidth, y1 = from.y + offset, x2 = to.x, y2 = to.y + designNodeHeight / 2;
+  const x1 = from.x + designNodeWidth, y1 = from.y + designPortOffset(from, port), x2 = to.x, y2 = to.y + designHeight(to) / 2;
   return `M ${x1} ${y1} C ${x1 + 75} ${y1}, ${x2 - 75} ${y2}, ${x2} ${y2}`;
 }
 // Resource choices come from the project's permitted resources only; the
@@ -233,6 +241,8 @@ function designResourceOptions(resource, projectID) {
   if (resource === "knowledge_base") return own(agentDesignState.knowledge).map(item => ({value: item.id, label: `${item.name} (${item.backend}, ${item.dimensions}d)`}));
   if (resource === "dataset") return own(agentDesignState.datasets).map(item => ({value: item.id, label: item.name || item.id}));
   if (resource === "connection") return own(agentDesignState.connections).map(item => ({value: item.id, label: item.name}));
+  if (resource === "agent_version") return own(agentDesignState.versions).filter(item => item.design_id !== agentDesignState.draft?.id)
+    .map(item => ({value: item.id, label: `${item.design_name || item.design_id} v${item.version}${item.notes ? ` — ${item.notes}` : ""}`}));
   return [];
 }
 function designRegistryField(node, field) {
@@ -278,7 +288,7 @@ function designInspectorConnections(node) {
   return `<div class="design-connections"><h3>Connections</h3>${agentDesignState.draft.edges.map((edge, index) => ({edge,index})).filter(({edge}) => edge.from === node.id || edge.to === node.id).map(({edge,index}) => { const source = agentDesignState.draft.nodes.find(item => item.id === edge.from); const branch = source && designOutPorts(source).length > 1 ? ` (${designEdgePort(edge)})` : ""; return `<div class="design-connection"><span>${escapeHTML(edge.from)}${escapeHTML(branch)} → ${escapeHTML(edge.to)}</span><button type="button" data-design-remove-edge="${index}" aria-label="Remove connection from ${escapeHTML(edge.from)} to ${escapeHTML(edge.to)}">Remove</button></div>`; }).join("") || '<p class="field-help">No connections yet.</p>'}</div>`;
 }
 async function loadAgentDesigner() {
-  const [data, models, tools, knowledge, connections, registry, templates, datasets] = await Promise.all([
+  const [data, models, tools, knowledge, connections, registry, templates, datasets, versions] = await Promise.all([
     api("/api/v1/agent-designs"),
     hasService("models") ? api("/api/v1/models").catch(() => ({items: []})) : Promise.resolve({items: []}),
     hasService("catalog") ? api("/api/v1/tools").catch(() => ({items: []})) : Promise.resolve({items: []}),
@@ -287,7 +297,9 @@ async function loadAgentDesigner() {
     agentDesignState.registry ? Promise.resolve(agentDesignState.registry) : api("/api/v1/agent-designs/components").catch(() => null),
     agentDesignState.templates.length ? Promise.resolve({items: agentDesignState.templates}) : api("/api/v1/agent-designs/templates").catch(() => ({items: []})),
     api("/api/v1/datasets").catch(() => ({items: []})),
+    api("/api/v1/agent-versions").catch(() => ({items: []})),
   ]);
+  agentDesignState.versions = versions?.items || [];
   agentDesignState.registry = registry?.components ? registry : null;
   agentDesignState.templates = templates?.items || [];
   agentDesignState.datasets = datasets?.items || [];
@@ -392,7 +404,7 @@ document.querySelector("#design-zoom-out").addEventListener("click", () => desig
 document.querySelector("#design-zoom-fit").addEventListener("click", () => {
   const nodes = agentDesignState.draft?.nodes || [], scroller = document.querySelector(".design-canvas-scroll");
   if (!nodes.length) return;
-  const width = Math.max(...nodes.map(node => node.x + designNodeWidth)) + 40, height = Math.max(...nodes.map(node => node.y + designNodeHeight)) + 40;
+  const width = Math.max(...nodes.map(node => node.x + designNodeWidth)) + 40, height = Math.max(...nodes.map(node => node.y + designHeight(node))) + 40;
   designSetZoom(Math.min((scroller.clientWidth || width) / width, (scroller.clientHeight || height) / height, 1));
   scroller.scrollTo?.(0, 0);
 });

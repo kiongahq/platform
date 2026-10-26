@@ -295,3 +295,25 @@ test('resource nodes expose an error port for fallback branches', async () => {
   d.querySelector('[data-design-add="extract"]').click();
   assert.match(d.querySelector('#design-inspector-content').textContent, /Field path/);
 });
+
+test('router gets a port per route and flows pick published versions', async () => {
+  const {d} = studioApp({'/api/v1/agent-versions': {items: [
+    {id: 'agv-' + '1'.repeat(24), design_id: 'agd-other', design_name: 'Refunds agent', project_id: 'p1', version: 2, notes: 'stable'},
+    {id: 'agv-' + '2'.repeat(24), design_id: 'agd-x', design_name: 'Elsewhere', project_id: 'p2', version: 1},
+  ]}});
+  await tick();
+  d.querySelector('[data-design-add="router"]').click();
+  const router = d.querySelector('.design-node.selected');
+  const ports = [...d.querySelectorAll(`[data-design-out="${router.dataset.designNode}"]`)];
+  assert.deepEqual(ports.map(port => port.textContent.trim()), ['1', '2', '3', '4', 'D']);
+  assert.ok(Number(router.style.height.replace('px', '')) > 88, 'the router is tall enough for five ports');
+  const tops = ports.map(port => Number(port.style.top.replace('px', '')));
+  assert.deepEqual([...tops].sort((a, b) => a - b), tops, 'ports are ordered top to bottom');
+  assert.equal(new Set(tops).size, 5, 'no two ports overlap');
+  d.querySelector('[data-design-add="subflow"]').click();
+  const options = [...d.querySelectorAll('select[data-design-config="subflow"] option')].map(option => option.textContent);
+  assert.deepEqual(options, ['Choose…', 'Refunds agent v2 — stable'], 'only this project\'s versions are offered');
+  d.querySelector('[data-design-add="approval"]').click();
+  const approval = d.querySelector('.design-node.selected').dataset.designNode;
+  assert.deepEqual([...d.querySelectorAll(`[data-design-out="${approval}"]`)].map(port => port.dataset.designPort), ['approved', 'rejected']);
+});
