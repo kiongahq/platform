@@ -429,6 +429,7 @@ func init() {
 		mux.HandleFunc("POST /api/v1/agent-designs/{id}/evaluations", s.createEvaluation)
 		mux.HandleFunc("POST /api/v1/agent-designs/{id}/publish", s.publishDesign)
 		mux.HandleFunc("GET /api/v1/agent-designs/{id}/versions", s.designVersions)
+		mux.HandleFunc("GET /api/v1/agent-versions", s.projectVersions)
 		mux.HandleFunc("GET /api/v1/agent-versions/{id}", s.agentVersionDetail)
 		mux.HandleFunc("POST /api/v1/agent-versions/{id}/deploy", s.deployVersion)
 		mux.HandleFunc("POST /api/v1/agent-versions/{id}/runs", s.runVersion)

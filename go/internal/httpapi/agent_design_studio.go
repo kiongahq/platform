@@ -216,6 +216,36 @@ func (s *Server) designVersions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"items": views, "total": len(views)})
 }
 
+// projectVersions lists published versions the caller can use as flows,
+// newest first, without their graphs.
+func (s *Server) projectVersions(w http.ResponseWriter, r *http.Request) {
+	projectID := r.URL.Query().Get("project_id")
+	designs := map[string]string{}
+	for _, design := range store.ListDocs[agentDesign](s.store, agentDesignKind) {
+		designs[design.ID] = design.Name
+	}
+	type summary struct {
+		ID            string    `json:"id"`
+		DesignID      string    `json:"design_id"`
+		DesignName    string    `json:"design_name"`
+		ProjectID     string    `json:"project_id"`
+		Version       int       `json:"version"`
+		ContentSHA256 string    `json:"content_sha256"`
+		Notes         string    `json:"notes,omitempty"`
+		CreatedAt     time.Time `json:"created_at"`
+	}
+	items := []summary{}
+	for _, version := range store.ListDocs[agentVersion](s.store, agentVersionKind) {
+		if !projectAllowed(s.store, principal(r), version.ProjectID) || (projectID != "" && version.ProjectID != projectID) {
+			continue
+		}
+		items = append(items, summary{ID: version.ID, DesignID: version.DesignID, DesignName: designs[version.DesignID], ProjectID: version.ProjectID,
+			Version: version.Version, ContentSHA256: version.ContentSHA256, Notes: version.Notes, CreatedAt: version.CreatedAt})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	writeJSON(w, 200, map[string]any{"items": items, "total": len(items)})
+}
+
 func versionsOf(docs store.Documents, designID string) []agentVersion {
 	items := []agentVersion{}
 	for _, item := range store.ListDocs[agentVersion](docs, agentVersionKind) {

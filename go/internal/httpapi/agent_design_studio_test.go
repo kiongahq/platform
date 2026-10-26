@@ -681,6 +681,10 @@ func TestFlowsResolveIntoRunsAndArtifacts(t *testing.T) {
 	if _, ok := payload.Subflows[leaf.ID]; !ok || len(payload.Subflows) != 1 {
 		t.Fatalf("runner did not receive the nested version: %v", payload.Subflows)
 	}
+	listed := s.do("GET", "/api/v1/agent-versions?project_id=prj-demo", "")
+	if !strings.Contains(listed.Body.String(), leaf.ID) || strings.Contains(listed.Body.String(), `"nodes"`) || !strings.Contains(listed.Body.String(), `"design_name":"Support agent"`) {
+		t.Fatalf("version list: %s", listed.Body.String())
+	}
 	published := decodeInto[agentVersion](t, s.do("POST", "/api/v1/agent-designs/"+parent.ID+"/publish", `{"revision":1}`))
 	if flow := published.Subflows[leaf.ID]; flow.ContentSHA256 != leaf.ContentSHA256 || len(flow.Graph.Nodes) != 4 {
 		t.Fatalf("artifact subflows: %+v", published.Subflows)
