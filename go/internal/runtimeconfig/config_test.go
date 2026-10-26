@@ -137,3 +137,26 @@ func TestProductionWorkspaceDomains(t *testing.T) {
 		t.Fatal("cross-site workspace configuration accepted")
 	}
 }
+
+// The Agent Designer runner token reaches the gateway as a mounted secret and
+// is refused in the non-secret config file.
+func TestDesignerRunnerTokenIsASecret(t *testing.T) {
+	path := t.TempDir() + "/runner-token"
+	if err := os.WriteFile(path, []byte("runner-token-from-a-secret-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KIONGA_AGENT_DESIGNER_RUNNER_TOKEN", "")
+	t.Setenv("KIONGA_AGENT_DESIGNER_RUNNER_TOKEN_FILE", path)
+	if err := Load(); err != nil || os.Getenv("KIONGA_AGENT_DESIGNER_RUNNER_TOKEN") != "runner-token-from-a-secret-file" {
+		t.Fatalf("Load() = %v, token %q", err, os.Getenv("KIONGA_AGENT_DESIGNER_RUNNER_TOKEN"))
+	}
+	t.Setenv("KIONGA_AGENT_DESIGNER_RUNNER_TOKEN_FILE", "")
+	config := t.TempDir() + "/config.json"
+	if err := os.WriteFile(config, []byte(`{"KIONGA_AGENT_DESIGNER_RUNNER_TOKEN":"inline"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KIONGA_CONFIG_FILE", config)
+	if err := Load(); err == nil {
+		t.Fatal("the runner token was accepted from the non-secret config file")
+	}
+}
