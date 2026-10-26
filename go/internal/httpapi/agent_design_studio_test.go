@@ -36,6 +36,35 @@ type studio struct {
 	mu        sync.Mutex
 	callbacks []int
 	payloads  []runnerPayload
+	judgeDown bool
+	judged    []map[string]any
+}
+
+// fakeJudge scores groundedness 0.9 and safety 0.4 so tests can see one
+// criterion pass and one fail a 0.5 minimum.
+func (s *studio) fakeJudge(w http.ResponseWriter, r *http.Request) {
+	var request map[string]any
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	s.mu.Lock()
+	s.judged = append(s.judged, request)
+	down := s.judgeDown
+	s.mu.Unlock()
+	if down {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(503)
+		_, _ = w.Write([]byte(`{"detail":{"error":"judge_unavailable","message":"the mock model cannot judge"}}`))
+		return
+	}
+	scores := map[string]any{}
+	for _, criterion := range request["criteria"].([]any) {
+		score := 0.9
+		if criterion == "safety" {
+			score = 0.4
+		}
+		scores[criterion.(string)] = map[string]any{"score": score, "reason": "fake"}
+	}
+	writeJSON(w, 200, map[string]any{"scores": scores, "judge": map[string]string{"backend": "openai", "model": "judge-x", "rubric_version": "1"},
+		"usage": map[string]any{"input_tokens": 100, "output_tokens": 20, "cost_usd": 0.001}})
 }
 
 func newStudio(t *testing.T) *studio {
@@ -59,6 +88,10 @@ func newStudio(t *testing.T) *studio {
 func (s *studio) fakeRunner(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Authorization") != "Bearer runner-secret-token" {
 		http.Error(w, "unauthorized", 401)
+		return
+	}
+	if r.URL.Path == "/judge" {
+		s.fakeJudge(w, r)
 		return
 	}
 	var payload runnerPayload
@@ -803,5 +836,77 @@ func TestTokenDeltasStreamLiveAndAreNotStored(t *testing.T) {
 	}
 	if stored.Output != "Hello there" {
 		t.Fatalf("output: %q", stored.Output)
+	}
+}
+
+func TestJudgedEvaluationToolAccuracySlicesAndReviews(t *testing.T) {
+	s := newStudio(t)
+	design := s.create(runnableDesign)
+	fixtures := `{"revision":0,"cases":[
+{"id":"judged","input":"hello","tags":["support"],"expected":{"judge":{"criteria":["groundedness","safety"],"reference":"a greeting","min_score":0.5}}},
+{"id":"calls-model","input":"hi","tags":["support","billing"],"expected":{"calls":["model"]}},
+{"id":"calls-ghost","input":"hey","tags":["billing"],"expected":{"calls":["ghost"]}}]}`
+	if saved := s.do("PUT", "/api/v1/agent-designs/"+design.ID+"/fixtures", fixtures); saved.Code != 200 {
+		t.Fatalf("fixtures: %d %s", saved.Code, saved.Body.String())
+	}
+	if bad := s.do("PUT", "/api/v1/agent-designs/"+design.ID+"/fixtures", `{"revision":1,"cases":[{"id":"x","input":"y","expected":{"judge":{"criteria":["vibes"]}}}]}`); bad.Code != 422 {
+		t.Fatalf("unknown criterion accepted: %d", bad.Code)
+	}
+	evaluate := func() agentEvaluation {
+		id := decodeInto[agentEvaluation](t, s.do("POST", "/api/v1/agent-designs/"+design.ID+"/evaluations", `{"gate":0.3}`)).ID
+		var evaluation agentEvaluation
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			if evaluation = decodeInto[agentEvaluation](t, s.do("GET", "/api/v1/agent-evaluations/"+id, "")); evaluation.Status == "completed" {
+				break
+			}
+		}
+		return evaluation
+	}
+	evaluation := evaluate()
+	judged, model, ghost := evaluation.Cases[0], evaluation.Cases[1], evaluation.Cases[2]
+	if judged.Passed || judged.Judge["groundedness"].Score != 0.9 || len(judged.Failures) != 1 || !strings.HasPrefix(judged.Failures[0], "low_safety: 0.40") {
+		t.Fatalf("judged case: %+v", judged)
+	}
+	if judged.JudgeProvenance == nil || judged.JudgeProvenance.Model != "judge-x" || judged.Usage.InputTokens != 103 {
+		t.Fatalf("judge provenance or usage not recorded: %+v", judged)
+	}
+	if !model.Passed || *model.ToolAccuracy != 1 || ghost.Passed || *ghost.ToolAccuracy != 0 || ghost.Failures[0] != "missing_call: ghost" {
+		t.Fatalf("tool accuracy: %+v %+v", model, ghost)
+	}
+	if evaluation.JudgeScores["safety"] != 0.4 || *evaluation.ToolAccuracy != 0.5 || evaluation.Judge.RubricVersion != "1" {
+		t.Fatalf("aggregates: %+v", evaluation)
+	}
+	slices := map[string]sliceResult{}
+	for _, slice := range evaluation.Slices {
+		slices[slice.Tag] = slice
+	}
+	if slices["support"].Cases != 2 || slices["support"].Passed != 1 || slices["billing"].PassRate != 0.5 || slices["support"].JudgeScores["groundedness"] != 0.9 {
+		t.Fatalf("slices: %+v", evaluation.Slices)
+	}
+	s.mu.Lock()
+	request := s.judged[0]
+	s.mu.Unlock()
+	if request["reference"] != "a greeting" || request["output"] != "echo: hello" {
+		t.Fatalf("judge request: %+v", request)
+	}
+
+	s.mu.Lock()
+	s.judgeDown = true
+	s.mu.Unlock()
+	unavailable := evaluate()
+	if unavailable.Cases[0].Passed || !strings.HasPrefix(unavailable.Cases[0].Failures[0], "judge_unavailable: ") || unavailable.FailureReasons["judge_unavailable"] != 1 {
+		t.Fatalf("an unavailable judge must fail the case, not pass it: %+v", unavailable.Cases[0])
+	}
+
+	review := s.do("POST", "/api/v1/agent-evaluations/"+evaluation.ID+"/cases/judged/review", `{"status":"accepted","note":"tone is fine"}`)
+	reviewed := decodeInto[agentEvaluation](t, review)
+	if review.Code != 200 || reviewed.Cases[0].Review.Reviewer != "user-1" || reviewed.Reviews["accepted"] != 1 || reviewed.PassRate != evaluation.PassRate {
+		t.Fatalf("review: %d %s", review.Code, review.Body.String())
+	}
+	if bad := s.do("POST", "/api/v1/agent-evaluations/"+evaluation.ID+"/cases/judged/review", `{"status":"meh"}`); bad.Code != 422 {
+		t.Fatalf("invalid review: %d", bad.Code)
+	}
+	if missing := s.do("POST", "/api/v1/agent-evaluations/"+evaluation.ID+"/cases/nope/review", `{"status":"accepted"}`); missing.Code != 404 {
+		t.Fatalf("unknown case: %d", missing.Code)
 	}
 }

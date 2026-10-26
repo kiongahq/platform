@@ -73,6 +73,9 @@ type fixtureExpected struct {
 	Equals       string   `json:"equals,omitempty"`
 	Matches      string   `json:"matches,omitempty"`
 	MaxLatencyMS int      `json:"max_latency_ms,omitempty"`
+	// Calls lists tool or API node IDs the run must complete (tool accuracy).
+	Calls []string          `json:"calls,omitempty"`
+	Judge *judgeExpectation `json:"judge,omitempty"`
 }
 type designFixtures struct {
 	DesignID  string        `json:"design_id"`
@@ -523,6 +526,7 @@ func validateFixtureCases(cases []fixtureCase) []string {
 				issues = append(issues, fmt.Sprintf("Case %s has an invalid pattern: %v.", label, err))
 			}
 		}
+		issues = append(issues, validateJudgeExpectations(label, expected)...)
 		if len(item.Tags) > 10 || len(item.Meta) > 10 {
 			issues = append(issues, fmt.Sprintf("Case %s has too many tags or metadata entries.", label))
 		}

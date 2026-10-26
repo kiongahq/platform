@@ -17,9 +17,9 @@ import (
 )
 
 // Evaluations run a reproducible case suite (stored with the result) against
-// one design revision or published version and score each reply with
-// deterministic assertions. Judgment-based scoring belongs to the shared
-// evaluation service once it exists; nothing here calls a model to grade.
+// one design revision or published version. Replies are scored with
+// deterministic assertions, required tool calls, and optionally the designer
+// runner's LLM rubric judge (agent_design_judging.go).
 const (
 	agentEvaluationKind = "agent_evaluation"
 	defaultQualityGate  = 0.8
@@ -34,31 +34,42 @@ type evaluationCase struct {
 	Failures   []string       `json:"failures,omitempty"`
 	DurationMS int64          `json:"duration_ms"`
 	Usage      designRunUsage `json:"usage"`
+	// Judge holds rubric scores by criterion; ToolAccuracy the share of
+	// required calls that completed; Review a person's verdict.
+	Judge           map[string]judgeScore `json:"judge,omitempty"`
+	JudgeProvenance *judgeProvenance      `json:"judge_provenance,omitempty"`
+	ToolAccuracy    *float64              `json:"tool_accuracy,omitempty"`
+	Review          *caseReview           `json:"review,omitempty"`
 }
 type agentEvaluation struct {
-	ID               string           `json:"id"`
-	DesignID         string           `json:"design_id"`
-	VersionID        string           `json:"version_id,omitempty"`
-	ProjectID        string           `json:"project_id"`
-	Subject          string           `json:"subject"`
-	Revision         int              `json:"revision"`
-	ContentSHA256    string           `json:"content_sha256"`
-	Status           string           `json:"status"`
-	Gate             float64          `json:"gate"`
-	AllowSideEffects bool             `json:"allow_side_effects"`
-	Cases            []evaluationCase `json:"cases"`
-	CaseCount        int              `json:"case_count"`
-	Completed        int              `json:"completed"`
-	PassRate         float64          `json:"pass_rate"`
-	Passed           bool             `json:"passed"`
-	P95LatencyMS     int64            `json:"p95_latency_ms"`
-	CostUSD          float64          `json:"cost_usd"`
-	InputTokens      int              `json:"input_tokens"`
-	OutputTokens     int              `json:"output_tokens"`
-	FailureReasons   map[string]int   `json:"failure_reasons"`
-	Error            string           `json:"error,omitempty"`
-	CreatedAt        time.Time        `json:"created_at"`
-	FinishedAt       *time.Time       `json:"finished_at,omitempty"`
+	ID               string             `json:"id"`
+	DesignID         string             `json:"design_id"`
+	VersionID        string             `json:"version_id,omitempty"`
+	ProjectID        string             `json:"project_id"`
+	Subject          string             `json:"subject"`
+	Revision         int                `json:"revision"`
+	ContentSHA256    string             `json:"content_sha256"`
+	Status           string             `json:"status"`
+	Gate             float64            `json:"gate"`
+	AllowSideEffects bool               `json:"allow_side_effects"`
+	Cases            []evaluationCase   `json:"cases"`
+	CaseCount        int                `json:"case_count"`
+	Completed        int                `json:"completed"`
+	PassRate         float64            `json:"pass_rate"`
+	Passed           bool               `json:"passed"`
+	P95LatencyMS     int64              `json:"p95_latency_ms"`
+	CostUSD          float64            `json:"cost_usd"`
+	InputTokens      int                `json:"input_tokens"`
+	OutputTokens     int                `json:"output_tokens"`
+	FailureReasons   map[string]int     `json:"failure_reasons"`
+	JudgeScores      map[string]float64 `json:"judge_scores,omitempty"`
+	ToolAccuracy     *float64           `json:"tool_accuracy,omitempty"`
+	Judge            *judgeProvenance   `json:"judge,omitempty"`
+	Slices           []sliceResult      `json:"slices,omitempty"`
+	Reviews          map[string]int     `json:"reviews,omitempty"`
+	Error            string             `json:"error,omitempty"`
+	CreatedAt        time.Time          `json:"created_at"`
+	FinishedAt       *time.Time         `json:"finished_at,omitempty"`
 }
 
 type evaluationRequest struct {
@@ -142,6 +153,7 @@ func (e *agentEvaluation) summarize() {
 	}
 	e.Passed = e.Status == "completed" && e.PassRate >= e.Gate
 	e.P95LatencyMS = percentile(durations, 0.95)
+	e.summarizeJudging()
 }
 
 func (s *Server) createEvaluation(w http.ResponseWriter, r *http.Request) {
@@ -254,6 +266,7 @@ func (s *Server) executeEvaluation(caller runCaller, design agentDesign, graph a
 		} else {
 			result.RunID, result.Status, result.Output, result.DurationMS, result.Usage = run.ID, run.Status, truncateRunes(run.Output, 4000), run.DurationMS, run.Usage
 			result.Failures = scoreCase(item.fixtureCase, run)
+			judgeCase(context.Background(), item.fixtureCase, run, &result)
 			result.Passed = len(result.Failures) == 0
 		}
 		_, err = store.UpdateDoc(s.store, agentEvaluationKind, evaluation.ID, func(current agentEvaluation, exists bool) (agentEvaluation, error) {
