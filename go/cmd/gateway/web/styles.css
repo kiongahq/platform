@@ -1246,3 +1246,5 @@ tr.pass th, tr.pass td:first-child { box-shadow:inset 3px 0 var(--success, #1780
 #design-minimap .minimap-node.selected { fill:#0a8a82; }
 #design-minimap .minimap-view { fill:#0a8a8214; stroke:#0a8a82; stroke-width:12; }
 @media (max-width:1100px) { .design-minimap { display:none; } }
+.design-port.branch-error { border-color:var(--danger, #b42318); color:var(--danger, #b42318); }
+.design-edge.branch-error { stroke:var(--danger, #b42318); stroke-dasharray:4 4; }

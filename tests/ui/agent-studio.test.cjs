@@ -222,7 +222,7 @@ test('palette search filters components by name and purpose', async () => {
   search.value = 'zzz'; search.dispatchEvent(new w.Event('input', {bubbles: true}));
   assert.equal(d.querySelector('#design-palette-empty').hidden, false);
   search.value = ''; search.dispatchEvent(new w.Event('input', {bubbles: true}));
-  assert.equal(visible().length, 8);
+  assert.equal(visible().length, d.querySelectorAll('[data-design-add]').length);
 });
 
 test('multi-select moves, copies with internal connections, and deletes together', async () => {
@@ -278,4 +278,20 @@ test('the overview shows every node and the visible area', async () => {
   assert.equal(d.querySelectorAll('#design-minimap .minimap-node').length, 3);
   assert.equal(d.querySelectorAll('#design-minimap .minimap-node.selected').length, 1);
   assert.ok(d.querySelector('#design-minimap .minimap-view'));
+});
+
+test('resource nodes expose an error port for fallback branches', async () => {
+  const {d} = studioApp();
+  await tick();
+  d.querySelector('[data-design-add="api"]').click();
+  const api = d.querySelector('.design-node.selected').dataset.designNode;
+  assert.deepEqual([...d.querySelectorAll(`[data-design-out="${api}"]`)].map(port => port.dataset.designPort), ['out', 'error']);
+  d.querySelector('[data-design-add="prompt"]').click();
+  const fallback = d.querySelector('.design-node.selected').dataset.designNode;
+  assert.equal(d.querySelectorAll(`[data-design-out="${fallback}"]`).length, 1, 'prompts cannot fail on a resource');
+  d.querySelector(`[data-design-out="${api}"][data-design-port="error"]`).click();
+  d.querySelector(`[data-design-in="${fallback}"]`).click();
+  assert.ok(d.querySelector('.design-edge.branch-error'), 'error branch drawn distinctly');
+  d.querySelector('[data-design-add="extract"]').click();
+  assert.match(d.querySelector('#design-inspector-content').textContent, /Field path/);
 });

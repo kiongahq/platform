@@ -2,10 +2,20 @@
  * the platform API; the browser never stores credentials in the graph. */
 const agentDesignState = {draft: null, list: [], selected: "", connecting: "", connectingPort: "", dirty: false, saving: false, models: [], tools: [], knowledge: [], connections: [], datasets: [],
   registry: null, templates: [], zoom: 1, multi: new Set(), clipboard: null, undo: [], redo: [], baseline: "", lastMark: 0, issues: [], nodeStatus: {}};
-const designKinds = {input: "Input", prompt: "Prompt", model: "Model", tool: "Tool", knowledge: "Knowledge base", api: "API call", condition: "Condition", memory: "Memory", storage: "Dataset object", output: "Output"};
+const designKinds = {input: "Input", prompt: "Prompt", model: "Model", tool: "Tool", knowledge: "Knowledge base", api: "API call", condition: "Condition", memory: "Memory", storage: "Dataset object", extract: "Extract field", output: "Output"};
 function designComponent(kind) { return agentDesignState.registry?.components?.find(item => item.kind === kind) || null; }
-function designOutPorts(node) { return node.kind === "condition" ? ["true", "false"] : node.kind === "output" ? [] : ["out"]; }
-function designEdgePort(edge) { return edge.from_port || (agentDesignState.draft?.nodes.find(node => node.id === edge.from)?.kind === "condition" ? "true" : "out"); }
+// Output ports come from the registry (condition true/false, error ports on
+// nodes that call resources); the fallback keeps the canvas usable without it.
+function designOutPorts(node) {
+  const component = designComponent(node.kind);
+  if (component) return component.outputs.map(port => port.name);
+  return node.kind === "condition" ? ["true", "false"] : node.kind === "output" ? [] : ["out"];
+}
+function designEdgePort(edge) {
+  const node = agentDesignState.draft?.nodes.find(item => item.id === edge.from);
+  return edge.from_port || (node ? designOutPorts(node)[0] : "out") || "out";
+}
+function designPortLabel(port) { return port === "true" ? "T" : port === "false" ? "F" : port === "error" ? "!" : ""; }
 const designNodeWidth = 190, designNodeHeight = 88, designGrid = 20;
 // Snapping rounds positions to the 20 px grid drawn on the canvas.
 function designSnap(value) { return document.querySelector("#design-snap")?.checked ? Math.round(value / designGrid) * designGrid : value; }
@@ -187,7 +197,7 @@ function designRender() {
   document.querySelector("#design-edges").innerHTML = `<defs><marker id="design-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>` + draft.edges.map(edge => {
     const from = nodes.get(edge.from), to = nodes.get(edge.to);
     if (!from || !to) return "";
-    const port = designEdgePort(edge), label = from.kind === "condition" ? port : "";
+    const port = designEdgePort(edge), label = designOutPorts(from).length > 1 ? port : "";
     return `<path class="design-edge ${label ? `branch-${label}` : ""}" data-design-edge="${escapeHTML(edge.from + ">" + edge.to)}" data-design-port="${escapeHTML(port)}" d="${designEdgePath(from, to, port)}" marker-end="url(#design-arrow)"><title>${escapeHTML(from.name)}${label ? ` (${escapeHTML(label)})` : ""} to ${escapeHTML(to.name)}</title></path>`;
   }).join("");
   const issuesByNode = {};
@@ -198,7 +208,7 @@ function designRender() {
     return `<div class="design-node ${node.id === agentDesignState.selected ? "selected" : ""} ${agentDesignState.multi.has(node.id) ? "multi" : ""} ${errors ? "has-error" : issues.length ? "has-warning" : ""} ${status ? `run-${escapeHTML(status)}` : ""}" style="left:${Number(node.x)}px;top:${Number(node.y)}px" data-design-node="${escapeHTML(node.id)}">
     ${node.kind !== "input" ? `<button class="design-port in" type="button" data-design-in="${escapeHTML(node.id)}" aria-label="Connect to ${escapeHTML(node.name)}" title="Connect here"></button>` : ""}
     <button type="button" class="design-node-body" data-design-select="${escapeHTML(node.id)}" aria-label="${escapeHTML(node.name)} ${escapeHTML(designKinds[node.kind] || node.kind)} node${errors ? `, ${errors} validation error${errors === 1 ? "" : "s"}` : ""}${status ? `, last run ${escapeHTML(status)}` : ""}"><span class="design-kind">${escapeHTML(designKinds[node.kind] || node.kind)}${node.group ? ` · ${escapeHTML(node.group)}` : ""}</span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(node.id)}</small>${errors || issues.length ? `<span class="design-badge ${errors ? "error" : "warning"}" aria-hidden="true">${errors || issues.length}</span>` : ""}${status ? `<span class="design-run-dot" aria-hidden="true"></span>` : ""}</button>
-    ${ports.map((port, index) => `<button class="design-port out ${ports.length > 1 ? `branch branch-${port}` : ""} ${agentDesignState.connecting === node.id && (agentDesignState.connectingPort || ports[0]) === port ? "pending" : ""}" style="${ports.length > 1 ? `top:${index ? 64 : 18}px` : ""}" type="button" data-design-out="${escapeHTML(node.id)}" data-design-port="${port}" aria-label="Connect from ${escapeHTML(node.name)}${ports.length > 1 ? ` when ${port}` : ""}" title="${ports.length > 1 ? `Connect the ${port} branch` : "Connect from here"}">${ports.length > 1 ? (port === "true" ? "T" : "F") : ""}</button>`).join("")}
+    ${ports.map((port, index) => `<button class="design-port out ${ports.length > 1 ? `branch branch-${port}` : ""} ${agentDesignState.connecting === node.id && (agentDesignState.connectingPort || ports[0]) === port ? "pending" : ""}" style="${ports.length > 1 ? `top:${index ? 64 : 18}px` : ""}" type="button" data-design-out="${escapeHTML(node.id)}" data-design-port="${port}" aria-label="Connect from ${escapeHTML(node.name)}${ports.length > 1 ? (port === "error" ? " when it fails" : port === "out" ? "" : ` when ${port}`) : ""}" title="${port === "error" ? "Connect a fallback for failures" : ports.length > 1 ? `Connect the ${port} branch` : "Connect from here"}">${ports.length > 1 ? designPortLabel(port) : ""}</button>`).join("")}
   </div>`;
   }).join("");
   designRenderInspector();
@@ -209,7 +219,8 @@ function designRender() {
   designUpdateStatus();
 }
 function designEdgePath(from, to, port) {
-  const offset = from.kind === "condition" ? (port === "false" ? 73 : 27) : designNodeHeight / 2;
+  const ports = designOutPorts(from);
+  const offset = ports.length > 1 ? (ports.indexOf(port) > 0 ? 73 : 27) : designNodeHeight / 2;
   const x1 = from.x + designNodeWidth, y1 = from.y + offset, x2 = to.x, y2 = to.y + designNodeHeight / 2;
   return `M ${x1} ${y1} C ${x1 + 75} ${y1}, ${x2 - 75} ${y2}, ${x2} ${y2}`;
 }
@@ -264,7 +275,7 @@ function designRenderInspector() {
     <div class="design-inspector-actions">${!["input", "output"].includes(node.kind) ? `<button type="button" id="design-duplicate-node">Duplicate node</button><button type="button" class="danger" id="design-remove-node">Remove node</button>` : ""}<button type="button" id="design-remove-edges">Remove connections</button></div>`;
 }
 function designInspectorConnections(node) {
-  return `<div class="design-connections"><h3>Connections</h3>${agentDesignState.draft.edges.map((edge, index) => ({edge,index})).filter(({edge}) => edge.from === node.id || edge.to === node.id).map(({edge,index}) => { const branch = agentDesignState.draft.nodes.find(item => item.id === edge.from)?.kind === "condition" ? ` (${designEdgePort(edge)})` : ""; return `<div class="design-connection"><span>${escapeHTML(edge.from)}${escapeHTML(branch)} → ${escapeHTML(edge.to)}</span><button type="button" data-design-remove-edge="${index}" aria-label="Remove connection from ${escapeHTML(edge.from)} to ${escapeHTML(edge.to)}">Remove</button></div>`; }).join("") || '<p class="field-help">No connections yet.</p>'}</div>`;
+  return `<div class="design-connections"><h3>Connections</h3>${agentDesignState.draft.edges.map((edge, index) => ({edge,index})).filter(({edge}) => edge.from === node.id || edge.to === node.id).map(({edge,index}) => { const source = agentDesignState.draft.nodes.find(item => item.id === edge.from); const branch = source && designOutPorts(source).length > 1 ? ` (${designEdgePort(edge)})` : ""; return `<div class="design-connection"><span>${escapeHTML(edge.from)}${escapeHTML(branch)} → ${escapeHTML(edge.to)}</span><button type="button" data-design-remove-edge="${index}" aria-label="Remove connection from ${escapeHTML(edge.from)} to ${escapeHTML(edge.to)}">Remove</button></div>`; }).join("") || '<p class="field-help">No connections yet.</p>'}</div>`;
 }
 async function loadAgentDesigner() {
   const [data, models, tools, knowledge, connections, registry, templates, datasets] = await Promise.all([
