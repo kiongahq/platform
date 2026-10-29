@@ -306,6 +306,8 @@ async function showView(id, options = {}) {
   }
   if (options.project !== undefined) selectedProject = options.project;
   selectedResource = options.resource || "";
+  // A different page opens at its top; refreshing or re-filtering the same page keeps its place.
+  if (id !== activeView) (document.scrollingElement || document.documentElement).scrollTop = 0;
   activeView = id;
   document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close());
   if (options.history !== false) history.pushState({}, "", routeURL(id));
