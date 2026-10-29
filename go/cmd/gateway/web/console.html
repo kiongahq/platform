@@ -22,6 +22,7 @@
   </header>
   <div class="shell">
     <aside id="sidebar">
+      <a class="app-brand sidebar-brand" href="/console.html" data-view-target="overview" aria-label="Kionga overview"><img class="brand-mark" src="/logo.svg" alt="" width="34" height="34"><span><b>Kionga</b><small>ML platform</small></span></a>
       <nav aria-label="Main navigation">
         <p class="nav-group-label">Build</p>
         <button class="nav-item" type="button" data-view="overview"><span aria-hidden="true"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/icons.svg#overview"></use></svg></span>Overview</button>
@@ -57,6 +58,7 @@
         <a class="sidebar-logout logout-action" href="/auth/logout" hidden>Log out <span aria-hidden="true">↗</span></a>
       </div>
     </aside>
+    <div class="sidebar-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical" aria-controls="sidebar" aria-label="Resize navigation" aria-valuemin="64" aria-valuemax="360" aria-valuenow="240" tabindex="0" title="Drag to resize · double-click to reset"></div>
 
     <main id="main" tabindex="-1">
       <div id="view-feedback" class="view-feedback" role="status" aria-live="polite" hidden><span id="view-feedback-message"></span><button id="retry-view" type="button" hidden>Retry</button></div>
@@ -76,9 +78,9 @@
           <div class="progress-ring" id="progress-ring" role="img" aria-label="Onboarding progress"><strong>0%</strong><span>ready</span></div>
         </div>
         <div class="stat-grid">
-          <article class="summary-link" role="button" tabindex="0" data-view-target="projects"><span>Projects</span><strong id="stat-projects">—</strong><small>Open projects →</small></article>
-          <article class="summary-link" role="button" tabindex="0" data-view-target="pipelines"><span>Active runs</span><strong id="stat-runs">—</strong><small>Queued or running →</small></article>
-          <article class="summary-link" role="button" tabindex="0" data-view-target="platform"><span>Platform health</span><strong id="stat-health">—</strong><small>Components healthy →</small></article>
+          <article class="summary-link" role="button" tabindex="0" data-view-target="projects"><i class="stat-icon" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="/icons.svg#projects"></use></svg></i><span>Projects</span><strong id="stat-projects">—</strong><small>Open projects →</small></article>
+          <article class="summary-link" role="button" tabindex="0" data-view-target="pipelines"><i class="stat-icon" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="/icons.svg#pipelines"></use></svg></i><span>Active runs</span><strong id="stat-runs">—</strong><small>Queued or running →</small></article>
+          <article class="summary-link" role="button" tabindex="0" data-view-target="platform"><i class="stat-icon" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="/icons.svg#platform"></use></svg></i><span>Platform health</span><strong id="stat-health">—</strong><small>Components healthy →</small></article>
         </div>
         <div class="split">
           <article class="panel">
@@ -571,6 +573,7 @@ mlaiops projects list</pre><div class="form-actions"><button class="primary" typ
   <script src="/pipeline-graph.js"></script>
   <script src="/js/code-format.js"></script>
   <script src="/js/core.js"></script>
+  <script src="/js/sidebar-resize.js"></script>
   <script src="/js/views/overview.js"></script>
   <script src="/js/views/projects.js"></script>
   <script src="/js/views/pipelines.js"></script>
