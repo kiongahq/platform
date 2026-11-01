@@ -19,26 +19,12 @@ import pathlib
 import sys
 import urllib.request
 
-WEB = pathlib.Path(__file__).resolve().parent.parent / "go" / "cmd" / "gateway" / "web"
+WEB = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "public"
 
 # directory -> list of (local file, npm package, version, upstream path)
 VENDORED = {
-    "vendor/editorjs": [
-        ("editorjs.umd.js", "@editorjs/editorjs", "2.31.7", "/dist/editorjs.umd.js"),
-        ("header.umd.js", "@editorjs/header", "2.8.9", "/dist/header.umd.js"),
-        ("list.umd.js", "@editorjs/list", "2.0.9", "/dist/editorjs-list.umd.js"),
-        ("quote.umd.js", "@editorjs/quote", "2.7.6", "/dist/quote.umd.js"),
-        ("code.umd.js", "@editorjs/code", "2.9.4", "/dist/code.umd.js"),
-        ("delimiter.umd.js", "@editorjs/delimiter", "1.4.2", "/dist/delimiter.umd.js"),
-        ("embed.umd.js", "@editorjs/embed", "2.8.0", "/dist/embed.umd.js"),
-        ("table.umd.js", "@editorjs/table", "2.4.6", "/dist/table.umd.js"),
-        ("inline-code.umd.js", "@editorjs/inline-code", "1.5.2", "/dist/inline-code.umd.js"),
-        ("marker.umd.js", "@editorjs/marker", "1.4.0", "/dist/marker.umd.js"),
-        ("warning.umd.js", "@editorjs/warning", "1.4.1", "/dist/warning.umd.js"),
-    ],
     "vendor/highlight": [
         ("core.min.js", "@highlightjs/cdn-assets", "11.11.1", "/es/core.min.js"),
-        ("github-dark.min.css", "@highlightjs/cdn-assets", "11.11.1", "/styles/github-dark.min.css"),
     ] + [
         (f"languages/{name}.min.js", "@highlightjs/cdn-assets", "11.11.1", f"/es/languages/{name}.min.js")
         for name in ("bash", "dockerfile", "go", "ini", "javascript", "json", "plaintext", "python",

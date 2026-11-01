@@ -9,13 +9,6 @@
       "integrity": "sha384-PJ1psNJ2XMc5He8b6/c5li+Z35sYk63xdRPFwmN0ARHXTgBmeii7cFdSRKs7/hEZ"
     },
     {
-      "file": "github-dark.min.css",
-      "package": "@highlightjs/cdn-assets",
-      "version": "11.11.1",
-      "upstream": "/styles/github-dark.min.css",
-      "integrity": "sha384-wH75j6z1lH97ZOpMOInqhgKzFkAInZPPSPlZpYKYTOqsaizPvhQZmAtLcPKXpLyH"
-    },
-    {
       "file": "languages/bash.min.js",
       "package": "@highlightjs/cdn-assets",
       "version": "11.11.1",
