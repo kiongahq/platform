@@ -1,0 +1,17 @@
+# Optional reader-only virtual host. Set the publication domain and upstream
+# for the installation that owns this publication's editorial data.
+{$KIONGA_PUBLICATION_DOMAIN} {
+    encode gzip
+    @home path /
+    redir @home /blog 302
+    @reading {
+        method GET HEAD
+        path /blog /blog/read /blog.txt /blog/read.txt /api/v1/blogs /api/v1/blogs/* /media/blog/* /_next/* /fonts/* /logo.svg /favicon.svg
+    }
+    handle @reading {
+        reverse_proxy {$KIONGA_PUBLICATION_UPSTREAM}
+    }
+    handle {
+        respond 404
+    }
+}
