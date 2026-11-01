@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -126,7 +127,22 @@ func githubCallback() string {
 	if err != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Path != "/api/v1/settings/github/callback" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return ""
 	}
+	if parsed.Scheme == "http" && !githubLoopbackHost(parsed.Hostname()) {
+		return ""
+	}
 	return raw
+}
+func githubLoopbackHost(host string) bool {
+	return strings.EqualFold(host, "localhost") || net.ParseIP(host).IsLoopback()
+}
+func githubOAuthCookie(value string, maxAge int) *http.Cookie {
+	// #nosec G124 -- Secure is disabled only for validated loopback HTTP development; hosted callbacks require HTTPS.
+	cookie := &http.Cookie{Name: "kionga_github_oauth", Value: value, Path: "/api/v1/settings/github", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: maxAge}
+	callback, err := url.Parse(githubCallback())
+	if err == nil && callback.Scheme == "http" && githubLoopbackHost(callback.Hostname()) {
+		cookie.Secure = false // Local HTTP development only; remote callbacks require HTTPS.
+	}
+	return cookie
 }
 func githubOAuthConfigured() bool {
 	return githubAppSlug() != "" && os.Getenv("KIONGA_GITHUB_APP_CLIENT_ID") != "" && os.Getenv("KIONGA_GITHUB_APP_CLIENT_SECRET") != "" && githubCallback() != ""
@@ -302,7 +318,7 @@ func (s *Server) githubConnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "not_configured", "GitHub account encryption is unavailable")
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: "kionga_github_oauth", Value: cipher, Path: "/api/v1/settings/github", HttpOnly: true, Secure: strings.HasPrefix(githubCallback(), "https:"), SameSite: http.SameSiteLaxMode, MaxAge: 600})
+	http.SetCookie(w, githubOAuthCookie(cipher, 600))
 	q := url.Values{"client_id": {os.Getenv("KIONGA_GITHUB_APP_CLIENT_ID")}, "redirect_uri": {githubCallback()}, "state": {state}}
 	http.Redirect(w, r, "https://github.com/login/oauth/authorize?"+q.Encode(), http.StatusFound)
 }
@@ -322,7 +338,7 @@ func (s *Server) githubCallback(w http.ResponseWriter, r *http.Request) {
 		age := time.Now().Unix() - at
 		valid = parseErr == nil && age >= 0 && age <= 600 && subtle.ConstantTimeCompare([]byte(parts[0]), []byte(r.URL.Query().Get("state"))) == 1
 	}
-	http.SetCookie(w, &http.Cookie{Name: "kionga_github_oauth", Value: "", Path: "/api/v1/settings/github", HttpOnly: true, Secure: strings.HasPrefix(githubCallback(), "https:"), SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	http.SetCookie(w, githubOAuthCookie("", -1))
 	if !valid || !githubOAuthConfigured() {
 		writeError(w, 400, "invalid_state", "GitHub authorization expired or belongs to another session")
 		return

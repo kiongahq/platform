@@ -19,6 +19,9 @@ func TestFrontendRoutes(t *testing.T) {
 		{"/console/langflow", 200, ""}, {"/console/langflow.txt", 200, ""}, {"/studio/edit?post=first", 200, ""},
 		{"/blogs.html?tag=Go", 404, ""}, {"/blog.html?slug=first", 404, ""},
 		{"/editorial.html", 404, ""}, {"/blog/", 308, "/blog"},
+		{"/console/langflow/?return_to=https%3A%2F%2Fevil.test", 308, "/console/langflow?return_to=https%3A%2F%2Fevil.test"},
+		{"//evil.test/", 404, ""}, {"/%2f%2fevil.test/", 404, ""},
+		{"https://evil.test/blog/", 308, "/blog"},
 		{"/missing", 404, ""}, {"/blog/read.html", 404, ""}, {"/_next/static/app.js", 200, ""}, {"/_next/static/", 404, ""},
 	} {
 		t.Run(tc.path, func(t *testing.T) {

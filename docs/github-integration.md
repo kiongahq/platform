@@ -31,8 +31,9 @@ gateway variables:
 
 Set the App's OAuth callback URL to the same callback. Its installation setup URL
 can point to the console origin plus `/console/settings`. The callback must use
-the same browser origin as the signed-in console, including the local-development
-hostname and port. These App settings are separate from the Dex GitHub identity
+HTTPS for hosted consoles. HTTP is accepted only for localhost or loopback IP
+addresses. The callback must use the same browser origin as the signed-in console,
+including the local-development hostname and port. These App settings are separate from the Dex GitHub identity
 provider's `KIONGA_GITHUB_CLIENT_ID` and `KIONGA_GITHUB_CLIENT_SECRET`.
 
 Use **Install GitHub App**, choose repository access in GitHub, then refresh App

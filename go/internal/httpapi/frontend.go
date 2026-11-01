@@ -25,6 +25,7 @@ func frontendHandler(files fs.FS) http.Handler {
 				if r.URL.RawQuery != "" {
 					target += "?" + r.URL.RawQuery
 				}
+				// #nosec G710 -- The path must exactly match the fixed pages allowlist above; the query cannot change its origin.
 				http.Redirect(w, r, target, http.StatusPermanentRedirect)
 				return
 			}

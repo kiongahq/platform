@@ -163,3 +163,32 @@ func TestGitHubAccountRequiresEncryptionBeforeCallingUpstream(t *testing.T) {
 		t.Fatalf("encryption not enforced: %d", response.Code)
 	}
 }
+
+func TestGitHubCallbackRequiresHTTPSExceptOnLoopback(t *testing.T) {
+	for _, tc := range []struct {
+		origin string
+		valid  bool
+		secure bool
+	}{
+		{"https://platform.test", true, true},
+		{"http://localhost:8080", true, false},
+		{"http://127.0.0.1:8080", true, false},
+		{"http://[::1]:8080", true, false},
+		{"http://platform.test", false, true},
+		{"http://localhost.evil.test", false, true},
+		{"http://192.168.1.1:8080", false, true},
+	} {
+		t.Run(tc.origin, func(t *testing.T) {
+			t.Setenv("KIONGA_GITHUB_APP_CALLBACK_URL", tc.origin+"/api/v1/settings/github/callback")
+			if (githubCallback() != "") != tc.valid {
+				t.Fatal("unexpected callback acceptance")
+			}
+			for _, age := range []int{600, -1} {
+				cookie := githubOAuthCookie("state", age)
+				if cookie.Secure != tc.secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode || cookie.MaxAge != age {
+					t.Fatalf("incorrect OAuth cookie attributes: %+v", cookie)
+				}
+			}
+		})
+	}
+}
