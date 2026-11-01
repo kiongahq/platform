@@ -20,7 +20,7 @@ test('workbench readiness, launch, notebook and kernel', async ({page}) => {
   expect(launch.body.url).toContain(`/workspaces/workbench/lab/tree/projects/${project.namespace}`);
 
   // The workspace page embeds JupyterLab for this project.
-  await page.goto(`/workspace.html?tool=workbench&project=${encodeURIComponent(project.id)}`);
+  await page.goto(`/workspace?tool=workbench&project=${encodeURIComponent(project.id)}`);
   const frame = page.frameLocator('#workspace-frame');
   await expect(frame.locator('#jp-main-dock-panel, .jp-LabShell').first()).toBeVisible({timeout: 60_000});
 
