@@ -65,7 +65,7 @@ step "start gateway on :$GATEWAY_PORT (file store, local admin)"
 pids+=($!)
 wait_http "$BASE/health"
 curl -sS -c "$JAR" -o /dev/null -H "Origin: $ORIGIN" --data-urlencode username=admin --data-urlencode "password=$PASSWORD" \
-  --data-urlencode return_to=/console.html "$ORIGIN/auth/local/login"
+  --data-urlencode return_to=/console "$ORIGIN/auth/local/login"
 grep -q . "$JAR" || fail "local sign-in returned no session"
 
 step "components and templates"
