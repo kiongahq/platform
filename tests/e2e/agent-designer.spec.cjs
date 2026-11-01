@@ -1,9 +1,10 @@
 const {test, expect, ADMIN, signIn, screenshotPath} = require('./fixtures.cjs');
 
 test('native agent canvas saves and reloads a connected graph', async ({page}, testInfo) => {
-  await signIn(page, ADMIN, '/console.html?view=agent-designer');
-  await expect(page.locator('#agent-designer')).toHaveClass(/active/);
+  await signIn(page, ADMIN, '/console/agent-designer');
+  await expect(page.locator('#agent-designer')).toBeVisible();
   await expect(page.locator('.design-node')).toHaveCount(2);
+  if (!(await page.locator('[data-design-add="prompt"]').isVisible())) await page.getByText('Components', {exact:true}).click();
   await page.locator('[data-design-add="prompt"]').click();
   await expect(page.locator('.design-node')).toHaveCount(3);
   await page.locator('[data-design-out="input"]').click();
@@ -17,7 +18,7 @@ test('native agent canvas saves and reloads a connected graph', async ({page}, t
   await expect(page.locator('#design-description')).toHaveValue('');
   await page.screenshot({path: screenshotPath(testInfo, 'agent-designer'), fullPage: false});
   await page.reload();
-  await expect(page.locator('#agent-designer')).toHaveClass(/active/);
+  await expect(page.locator('#agent-designer')).toBeVisible();
   await expect(page.locator('.design-node')).toHaveCount(3);
   await expect(page.locator('.design-edge')).toHaveCount(3);
   await expect(page.locator('#design-description')).toHaveValue('');
@@ -25,6 +26,7 @@ test('native agent canvas saves and reloads a connected graph', async ({page}, t
   await page.locator('#design-node-name').fill('Revised prompt');
   await page.locator('#design-save').click();
   await expect(page.locator('#design-revision')).toContainText('Revision 2');
+  await page.getByText('Revision history', {exact: true}).click();
   await expect(page.locator('[data-design-restore="1"]')).toBeVisible();
   page.once('dialog', dialog => dialog.accept());
   await page.locator('[data-design-restore="1"]').click();
