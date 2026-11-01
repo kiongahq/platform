@@ -1,0 +1,13 @@
+**/node_modules
+**/.next
+**/out
+**/build
+**/bin
+**/.git
+**/data
+**/artifacts
+**/.env
+**/.env.*
+frontend/public/runtime
+frontend/public/controllers
+go/cmd/gateway/frontend-dist
