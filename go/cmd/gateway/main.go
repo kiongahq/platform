@@ -23,7 +23,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-//go:embed web/*
+//go:embed all:frontend-dist
 var web embed.FS
 
 func main() {
@@ -33,9 +33,12 @@ func main() {
 	if err := runtimeconfig.ValidateGateway(); err != nil {
 		log.Fatal(err)
 	}
-	static, err := fs.Sub(web, "web")
+	static, err := fs.Sub(web, "frontend-dist")
 	if err != nil {
 		log.Fatal(err)
+	}
+	if _, err := fs.Stat(static, "index.html"); err != nil {
+		log.Fatal("frontend is not built: run make frontend before building the gateway")
 	}
 	port := os.Getenv("PORT")
 	if port == "" {
