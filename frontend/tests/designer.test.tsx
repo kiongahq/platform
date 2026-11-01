@@ -12,7 +12,7 @@ test('saving a graph preserves edits made while the request is pending and handl
  globalThis.fetch=async(input,init)=>{const path=String(input);calls.push([path,init?.method]);if(init?.method==='PUT'){saving=true;return new Promise(resolve=>{finish=resolve;});}const body=path==='/api/v1/agent-designs'?{items:[design]}:path==='/api/v1/project-options'?{items:[{id:'p1',name:'Project'}]}:path.endsWith('/components')?{components:[{kind:'prompt',label:'Prompt',config:[{key:'template',label:'Template',type:'string'}]}]}:{items:[]};return new Response(JSON.stringify(body));};
  const view=render(<AgentDesigner identity={identity} view="agent-designer" project="p1" resource="d1" onNavigate={()=>{}}/>);
  await waitFor(()=>assert.equal((view.getByLabelText('Name') as HTMLInputElement).value,'Original'));
- fireEvent.click(view.getByRole('button',{name:/prompt Prompt prompt/i}));
+ fireEvent.click(view.container.querySelector('[data-design-select="prompt"]')!);
  assert.equal((view.getByRole('textbox',{name:'Template'}) as HTMLInputElement).value,'');
  fireEvent.change(view.getByLabelText('Name'),{target:{value:'Submitted'}});
  fireEvent.click(view.getByRole('button',{name:'Save revision'}));await waitFor(()=>assert.ok(saving));

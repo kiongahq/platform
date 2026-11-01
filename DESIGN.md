@@ -52,3 +52,17 @@ The landing hero uses a dense section-wide ASCII flow field with a quiet area ar
 The landing resource registry is explicitly an example. Selecting a resource updates its numbered configuration inspector without creating platform resources. Interactive workspace examples remain local to the browser and link to the corresponding authenticated workspace tools.
 
 The product landing page carries product capabilities and interactive examples only. Editorial content belongs to a separate publication surface with reader navigation. Adopters manage their own publication through the console and studio; Kionga's engineering publication has independent editorial data and hosting. API documentation uses Swagger UI outside product navigation.
+
+Operational graph surfaces use a shared dotted canvas with panning, zoom controls
+and a minimap. Agent positions and port connections are controlled state saved
+through the graph API; templates and expressions use numbered code editors.
+Expanded mode dedicates the viewport to graph tools, palette and inspector.
+Pipeline execution nodes expose status, details, filtered logs and permitted
+checkpoint resume actions backed by preflight and saved-output reuse.
+
+Resource records use scalar facts, compact value lists and expandable structured
+data. Commands remain dedicated code blocks. Generated file manifests use an
+expandable directory tree, and failures use distinct alert blocks beside their
+output. Storage buckets have explicit icons and S3 segments are addressable links.
+Dialog widths and internal tables adapt to the viewport. Select controls retain
+native semantics with an explicitly styled picker in supporting browsers.

@@ -1,4 +1,5 @@
 "use client";
+import { StoragePath } from "@/components/ui/StoragePath";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { CodeBlock } from "@/components/ui/CodeBlock";
@@ -139,14 +140,44 @@ export function Detail({ value }: { value: unknown }) {
 export function Facts({ value }: { value: RecordData }) {
   return (
     <dl className="facts">
-      {Object.entries(value).map(([label, v]) => (
-        <div key={label}>
-          <dt>{label.replaceAll("_", " ")}</dt>
-          <dd>
-            {typeof v === "object" ? <Detail value={v} /> : String(v ?? "—")}
-          </dd>
-        </div>
-      ))}
+      {Object.entries(value).map(([label, v]) => {
+        const scalarArray =
+          Array.isArray(v) &&
+          v.every((item) => item === null || typeof item !== "object");
+        const structured = v !== null && typeof v === "object" && !scalarArray;
+        const command =
+          typeof v === "string" && /(?:command|script)$/.test(label);
+        return (
+          <div
+            key={label}
+            className={structured || command ? "fact-wide" : undefined}
+          >
+            <dt>{label.replaceAll("_", " ")}</dt>
+            <dd>
+              {command ? (
+                <CodeBlock language="bash">{v}</CodeBlock>
+              ) : scalarArray ? (
+                <ul className="fact-values">
+                  {v.map((item, index) => (
+                    <li key={index}>{String(item)}</li>
+                  ))}
+                </ul>
+              ) : structured ? (
+                <details className="fact-structured">
+                  <summary>View {label.replaceAll("_", " ")}</summary>
+                  <Detail value={v} />
+                </details>
+              ) : typeof v === "string" && v.startsWith("s3://") ? (
+                <StoragePath value={v} />
+              ) : label.endsWith("_at") && v ? (
+                date(v)
+              ) : (
+                String(v ?? "—")
+              )}
+            </dd>
+          </div>
+        );
+      })}
     </dl>
   );
 }
@@ -420,6 +451,7 @@ export function Table({
   rows,
   columns,
   actions,
+  rowKey,
 }: {
   rows: RecordData[];
   columns: {
@@ -428,7 +460,23 @@ export function Table({
     render?: (row: RecordData) => ReactNode;
   }[];
   actions?: (row: RecordData) => ReactNode;
+  rowKey?: (row: RecordData) => string;
 }) {
+  const occurrences = new Map<string, number>();
+  const keys = rows.map((row, index) => {
+    const identity =
+      rowKey?.(row) ??
+      JSON.stringify([
+        row.id ?? row.name ?? row.key ?? row.subject ?? index,
+        row.kind,
+        row.version,
+        row.project_id,
+        row.namespace,
+      ]);
+    const occurrence = occurrences.get(identity) || 0;
+    occurrences.set(identity, occurrence + 1);
+    return `${identity}:${occurrence}`;
+  });
   return (
     <div
       className="table-wrap"
@@ -447,14 +495,24 @@ export function Table({
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={row.id || row.name || index}>
+            <tr key={keys[index]}>
               {columns.map((column) => (
                 <td key={column.key}>
-                  {column.render
-                    ? column.render(row)
-                    : typeof row[column.key] === "object"
-                      ? JSON.stringify(row[column.key])
-                      : String(row[column.key] ?? "—")}
+                  {column.render ? (
+                    column.render(row)
+                  ) : typeof row[column.key] === "string" &&
+                    row[column.key].startsWith("s3://") ? (
+                    <StoragePath value={row[column.key]} />
+                  ) : Array.isArray(row[column.key]) ? (
+                    row[column.key].join(", ")
+                  ) : row[column.key] && typeof row[column.key] === "object" ? (
+                    <details>
+                      <summary>View details</summary>
+                      <Detail value={row[column.key]} />
+                    </details>
+                  ) : (
+                    String(row[column.key] ?? "—")
+                  )}
                 </td>
               ))}
               {actions && (

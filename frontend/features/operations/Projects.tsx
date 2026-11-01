@@ -1,6 +1,8 @@
 "use client";
-import {Select} from "@/components/ui/Select";
-import {CodeBlock} from "@/components/ui/CodeBlock";
+import { GitHubRepositoryPicker } from "@/components/console/GitHubConnection";
+import { FileTree } from "@/components/ui/FileTree";
+import { Select } from "@/components/ui/Select";
+import { CodeBlock } from "@/components/ui/CodeBlock";
 import { useEffect, useState } from "react";
 import { request } from "@/lib/api";
 import {
@@ -206,7 +208,7 @@ export function Projects(props: OperationsProps) {
               </section>
               <section className="panel">
                 <h3>Project record</h3>
-                <Facts value={entry} />
+                <Facts value={Object.fromEntries(Object.entries(entry).filter(([key])=>key!=="scaffold_command"))} />
               </section>
               {entry.scaffold_command && (
                 <section className="panel">
@@ -215,7 +217,9 @@ export function Projects(props: OperationsProps) {
                     The command runs in your assigned workspace and does not
                     overwrite an existing populated directory.
                   </p>
-                  <CodeBlock>{entry.scaffold_command}</CodeBlock>
+                  <CodeBlock language="bash" filename="scaffold.sh">
+                    {entry.scaffold_command}
+                  </CodeBlock>
                   <div className="button-row">
                     <button
                       onClick={() =>
@@ -251,34 +255,45 @@ export function Projects(props: OperationsProps) {
                   </div>
                   {job && (
                     <>
-                      <h4>Last scaffold run</h4>
-                      <Status value={job.status} />
-                      <Facts
-                        value={{
-                          workspace: job.workspace,
-                          output_dir: job.output_dir,
-                          requested_by: job.requested_by,
-                          error: job.error,
-                        }}
-                      />
-                      {job.files?.length > 0 && (
-                        <details open={job.status === "succeeded"}>
-                          <summary>Produced files</summary>
-                          <ul>
-                            {job.files.map((file: string) => (
-                              <li key={file}>{file}</li>
-                            ))}
-                          </ul>
-                        </details>
-                      )}
-                      {job.output_tail && (
-                        <CodeBlock>{job.output_tail}</CodeBlock>
-                      )}
-                      {job.git_status?.length > 0 && (
-                        <CodeBlock>
-                          {job.git_status.join("\n")}
-                        </CodeBlock>
-                      )}
+                      <div className="scaffold-result stack">
+                        <header className="page-header">
+                          <h4>Last scaffold run</h4>
+                          <Status value={job.status} />
+                        </header>
+                        {job.error && (
+                          <div
+                            role="alert"
+                            className="feedback error scaffold-error"
+                          >
+                            <strong>Scaffold failed</strong>
+                            <p>{job.error}</p>
+                            <small>
+                              Review the workspace output below before retrying.
+                            </small>
+                          </div>
+                        )}
+                        <Facts
+                          value={{
+                            workspace: job.workspace,
+                            output_dir: job.output_dir,
+                            requested_by: job.requested_by,
+                          }}
+                        />
+                        {job.files?.length > 0 && (
+                          <details open={job.status === "succeeded"}>
+                            <summary>Produced files</summary>
+                            <FileTree paths={job.files} />
+                          </details>
+                        )}
+                        {job.output_tail && (
+                          <CodeBlock language="text" filename="workspace-output.log">{job.output_tail}</CodeBlock>
+                        )}
+                        {job.git_status?.length > 0 && (
+                          <CodeBlock language="text" filename="git-status.txt">
+                            {job.git_status.join("\n")}
+                          </CodeBlock>
+                        )}
+                      </div>
                     </>
                   )}
                 </section>
@@ -414,7 +429,19 @@ export function Projects(props: OperationsProps) {
       )}
       {repo && (
         <Modal title="Git repository" onClose={() => setRepo(null)}>
+          <GitHubRepositoryPicker
+            onChoose={(repository) =>
+              setRepo({
+                ...repo,
+                repository: {
+                  url: repository.html_url,
+                  default_branch: repository.default_branch,
+                },
+              })
+            }
+          />
           <Form
+            key={repo.repository?.url || "manual"}
             initial={{
               url: repo.repository?.url || "",
               default_branch: repo.repository?.default_branch || "main",
@@ -450,7 +477,7 @@ export function Projects(props: OperationsProps) {
             }}
           />
           <h3>Exact command</h3>
-          <CodeBlock>{plan.command}</CodeBlock>
+          <CodeBlock language="bash" filename="scaffold.sh">{plan.command}</CodeBlock>
           <ol>
             {(plan.argv || []).map((argument: string, index: number) => (
               <li key={index}>

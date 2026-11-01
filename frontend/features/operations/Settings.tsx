@@ -1,10 +1,12 @@
 "use client";
-import {Select} from "@/components/ui/Select";
-import {CodeBlock} from "@/components/ui/CodeBlock";
+import { GitHubConnection } from "@/components/console/GitHubConnection";
+import { Select } from "@/components/ui/Select";
+import { CodeBlock } from "@/components/ui/CodeBlock";
 import { useEffect, useState } from "react";
 import { request } from "@/lib/api";
 import {
   admin,
+  can,
   csv,
   date,
   Detail,
@@ -43,8 +45,14 @@ export function Settings({ identity }: OperationsProps) {
   });
   useEffect(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem("kionga.console.preferences") || "{}");
-      setPreferences(old=>({...old,...stored,theme:stored?.theme === "dark" ? "dark" : "light"}));
+      const stored = JSON.parse(
+        localStorage.getItem("kionga.console.preferences") || "{}",
+      );
+      setPreferences((old) => ({
+        ...old,
+        ...stored,
+        theme: stored?.theme === "dark" ? "dark" : "light",
+      }));
     } catch {
       /* defaults */
     }
@@ -54,7 +62,8 @@ export function Settings({ identity }: OperationsProps) {
     setPreferences(next);
     try {
       localStorage.setItem("kionga.console.preferences", JSON.stringify(next));
-      document.documentElement.dataset.theme = next.theme === "dark" ? "dark" : "light";
+      document.documentElement.dataset.theme =
+        next.theme === "dark" ? "dark" : "light";
       document.body.classList.toggle("compact-ui", !!next.compact);
       document.documentElement.dataset.reduceMotion = String(
         !!next.reduceMotion,
@@ -195,8 +204,38 @@ export function Settings({ identity }: OperationsProps) {
           />
         </State>
       </section>
+      <GitHubConnection
+        canImport={
+          can(identity, "projects_write") && can(identity, "git_write")
+        }
+      />
       <section className="panel">
         <h2>Hugging Face account</h2>
+        <div className="button-row">
+          <a
+            href="https://huggingface.co/join"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Create a Hugging Face account
+          </a>
+          <a
+            href="https://huggingface.co/settings/tokens"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Manage access tokens
+          </a>
+          {account.data?.connected && (
+            <a
+              href={`https://huggingface.co/${encodeURIComponent(account.data.username)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              View connected account
+            </a>
+          )}
+        </div>
         <State {...account} retry={account.reload}>
           <p>
             {account.data?.connected

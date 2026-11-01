@@ -1,22 +1,17 @@
 "use client";
-import {Select} from "@/components/ui/Select";
 import {
-  useEffect,
-  useReducer,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+  GraphCanvas,
+  type GraphCanvasHandle,
+} from "@/components/ui/GraphCanvas";
+import { CodeEditor } from "@/components/ui/CodeEditor";
+import { Icon } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { request, APIError, errorMessage } from "@/lib/api";
 import { useQuery } from "@/hooks/useQuery";
 import { useUnsaved } from "@/hooks/useUnsaved";
 import { items, hasService, type Entity } from "@/lib/types";
-import {
-  DataState,
-  Feedback,
-  Detail,
-  type ViewProps,
-} from "@/features/shared/View";
+import { DataState, Feedback, type ViewProps } from "@/features/shared/View";
 import {
   blankGraph,
   connectionIssue,
@@ -93,7 +88,43 @@ export function AgentDesigner({ identity, project, resource }: ViewProps) {
     [validation, setValidation] = useState<Entity | null>(null),
     [conflict, setConflict] = useState<Entity | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(true);
-  useEffect(() => { if (window.matchMedia) setPaletteOpen(!window.matchMedia("(max-width: 640px)").matches); }, []);
+  const [expanded, setExpanded] = useState(false),
+    [context, setContext] = useState<{
+      id: string;
+      x: number;
+      y: number;
+    } | null>(null);
+  const flow = useRef<GraphCanvasHandle>(null);
+  useEffect(() => {
+    if (!expanded) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setExpanded(false);
+        setContext(null);
+      }
+    };
+    window.addEventListener("keydown", escape);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", escape);
+    };
+  }, [expanded]);
+  useEffect(() => {
+    if (!context) return;
+    const close = () => setContext(null);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [context]);
+  useEffect(() => {
+    if (window.matchMedia)
+      setPaletteOpen(!window.matchMedia("(max-width: 640px)").matches);
+  }, []);
   const [nodeStatus, setNodeStatus] = useState<Record<string, string>>({});
   const generation = useRef(0);
   const current = useRef(state.draft);
@@ -117,14 +148,21 @@ export function AgentDesigner({ identity, project, resource }: ViewProps) {
         : node.kind === "output"
           ? []
           : ["out"]);
-  const width = Math.max(1200, ...draft.nodes.map((n) => n.x + 300)),
-    height = Math.max(650, ...draft.nodes.map((n) => n.y + 200));
   const update = (next: GraphDraft, record = true) =>
     dispatch({ type: "change", draft: next, record });
   function open(next: GraphDraft, changed = false) {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     generation.current++;
-    dispatch({ type: "open", draft: { ...next, nodes: next.nodes.map(node => ({ ...node, config: node.config || {} })) } });
+    dispatch({
+      type: "open",
+      draft: {
+        ...next,
+        nodes: next.nodes.map((node) => ({
+          ...node,
+          config: node.config || {},
+        })),
+      },
+    });
     setBaseline(changed ? "" : JSON.stringify(graphPayload(next)));
     setSelected([]);
     setValidation(null);
@@ -141,7 +179,16 @@ export function AgentDesigner({ identity, project, resource }: ViewProps) {
         (next as GraphDraft) ||
         blankGraph(project || items(projects.data)[0]?.id || "");
       generation.current++;
-      dispatch({ type: "open", draft: { ...value, nodes: value.nodes.map(node => ({ ...node, config: node.config || {} })) } });
+      dispatch({
+        type: "open",
+        draft: {
+          ...value,
+          nodes: value.nodes.map((node) => ({
+            ...node,
+            config: node.config || {},
+          })),
+        },
+      });
       setBaseline(JSON.stringify(graphPayload(value)));
     }
   }, [resource, project, designs.data, projects.data]);
@@ -228,74 +275,19 @@ export function AgentDesigner({ identity, project, resource }: ViewProps) {
     });
     setSelected(nodes.map((n) => n.id));
   }
-  function connect(to: string) {
-    if (!connecting) return;
-    const issue = connectionIssue(draft, connecting.id, to, connecting.port);
+  function connect(to: string, source = connecting) {
+    if (!source) return;
+    const issue = connectionIssue(draft, source.id, to, source.port);
     if (issue) {
       setError(issue);
       return;
     }
     update({
       ...draft,
-      edges: [
-        ...draft.edges,
-        { from: connecting.id, to, from_port: connecting.port },
-      ],
+      edges: [...draft.edges, { from: source.id, to, from_port: source.port }],
     });
     setConnecting(null);
     setError("");
-  }
-  function drag(event: ReactPointerEvent<HTMLButtonElement>, node: GraphNode) {
-    if (!writable || event.button !== 0) return;
-    if (event.shiftKey) {
-      setSelected((old) =>
-        old.includes(node.id)
-          ? old.filter((id) => id !== node.id)
-          : [...old, node.id],
-      );
-      return;
-    }
-    const ids = selected.includes(node.id) ? selected : [node.id];
-    setSelected(ids);
-    const start = structuredClone(draft),
-      x = event.clientX,
-      y = event.clientY,
-      element = event.currentTarget;
-    let recorded = false;
-    element.setPointerCapture(event.pointerId);
-    const move = (e: PointerEvent) => {
-      const dx = (e.clientX - x) / zoom,
-        dy = (e.clientY - y) / zoom;
-      if (Math.abs(dx) + Math.abs(dy) < 3) return;
-      const next = {
-        ...start,
-        nodes: start.nodes.map((n) =>
-          !ids.includes(n.id)
-            ? n
-            : {
-                ...n,
-                x: Math.max(
-                  0,
-                  snap ? Math.round((n.x + dx) / 20) * 20 : n.x + dx,
-                ),
-                y: Math.max(
-                  0,
-                  snap ? Math.round((n.y + dy) / 20) * 20 : n.y + dy,
-                ),
-              },
-        ),
-      };
-      update(next, !recorded);
-      recorded = true;
-    };
-    const end = () => {
-      element.removeEventListener("pointermove", move);
-      element.removeEventListener("pointerup", end);
-      element.removeEventListener("pointercancel", end);
-    };
-    element.addEventListener("pointermove", move);
-    element.addEventListener("pointerup", end);
-    element.addEventListener("pointercancel", end);
   }
   async function save() {
     if (graphIssues(draft).length) {
@@ -316,7 +308,13 @@ export function AgentDesigner({ identity, project, resource }: ViewProps) {
       if (generation.current !== started) return;
       const latest = current.current;
       const changed = JSON.stringify(graphPayload(latest)) !== submitted;
-      dispatch({ type: changed ? "change" : "open", record: false, draft: changed ? { ...latest, id: saved.id, revision: saved.revision } : saved });
+      dispatch({
+        type: changed ? "change" : "open",
+        record: false,
+        draft: changed
+          ? { ...latest, id: saved.id, revision: saved.revision }
+          : saved,
+      });
       setBaseline(JSON.stringify(graphPayload(saved)));
       designs.reload();
       const url = new URL(location.href);
@@ -367,7 +365,7 @@ export function AgentDesigner({ identity, project, resource }: ViewProps) {
         ),
       });
   }
-  function add(kind: string) {
+  function add(kind: string, position?: { x: number; y: number }) {
     if (draft.nodes.length >= 100) {
       setError("A design can have at most 100 nodes.");
       return;
@@ -379,8 +377,11 @@ export function AgentDesigner({ identity, project, resource }: ViewProps) {
         id,
         kind,
         name: spec?.label || kind,
-        x: 80 + (draft.nodes.length % 4) * 240,
-        y: 80 + Math.floor(draft.nodes.length / 4) * 150,
+        x: Math.max(0, position?.x ?? 80 + (draft.nodes.length % 4) * 240),
+        y: Math.max(
+          0,
+          position?.y ?? 80 + Math.floor(draft.nodes.length / 4) * 150,
+        ),
         config: Object.fromEntries(
           (spec?.config || [])
             .filter((f: Entity) => f.default !== undefined)
@@ -389,9 +390,99 @@ export function AgentDesigner({ identity, project, resource }: ViewProps) {
       };
     update({ ...draft, nodes: [...draft.nodes, node] });
     setSelected([id]);
+    if (expanded && window.innerWidth < 900) setPaletteOpen(false);
   }
   return (
-    <section id="agent-designer" aria-label="Agent designer">
+    <section
+      id="agent-designer"
+      className={expanded ? "has-expanded-workspace" : undefined}
+      aria-label="Agent designer"
+    >
+      {context && (
+        <div
+          role="menu"
+          aria-label="Node actions"
+          className="node-context-menu"
+          style={{
+            left: Math.min(context.x, window.innerWidth - 230),
+            top: Math.min(context.y, window.innerHeight - 210),
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setContext(null);
+          }}
+        >
+          <button
+            role="menuitem"
+            autoFocus
+            onClick={() => {
+              setSelected([context.id]);
+              setContext(null);
+              requestAnimationFrame(() =>
+                document.getElementById("design-node-name")?.focus(),
+              );
+            }}
+          >
+            Configure node
+          </button>
+          <button
+            role="menuitem"
+            disabled={
+              !writable ||
+              ["input", "output"].includes(
+                draft.nodes.find((n) => n.id === context.id)?.kind || "",
+              )
+            }
+            onClick={() => {
+              const original = draft.nodes.find((n) => n.id === context.id)!;
+              const clone = {
+                ...structuredClone(original),
+                id: `${original.kind}-${crypto.randomUUID().slice(0, 8)}`,
+                name: `${original.name} copy`,
+                x: original.x + 40,
+                y: original.y + 40,
+              };
+              if (draft.nodes.length < 100) {
+                update({ ...draft, nodes: [...draft.nodes, clone] });
+                setSelected([clone.id]);
+              }
+              setContext(null);
+            }}
+          >
+            Duplicate node
+          </button>
+          <button
+            role="menuitem"
+            disabled={!writable}
+            onClick={() => {
+              update({
+                ...draft,
+                edges: draft.edges.filter(
+                  (edge) => edge.from !== context.id && edge.to !== context.id,
+                ),
+              });
+              setContext(null);
+            }}
+          >
+            Disconnect node
+          </button>
+          <button
+            role="menuitem"
+            disabled={
+              !writable ||
+              ["input", "output"].includes(
+                draft.nodes.find((n) => n.id === context.id)?.kind || "",
+              )
+            }
+            onClick={() => {
+              remove();
+              setContext(null);
+            }}
+          >
+            Delete node
+          </button>
+        </div>
+      )}
       <div className="toolbar">
         <label className="field">
           Design
@@ -572,479 +663,522 @@ export function AgentDesigner({ identity, project, resource }: ViewProps) {
           {draft.revision ? `Revision ${draft.revision}` : "New design"}
           {dirty ? " — unsaved changes" : ""}
         </p>
-        <div className="toolbar">
-          <div className="button-row">
-            <button
-              id="design-undo"
-              disabled={!writable || !state.past.length}
-              onClick={() => dispatch({ type: "undo" })}
-            >
-              Undo
-            </button>
-            <button
-              id="design-redo"
-              disabled={!writable || !state.future.length}
-              onClick={() => dispatch({ type: "redo" })}
-            >
-              Redo
-            </button>
-            <button disabled={!writable || !selected.length} onClick={copy}>
-              Copy nodes
-            </button>
-            <button disabled={!writable || !copied.current} onClick={paste}>
-              Paste nodes
-            </button>
-            <button disabled={!writable || !selected.length} onClick={remove}>
-              Delete selection
-            </button>
-            <button
-              onClick={() => setZoom((z) => Math.max(0.3, z - 0.1))}
-              aria-label="Zoom out"
-            >
-              −
-            </button>
-            <span>{Math.round(zoom * 100)}%</span>
-            <button
-              onClick={() => setZoom((z) => Math.min(1.5, z + 0.1))}
-              aria-label="Zoom in"
-            >
-              +
-            </button>
-            <button
-              onClick={() => {
-                setZoom(
-                  Math.min(1, (scroller.current?.clientWidth || 800) / width),
-                );
-                scroller.current?.scrollTo(0, 0);
-              }}
-            >
-              Fit graph
-            </button>
-            <label>
-              <input
-                id="design-snap"
-                type="checkbox"
-                checked={snap}
-                onChange={(e) => setSnap(e.target.checked)}
-              />{" "}
-              Snap to grid
-            </label>
-          </div>
-        </div>
-        <div className="graph-workbench">
-          <aside className="graph-palette"><details open={paletteOpen} onToggle={event => setPaletteOpen(event.currentTarget.open)}><summary>Components</summary><div className="component-picker">
-            <label className="field">
-              Find component
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </label>
-            <DataState
-              loading={registry.loading}
-              error={registry.error}
-              onRetry={registry.reload}
-            >
-              {components
-                .filter((c: Entity) =>
-                  `${c.label} ${c.kind} ${c.description}`
-                    .toLowerCase()
-                    .includes(search.toLowerCase()),
-                )
-                .map((c: Entity) => (
+        <div
+          className={`agent-graph-workspace${expanded ? " designer-expanded" : ""}`}
+        >
+          <div className="toolbar">
+            <div className="button-row">
+              {expanded && (
+                <>
+                  <label className="expanded-name">
+                    Name
+                    <input
+                      aria-label="Expanded design name"
+                      value={draft.name}
+                      onChange={(event) =>
+                        update({ ...draft, name: event.target.value })
+                      }
+                    />
+                  </label>
                   <button
-                    key={c.kind}
-                    data-design-add={c.kind}
-                    title={c.description}
-                    disabled={
-                      !writable ||
-                      (c.singleton &&
-                        draft.nodes.some((n) => n.kind === c.kind))
-                    }
-                    onClick={() => add(c.kind)}
+                    className="primary"
+                    disabled={!writable || saving}
+                    onClick={() => void save()}
                   >
-                    {c.label}
+                    Save graph
                   </button>
-                ))}
-            </DataState>
-          </div></details></aside>
-          <div
-            ref={scroller}
-            className="graph-canvas-scroll"
-            tabIndex={0}
-            aria-label="Agent graph canvas"
-            onKeyDown={(event) => {
-              if (
-                (event.target as HTMLElement).matches("input,textarea,select")
-              )
-                return;
-              const meta = event.ctrlKey || event.metaKey;
-              if (meta && event.key.toLowerCase() === "z") {
-                event.preventDefault();
-                dispatch({ type: event.shiftKey ? "redo" : "undo" });
-              } else if (meta && event.key.toLowerCase() === "c") {
-                event.preventDefault();
-                copy();
-              } else if (meta && event.key.toLowerCase() === "v") {
-                event.preventDefault();
-                if (writable) paste();
-              } else if (
-                ["Delete", "Backspace"].includes(event.key) &&
-                writable
-              ) {
-                event.preventDefault();
-                remove();
-              } else if (event.key === "Escape") {
-                setConnecting(null);
-                setSelected([]);
-              } else if (
-                ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
-                  event.key,
-                ) &&
-                writable &&
-                selected.length
-              ) {
-                event.preventDefault();
-                const move = snap || event.shiftKey ? 20 : 5,
-                  dx =
-                    event.key === "ArrowLeft"
-                      ? -move
-                      : event.key === "ArrowRight"
-                        ? move
-                        : 0,
-                  dy =
-                    event.key === "ArrowUp"
-                      ? -move
-                      : event.key === "ArrowDown"
-                        ? move
-                        : 0;
-                update({
-                  ...draft,
-                  nodes: draft.nodes.map((n) =>
-                    selected.includes(n.id)
-                      ? {
-                          ...n,
-                          x: Math.max(
-                            0,
-                            snap ? Math.round((n.x + dx) / 20) * 20 : n.x + dx,
-                          ),
-                          y: Math.max(
-                            0,
-                            snap ? Math.round((n.y + dy) / 20) * 20 : n.y + dy,
-                          ),
-                        }
-                      : n,
-                  ),
-                });
-              }
-            }}
-          >
-            <div
-              id="design-canvas"
-              className="graph-canvas"
-              style={{ width: width * zoom, height: height * zoom }}
-            >
-              <div
-                style={{
-                  width,
-                  height,
-                  transform: `scale(${zoom})`,
-                  transformOrigin: "top left",
-                  position: "relative",
+                  <span role="status">{message}</span>
+                  {error && (
+                    <span role="alert" className="feedback error">
+                      {error}
+                    </span>
+                  )}
+                </>
+              )}
+              <button
+                id="design-undo"
+                disabled={!writable || !state.past.length}
+                onClick={() => dispatch({ type: "undo" })}
+              >
+                Undo
+              </button>
+              <button
+                id="design-redo"
+                disabled={!writable || !state.future.length}
+                onClick={() => dispatch({ type: "redo" })}
+              >
+                Redo
+              </button>
+              <button disabled={!writable || !selected.length} onClick={copy}>
+                Copy nodes
+              </button>
+              <button disabled={!writable || !copied.current} onClick={paste}>
+                Paste nodes
+              </button>
+              <button disabled={!writable || !selected.length} onClick={remove}>
+                Delete selection
+              </button>
+              <button
+                onClick={() => setZoom((z) => Math.max(0.3, z - 0.1))}
+                aria-label="Zoom out"
+              >
+                −
+              </button>
+              <span>{Math.round(zoom * 100)}%</span>
+              <button
+                onClick={() => setZoom((z) => Math.min(1.5, z + 0.1))}
+                aria-label="Zoom in"
+              >
+                +
+              </button>
+              <button
+                onClick={() => {
+                  flow.current?.fit();
+                  scroller.current?.scrollIntoView({ block: "nearest" });
                 }}
               >
-                <svg
-                  className="graph-edges"
-                  width={width}
-                  height={height}
-                  role="img"
-                  aria-label="Agent graph connections"
-                >
-                  <defs>
-                    <marker
-                      id="graph-arrow"
-                      markerWidth="8"
-                      markerHeight="8"
-                      refX="7"
-                      refY="4"
-                      orient="auto"
-                    >
-                      <path d="M0 0L8 4L0 8Z" />
-                    </marker>
-                  </defs>
-                  {draft.edges.map((edge, index) => {
-                    const a = draft.nodes.find((n) => n.id === edge.from),
-                      b = draft.nodes.find((n) => n.id === edge.to);
-                    if (!a || !b) return null;
-                    const x = a.x + 190,
-                      y = a.y + 48,
-                      endX = b.x,
-                      endY = b.y + 48;
-                    return (
-                      <path
-                        key={`${edge.from}-${edge.to}-${edge.from_port}-${index}`}
-                        className="design-edge"
-                        d={`M${x},${y} C${x + 70},${y} ${endX - 70},${endY} ${endX},${endY}`}
-                        fill="none"
-                        markerEnd="url(#graph-arrow)"
-                      >
-                        <title>
-                          {a.name} {edge.from_port || "out"} to {b.name}
-                        </title>
-                      </path>
-                    );
-                  })}
-                </svg>
-                {draft.nodes.map((node) => (
-                  <div
-                    key={node.id}
-                    className={`graph-node design-node${selected.includes(node.id) ? " selected" : ""}${nodeStatus[node.id] ? ` run-${nodeStatus[node.id]}` : ""}`}
-                    data-design-node={node.id}
-                    style={{
-                      transform: `translate(${node.x}px,${node.y}px)`,
-                      minHeight: Math.max(100, ports(node).length * 27 + 40),
-                    }}
-                  >
-                    {node.kind !== "input" && (
-                      <button
-                        className="graph-input"
-                        data-design-in={node.id}
-                        aria-label={`Connect to ${node.name}`}
-                        disabled={!writable || !connecting}
-                        onClick={() => connect(node.id)}
-                      >
-                        In
-                      </button>
-                    )}
-                    <button
-                      className="graph-node-body"
-                      data-design-select={node.id}
-                      aria-pressed={selected.includes(node.id)}
-                      onPointerDown={(event) => drag(event, node)}
-                      onClick={() => {
-                        if (!selected.includes(node.id)) setSelected([node.id]);
-                      }}
-                    >
-                      <span>{node.kind}</span>
-                      <strong>{node.name}</strong>
-                      <code>{node.id}</code>
-                    </button>
-                    <div className="graph-ports">
-                      {ports(node).map((port: string) => (
-                        <button
-                          key={port}
-                          data-design-out={node.id}
-                          data-design-port={port}
-                          aria-label={`Connect ${node.name} ${port}`}
-                          aria-pressed={
-                            connecting?.id === node.id &&
-                            connecting.port === port
-                          }
-                          disabled={!writable}
-                          onClick={() => setConnecting({ id: node.id, port })}
-                        >
-                          {port}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                Fit graph
+              </button>
+              <button
+                aria-pressed={expanded}
+                onClick={() => {
+                  setExpanded(!expanded);
+                  if (!expanded && window.innerWidth < 900)
+                    setPaletteOpen(false);
+                }}
+              >
+                <Icon name={expanded ? "close" : "expand"} />
+                {expanded ? "Exit expanded view" : "Expand workspace"}
+              </button>
+              <label>
+                <input
+                  id="design-snap"
+                  type="checkbox"
+                  checked={snap}
+                  onChange={(e) => setSnap(e.target.checked)}
+                />{" "}
+                Snap to grid
+              </label>
             </div>
           </div>
-          <aside className="graph-inspector">
-            {selectedNode ? (
-              <>
-                <h2>Node settings</h2>
-                <label className="field">
-                  Label
-                  <input
-                    id="design-node-name"
-                    disabled={!writable}
-                    value={selectedNode.name}
-                    onChange={(e) => updateNode({ name: e.target.value })}
-                  />
-                </label>
-                <label className="field">
-                  Group
-                  <input
-                    disabled={!writable}
-                    value={selectedNode.group || ""}
-                    onChange={(e) => updateNode({ group: e.target.value })}
-                  />
-                </label>
-                {(component(selectedNode.kind)?.config || []).map(
-                  (field: Entity) => {
-                    const value =
-                        selectedNode.config?.[field.key] ?? field.default ?? "",
-                      own = (resources[field.resource] || []).filter(
-                        (r) =>
-                          !r.project_id || r.project_id === draft.project_id,
-                      ),
-                      options =
-                        field.resource === "model"
-                          ? [{ id: "llm", name: "Platform chat model" }, ...own]
-                          : own;
-                    return (
-                      <label className="field" key={field.key}>
-                        {field.label}
-                        {field.type === "enum" ? (
-                          <Select
-                            disabled={!writable}
-                            value={String(value)}
-                            onChange={(e) =>
-                              updateNode({
-                                config: {
-                                  ...(selectedNode.config || {}),
-                                  [field.key]: e.target.value,
-                                },
-                              })
-                            }
-                          >
-                            {(field.options || []).map((option: string) => (
-                              <option key={option}>{option}</option>
-                            ))}
-                          </Select>
-                        ) : field.type === "resource" ? (
-                          <Select
-                            disabled={!writable}
-                            value={String(value)}
-                            onChange={(e) =>
-                              updateNode({
-                                config: {
-                                  ...(selectedNode.config || {}),
-                                  [field.key]: e.target.value,
-                                },
-                              })
-                            }
-                          >
-                            <option value="">Choose resource</option>
-                            {options.map((r) => (
-                              <option
-                                key={r.id || r.name}
-                                value={
-                                  field.resource === "tool" ? r.name : r.id
-                                }
-                              >
-                                {r.name || r.design_name || r.id}
-                                {r.version ? ` v${r.version}` : ""}
-                              </option>
-                            ))}
-                            {value &&
-                              !options.some(
-                                (r) => (r.id || r.name) === value,
-                              ) && (
-                                <option value={String(value)}>
-                                  {String(value)} (unavailable)
-                                </option>
-                              )}
-                          </Select>
-                        ) : field.type === "template" ? (
-                          <textarea
-                            disabled={!writable}
-                            rows={5}
-                            value={String(value)}
-                            onChange={(e) =>
-                              updateNode({
-                                config: {
-                                  ...(selectedNode.config || {}),
-                                  [field.key]: e.target.value,
-                                },
-                              })
-                            }
-                          />
-                        ) : (
-                          <input
-                            disabled={!writable}
-                            type={field.type === "integer" ? "number" : "text"}
-                            min={field.minimum}
-                            max={field.maximum}
-                            value={String(value)}
-                            onChange={(e) =>
-                              updateNode({
-                                config: {
-                                  ...(selectedNode.config || {}),
-                                  [field.key]: e.target.value,
-                                },
-                              })
-                            }
-                          />
-                        )}
-                        <small>{field.help}</small>
-                      </label>
-                    );
-                  },
-                )}
-                <h3>Connections</h3>
-                {draft.edges
-                  .filter(
-                    (e) =>
-                      e.from === selectedNode.id || e.to === selectedNode.id,
-                  )
-                  .map((edge, i) => (
-                    <p key={i}>
-                      {edge.from} {edge.from_port || "out"} → {edge.to}
-                      <button
-                        disabled={!writable}
-                        aria-label={`Remove connection ${edge.from} to ${edge.to}`}
-                        onClick={() =>
-                          update({
-                            ...draft,
-                            edges: draft.edges.filter((e) => e !== edge),
-                          })
-                        }
-                      >
-                        Remove
-                      </button>
-                    </p>
-                  ))}
-                <button
-                  disabled={
-                    !writable || ["input", "output"].includes(selectedNode.kind)
-                  }
-                  onClick={remove}
-                >
-                  Remove node
-                </button>
-              </>
-            ) : (
-              <p>Select a node to configure its resources and connections.</p>
-            )}
-            <svg
-              className="graph-minimap"
-              viewBox={`0 0 ${width} ${height}`}
-              role="img"
-              aria-label="Graph overview"
-              onClick={(event) => {
-                const box = event.currentTarget.getBoundingClientRect();
-                scroller.current?.scrollTo({
-                  left:
-                    ((event.clientX - box.left) / box.width) * width * zoom -
-                    200,
-                  top:
-                    ((event.clientY - box.top) / box.height) * height * zoom -
-                    150,
-                });
+          <p className="graph-help">
+            Drag components onto the canvas. Move nodes by their labels, connect
+            output and input handles, and right-click a node to configure it.
+            Drag the background to pan.
+          </p>
+          <div className="graph-workbench">
+            <aside className="graph-palette">
+              <details
+                open={paletteOpen}
+                onToggle={(event) => setPaletteOpen(event.currentTarget.open)}
+              >
+                <summary>Components</summary>
+                <div className="component-picker">
+                  <label className="field">
+                    Find component
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </label>
+                  <DataState
+                    loading={registry.loading}
+                    error={registry.error}
+                    onRetry={registry.reload}
+                  >
+                    {components
+                      .filter((c: Entity) =>
+                        `${c.label} ${c.kind} ${c.description}`
+                          .toLowerCase()
+                          .includes(search.toLowerCase()),
+                      )
+                      .map((c: Entity) => (
+                        <button
+                          key={c.kind}
+                          data-design-add={c.kind}
+                          draggable={writable}
+                          onDragStart={(event) => {
+                            event.dataTransfer.setData(
+                              "application/kionga-component",
+                              c.kind,
+                            );
+                            event.dataTransfer.effectAllowed = "copy";
+                          }}
+                          title={c.description}
+                          disabled={
+                            !writable ||
+                            (c.singleton &&
+                              draft.nodes.some((n) => n.kind === c.kind))
+                          }
+                          onClick={() => add(c.kind)}
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                  </DataState>
+                </div>
+              </details>
+            </aside>
+            <div
+              ref={scroller}
+              className="graph-canvas-scroll"
+              tabIndex={0}
+              aria-label="Agent graph canvas"
+              onKeyDown={(event) => {
+                if (
+                  (event.target as HTMLElement).matches("input,textarea,select")
+                )
+                  return;
+                const meta = event.ctrlKey || event.metaKey;
+                if (meta && event.key.toLowerCase() === "z") {
+                  event.preventDefault();
+                  dispatch({ type: event.shiftKey ? "redo" : "undo" });
+                } else if (meta && event.key.toLowerCase() === "c") {
+                  event.preventDefault();
+                  copy();
+                } else if (meta && event.key.toLowerCase() === "v") {
+                  event.preventDefault();
+                  if (writable) paste();
+                } else if (
+                  ["Delete", "Backspace"].includes(event.key) &&
+                  writable
+                ) {
+                  event.preventDefault();
+                  remove();
+                } else if (event.key === "Escape") {
+                  setConnecting(null);
+                  setSelected([]);
+                } else if (
+                  ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
+                    event.key,
+                  ) &&
+                  writable &&
+                  selected.length
+                ) {
+                  event.preventDefault();
+                  const move = snap || event.shiftKey ? 20 : 5,
+                    dx =
+                      event.key === "ArrowLeft"
+                        ? -move
+                        : event.key === "ArrowRight"
+                          ? move
+                          : 0,
+                    dy =
+                      event.key === "ArrowUp"
+                        ? -move
+                        : event.key === "ArrowDown"
+                          ? move
+                          : 0;
+                  update({
+                    ...draft,
+                    nodes: draft.nodes.map((n) =>
+                      selected.includes(n.id)
+                        ? {
+                            ...n,
+                            x: Math.max(
+                              0,
+                              snap
+                                ? Math.round((n.x + dx) / 20) * 20
+                                : n.x + dx,
+                            ),
+                            y: Math.max(
+                              0,
+                              snap
+                                ? Math.round((n.y + dy) / 20) * 20
+                                : n.y + dy,
+                            ),
+                          }
+                        : n,
+                    ),
+                  });
+                }
               }}
             >
-              {draft.nodes.map((node) => (
-                <rect
-                  key={node.id}
-                  x={node.x}
-                  y={node.y}
-                  width={190}
-                  height={100}
-                  className={selected.includes(node.id) ? "selected" : ""}
+              <div id="design-canvas" className="agent-flow-surface">
+                <GraphCanvas
+                  ref={flow}
+                  label="Agent graph editor"
+                  editable={writable}
+                  zoom={zoom}
+                  onZoom={setZoom}
+                  snap={snap}
+                  onSelect={setSelected}
+                  onDragStart={() => update(current.current, true)}
+                  onPositions={(positions) =>
+                    update(
+                      {
+                        ...current.current,
+                        nodes: current.current.nodes.map((node) =>
+                          positions[node.id]
+                            ? { ...node, ...positions[node.id] }
+                            : node,
+                        ),
+                      },
+                      false,
+                    )
+                  }
+                  onAdd={add}
+                  onConnect={(from, to, port) =>
+                    connect(to, { id: from, port })
+                  }
+                  canConnect={(from, to, port) =>
+                    !connectionIssue(current.current, from, to, port)
+                  }
+                  onContext={(event, id) => {
+                    setSelected([id]);
+                    setContext({ id, x: event.clientX, y: event.clientY });
+                  }}
+                  edges={draft.edges.map((edge, index) => ({
+                    id: `${edge.from}-${edge.to}-${edge.from_port || "out"}-${index}`,
+                    from: edge.from,
+                    to: edge.to,
+                    port: edge.from_port || "out",
+                    label:
+                      edge.from_port && edge.from_port !== "out"
+                        ? edge.from_port
+                        : undefined,
+                  }))}
+                  nodes={draft.nodes.map((node) => ({
+                    id: node.id,
+                    x: node.x,
+                    y: node.y,
+                    selected: selected.includes(node.id),
+                    inputs: node.kind !== "input",
+                    outputs: ports(node),
+                    dragHandle: ".graph-node-body",
+                    content: (
+                      <div
+                        className={`design-node design-node-card${selected.includes(node.id) ? " selected" : ""}${nodeStatus[node.id] ? ` run-${nodeStatus[node.id]}` : ""}`}
+                        data-design-node={node.id}
+                      >
+                        {node.kind !== "input" && (
+                          <button
+                            className="graph-input nodrag"
+                            data-design-in={node.id}
+                            aria-label={`Connect to ${node.name}`}
+                            disabled={!writable || !connecting}
+                            onClick={() => connect(node.id)}
+                          >
+                            In
+                          </button>
+                        )}
+                        <div
+                          className="graph-node-body"
+                          data-design-select={node.id}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`${node.kind} ${node.name} ${node.id}`}
+                          aria-pressed={selected.includes(node.id)}
+                          onClick={() => setSelected([node.id])}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelected([node.id]);
+                            }
+                          }}
+                        >
+                          <span>{node.kind}</span>
+                          <strong>{node.name}</strong>
+                          <code>{node.id}</code>
+                        </div>
+                        <div className="graph-ports">
+                          {ports(node).map((port: string) => (
+                            <button
+                              className="nodrag"
+                              key={port}
+                              data-design-out={node.id}
+                              data-design-port={port}
+                              aria-label={`Connect ${node.name} ${port}`}
+                              aria-pressed={
+                                connecting?.id === node.id &&
+                                connecting.port === port
+                              }
+                              disabled={!writable}
+                              onClick={() =>
+                                setConnecting({ id: node.id, port })
+                              }
+                            >
+                              {port}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ),
+                  }))}
                 />
-              ))}
-            </svg>
-            <Detail
-              value={{
-                nodes: draft.nodes.length,
-                connections: draft.edges.length,
-              }}
-            />
-          </aside>
+              </div>
+            </div>
+            <aside className="graph-inspector">
+              {selectedNode ? (
+                <>
+                  <h2>Node settings</h2>
+                  <label className="field">
+                    Label
+                    <input
+                      id="design-node-name"
+                      disabled={!writable}
+                      value={selectedNode.name}
+                      onChange={(e) => updateNode({ name: e.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    Group
+                    <input
+                      disabled={!writable}
+                      value={selectedNode.group || ""}
+                      onChange={(e) => updateNode({ group: e.target.value })}
+                    />
+                  </label>
+                  {(component(selectedNode.kind)?.config || []).map(
+                    (field: Entity) => {
+                      const value =
+                          selectedNode.config?.[field.key] ??
+                          field.default ??
+                          "",
+                        own = (resources[field.resource] || []).filter(
+                          (r) =>
+                            !r.project_id || r.project_id === draft.project_id,
+                        ),
+                        options =
+                          field.resource === "model"
+                            ? [
+                                { id: "llm", name: "Platform chat model" },
+                                ...own,
+                              ]
+                            : own;
+                      return (
+                        <label className="field" key={field.key}>
+                          {field.label}
+                          {field.type === "enum" ? (
+                            <Select
+                              disabled={!writable}
+                              value={String(value)}
+                              onChange={(e) =>
+                                updateNode({
+                                  config: {
+                                    ...(selectedNode.config || {}),
+                                    [field.key]: e.target.value,
+                                  },
+                                })
+                              }
+                            >
+                              {(field.options || []).map((option: string) => (
+                                <option key={option}>{option}</option>
+                              ))}
+                            </Select>
+                          ) : field.type === "resource" ? (
+                            <Select
+                              disabled={!writable}
+                              value={String(value)}
+                              onChange={(e) =>
+                                updateNode({
+                                  config: {
+                                    ...(selectedNode.config || {}),
+                                    [field.key]: e.target.value,
+                                  },
+                                })
+                              }
+                            >
+                              <option value="">Choose resource</option>
+                              {options.map((r) => (
+                                <option
+                                  key={r.id || r.name}
+                                  value={
+                                    field.resource === "tool" ? r.name : r.id
+                                  }
+                                >
+                                  {r.name || r.design_name || r.id}
+                                  {r.version ? ` v${r.version}` : ""}
+                                </option>
+                              ))}
+                              {value &&
+                                !options.some(
+                                  (r) => (r.id || r.name) === value,
+                                ) && (
+                                  <option value={String(value)}>
+                                    {String(value)} (unavailable)
+                                  </option>
+                                )}
+                            </Select>
+                          ) : ["template", "expression", "json"].includes(
+                              field.type,
+                            ) ? (
+                            <CodeEditor
+                              disabled={!writable}
+                              label={field.label}
+                              language={field.type === "json" ? "json" : "text"}
+                              value={String(value)}
+                              onChange={(event) =>
+                                updateNode({
+                                  config: {
+                                    ...(selectedNode.config || {}),
+                                    [field.key]: event.target.value,
+                                  },
+                                })
+                              }
+                            />
+                          ) : (
+                            <input
+                              disabled={!writable}
+                              type={
+                                field.type === "integer" ? "number" : "text"
+                              }
+                              min={field.minimum}
+                              max={field.maximum}
+                              value={String(value)}
+                              onChange={(e) =>
+                                updateNode({
+                                  config: {
+                                    ...(selectedNode.config || {}),
+                                    [field.key]: e.target.value,
+                                  },
+                                })
+                              }
+                            />
+                          )}
+                          <small>{field.help}</small>
+                        </label>
+                      );
+                    },
+                  )}
+                  <h3>Connections</h3>
+                  {draft.edges
+                    .filter(
+                      (e) =>
+                        e.from === selectedNode.id || e.to === selectedNode.id,
+                    )
+                    .map((edge, i) => (
+                      <p key={i}>
+                        {edge.from} {edge.from_port || "out"} → {edge.to}
+                        <button
+                          disabled={!writable}
+                          aria-label={`Remove connection ${edge.from} to ${edge.to}`}
+                          onClick={() =>
+                            update({
+                              ...draft,
+                              edges: draft.edges.filter((e) => e !== edge),
+                            })
+                          }
+                        >
+                          Remove
+                        </button>
+                      </p>
+                    ))}
+                  <button
+                    disabled={
+                      !writable ||
+                      ["input", "output"].includes(selectedNode.kind)
+                    }
+                    onClick={remove}
+                  >
+                    Remove node
+                  </button>
+                </>
+              ) : (
+                <p>Select a node to configure its resources and connections.</p>
+              )}
+            </aside>
+          </div>
         </div>
         {!!draft.history?.length && (
           <details>

@@ -43,4 +43,7 @@
   <symbol id="chevron-down" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41,8.59L12,13.17L16.59,8.59L18,10L12,16L6,10L7.41,8.59Z"/></symbol>
   <symbol id="chevron-right" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59,16.59L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.59Z"/></symbol>
   <symbol id="logout" viewBox="0 0 24 24" fill="currentColor"><path d="M16,17V14H9V10H16V7L21,12L16,17M14,2A2,2 0 0,1 16,4V6H14V4H4V20H14V18H16V20A2,2 0 0,1 14,22H4A2,2 0 0,1 2,20V4A2,2 0 0,1 4,2H14Z"/></symbol>
+  <symbol id="download" viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5m14-9h-4V3H9v6H5l7 7 7-7Z"/></symbol>
+  <symbol id="expand" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3m-2-4h2V7h3V5H5v5m12 7h-3v2h5v-5h-2v3m-3-12v2h3v3h2V5h-5Z"/></symbol>
+  <symbol id="code" viewBox="0 0 24 24" fill="currentColor"><path d="M14.6 16.6 19.2 12l-4.6-4.6L16 6l6 6-6 6-1.4-1.4M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4Z"/></symbol>
 </svg>

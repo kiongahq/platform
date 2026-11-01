@@ -1,6 +1,8 @@
 "use client";
-import {Select} from "@/components/ui/Select";
-import {CodeEditor} from "@/components/ui/CodeEditor";
+import { CodeBlock } from "@/components/ui/CodeBlock";
+import { DownloadButton } from "@/components/ui/DownloadButton";
+import { Select } from "@/components/ui/Select";
+import { CodeEditor } from "@/components/ui/CodeEditor";
 import { useEffect, useState, type FormEvent } from "react";
 import { request } from "@/lib/api";
 import { Logs } from "./Logs";
@@ -43,6 +45,35 @@ export function Pipelines({
       ? `/api/v1/pipelines/definitions/${encode(definition.id)}/revisions`
       : null,
   );
+  useEffect(() => {
+    setStep("");
+  }, [resource]);
+  useEffect(() => {
+    if (!run.data || !["running", "queued"].includes(run.data.status)) return;
+    const timer = setTimeout(run.reload, 2000);
+    return () => clearTimeout(timer);
+  }, [run.data]);
+  const activeDefinition = items(definitions.data).find(
+    (item) => item.id === run.data?.definition_id,
+  );
+  function resumeFromNode() {
+    if (!run.data || !step) return;
+    const nodes = run.data.steps || [],
+      descendants = new Set([step]);
+    for (let pass = 0; pass < nodes.length; pass++)
+      for (const node of nodes)
+        if (
+          (node.depends_on || []).some((name: string) => descendants.has(name))
+        )
+          descendants.add(node.name);
+    setRunConfig({
+      definition_id: run.data.definition_id,
+      project_id: run.data.project_id,
+      rerun_from: run.data.id,
+      selected_nodes: [...descendants],
+    });
+    onNavigate("pipelines", "");
+  }
   const action = useAction(() => {
     runs.reload();
     definitions.reload();
@@ -221,8 +252,17 @@ export function Pipelines({
                     </button>
                   )}
                 />
-                {step && (
-                  <>
+                {step ? (
+                  <section
+                    className="pipeline-node-inspector"
+                    aria-label="Selected pipeline node"
+                  >
+                    <header className="page-header">
+                      <h3>{step}</h3>
+                      <button onClick={() => setStep("")}>
+                        Show all run logs
+                      </button>
+                    </header>
                     <Facts
                       value={
                         (run.data.steps || []).find(
@@ -230,15 +270,55 @@ export function Pipelines({
                         ) || {}
                       }
                     />
+                    {can(identity, "pipelines_write") &&
+                      run.data.definition_id &&
+                      ["failed", "cancelled"].includes(run.data.status) && (
+                        <div className="stack">
+                          <p>
+                            Resume with recorded successful outputs from this
+                            run. The selected node and its downstream nodes are
+                            included; required ancestors are resolved by
+                            preflight.
+                          </p>
+                          <button
+                            disabled={
+                              !activeDefinition?.overridable?.nodes ||
+                              action.busy
+                            }
+                            onClick={resumeFromNode}
+                          >
+                            {(run.data.steps || []).find(
+                              (item: RecordData) => item.name === step,
+                            )?.status === "succeeded"
+                              ? "Resume after"
+                              : "Resume from"}{" "}
+                            {step}
+                          </button>
+                          {!activeDefinition?.overridable?.nodes && (
+                            <small>
+                              This flow locks node selection. Enable node
+                              overrides in the definition before resuming a
+                              subset.
+                            </small>
+                          )}
+                        </div>
+                      )}
+                    <h4>Node logs</h4>
                     <Logs
                       project={run.data.project_id}
                       run={run.data.id}
                       node={step}
                     />
-                  </>
+                  </section>
+                ) : (
+                  <section className="pipeline-node-inspector">
+                    <h3>Run logs</h3>
+                    <p>
+                      Select a graph node for its details and filtered logs.
+                    </p>
+                    <Logs project={run.data.project_id} run={run.data.id} />
+                  </section>
                 )}
-                <h3>Logs</h3>
-                <Logs project={run.data.project_id} run={run.data.id} />
                 <div className="button-row">
                   {can(identity, "pipelines_write") && (
                     <>
@@ -432,14 +512,24 @@ export function Pipelines({
           </State>
           {revision !== undefined && (
             <>
-              <Detail value={revision} />
-              {typeof (revision as RecordData)?.yaml === "string" && (
-                <a
-                  download={`${definition.name}.kionga.yaml`}
-                  href={`data:application/yaml;charset=utf-8,${encodeURIComponent((revision as RecordData).yaml)}`}
-                >
-                  Download YAML
-                </a>
+              {typeof (revision as RecordData)?.yaml === "string" ? (
+                <div className="stack">
+                  <DownloadButton
+                    filename={`${definition.name}.kionga.yaml`}
+                    content={(revision as RecordData).yaml}
+                    language="yaml"
+                  >
+                    Download YAML
+                  </DownloadButton>
+                  <CodeBlock
+                    language="yaml"
+                    filename={`${definition.name}.kionga.yaml`}
+                  >
+                    {(revision as RecordData).yaml}
+                  </CodeBlock>
+                </div>
+              ) : (
+                <Detail value={revision} />
               )}
             </>
           )}
@@ -505,7 +595,10 @@ function RunConfiguration({
   useEffect(() => {
     setParameters({});
     setNodes({});
-    setSelected((definition?.jobs || []).map((job: RecordData) => job.name));
+    setSelected(
+      initial.selected_nodes ||
+        (definition?.jobs || []).map((job: RecordData) => job.name),
+    );
     setChecked(null);
     setCheckedKey("");
     if (definition)
@@ -676,7 +769,11 @@ function RunConfiguration({
             ))}
           </section>
         ) : (
-          <div className="field"><span className="field-caption">Parameters JSON</span><CodeEditor language="json" label="Parameters JSON"
+          <div className="field">
+            <span className="field-caption">Parameters JSON</span>
+            <CodeEditor
+              language="json"
+              label="Parameters JSON"
               rows={4}
               value={values.parameters}
               onChange={(event) =>
@@ -764,7 +861,11 @@ function RunConfiguration({
         )}
         <details>
           <summary>Additional permitted overrides</summary>
-          <div className="field"><span className="field-caption">Overrides JSON</span><CodeEditor language="json" label="Overrides JSON"
+          <div className="field">
+            <span className="field-caption">Overrides JSON</span>
+            <CodeEditor
+              language="json"
+              label="Overrides JSON"
               value={values.overrides}
               rows={5}
               onChange={(event) =>
@@ -798,17 +899,32 @@ function RunConfiguration({
             {!!checked.fields?.length && (
               <section aria-label="Effective run fields">
                 <h3>Effective run configuration</h3>
-                <Table rows={checked.fields} columns={[
-                  {key: "field", label: "Field"},
-                  {key: "default", label: "Default"},
-                  {key: "effective", label: "Effective value"},
-                  {key: "overridden", label: "Overridden", render: (field) => field.overridden ? "Yes" : "No"},
-                  {key: "locked", label: "Permission", render: (field) => field.locked ? "Locked" : "Editable"},
-                  {key: "reason", label: "Reason"},
-                ]} />
+                <Table
+                  rows={checked.fields}
+                  columns={[
+                    { key: "field", label: "Field" },
+                    { key: "default", label: "Default" },
+                    { key: "effective", label: "Effective value" },
+                    {
+                      key: "overridden",
+                      label: "Overridden",
+                      render: (field) => (field.overridden ? "Yes" : "No"),
+                    },
+                    {
+                      key: "locked",
+                      label: "Permission",
+                      render: (field) => (field.locked ? "Locked" : "Editable"),
+                    },
+                    { key: "reason", label: "Reason" },
+                  ]}
+                />
               </section>
             )}
-            {checked.policy_decision && <p>Policy decision: <code>{checked.policy_decision}</code></p>}
+            {checked.policy_decision && (
+              <p>
+                Policy decision: <code>{checked.policy_decision}</code>
+              </p>
+            )}
             {checked.reused_nodes?.length > 0 && (
               <p>Reusing {checked.reused_nodes.join(", ")}</p>
             )}

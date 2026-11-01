@@ -1,7 +1,9 @@
 "use client";
-import {Select} from "@/components/ui/Select";
-import {CodeEditor} from "@/components/ui/CodeEditor";
-import {CodeBlock} from "@/components/ui/CodeBlock";
+import { ExecutionGraph } from "@/features/operations/ExecutionGraph";
+import { DownloadButton } from "@/components/ui/DownloadButton";
+import { Select } from "@/components/ui/Select";
+import { CodeEditor } from "@/components/ui/CodeEditor";
+import { CodeBlock } from "@/components/ui/CodeBlock";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { request, errorMessage, APIError } from "@/lib/api";
 import { useQuery } from "@/hooks/useQuery";
@@ -154,143 +156,20 @@ function DefinitionGraph({
   onSelect: (job: Job) => void;
   selected?: string;
 }) {
-  const levels = new Map<string, number>();
-  function level(name: string, visiting = new Set<string>()): number {
-    if (levels.has(name)) return levels.get(name)!;
-    if (visiting.has(name)) return 0;
-    const node = jobs.find((job) => job.name === name);
-    if (!node) return 0;
-    const path = new Set(visiting);
-    path.add(name);
-    const value = node.depends_on?.length
-      ? Math.max(...node.depends_on.map((dep) => level(dep, path))) + 1
-      : 0;
-    levels.set(name, value);
-    return value;
-  }
-  const groups = new Map<number, Job[]>();
-  for (const job of jobs) {
-    const n = level(job.name);
-    groups.set(n, [...(groups.get(n) || []), job]);
-  }
-  const width = Math.max(280, (Math.max(0, ...groups.keys()) + 1) * 270),
-    height = Math.max(
-      150,
-      Math.max(1, ...Array.from(groups.values()).map((group) => group.length)) *
-        110,
-    );
-  const position = (name: string) => {
-    const column = levels.get(name) || 0,
-      row = (groups.get(column) || []).findIndex((job) => job.name === name);
-    return { x: column * 270 + 20, y: Math.max(0, row) * 110 + 25 };
-  };
   return (
-    <div
-      className="pipeline-graph table-scroll"
-      role="region"
-      aria-label="Definition dependency graph"
-    >
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        style={{ minWidth: width }}
-        role="group"
-        aria-label="Pipeline dependency graph"
-      >
-        <defs>
-          <marker
-            id="pipeline-arrow"
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto"
-          >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-rule-2)" />
-          </marker>
-        </defs>
-        {jobs.flatMap((job) =>
-          (job.depends_on || [])
-            .filter((dep) => jobs.some((node) => node.name === dep))
-            .map((dep) => {
-              const from = position(dep),
-                to = position(job.name);
-              return (
-                <path
-                  key={`${dep}-${job.name}`}
-                  d={`M ${from.x + 210} ${from.y + 32} C ${from.x + 240} ${from.y + 32},${to.x - 30} ${to.y + 32},${to.x} ${to.y + 32}`}
-                  fill="none"
-                  stroke="var(--color-rule-2)"
-                  strokeWidth="1.5"
-                  markerEnd="url(#pipeline-arrow)"
-                />
-              );
-            }),
-        )}
-        {jobs.map((job) => {
-          const p = position(job.name);
-          return (
-            <g
-              key={job.name}
-              role="button"
-              tabIndex={0}
-              aria-label={`Inspect ${job.name || "unnamed node"}`}
-              aria-pressed={selected === job.name}
-              onClick={() => onSelect(job)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onSelect(job);
-                }
-              }}
-            >
-              <title>
-                {job.name}: {job.kind === "function" ? job.function : job.image}
-              </title>
-              <rect
-                x={p.x}
-                y={p.y}
-                width="210"
-                height="64"
-                rx="6"
-                fill={
-                  selected === job.name
-                    ? "var(--color-accent-wash)"
-                    : "var(--color-paper-2)"
-                }
-                stroke={
-                  selected === job.name
-                    ? "var(--color-accent)"
-                    : "var(--color-rule-2)"
-                }
-              />
-              <text
-                x={p.x + 12}
-                y={p.y + 25}
-                fill="var(--color-ink)"
-                fontSize="14"
-              >
-                {(job.name || "Unnamed node").slice(0, 25)}
-              </text>
-              <text
-                x={p.x + 12}
-                y={p.y + 46}
-                fill="var(--color-muted)"
-                fontSize="12"
-              >
-                {String(
-                  job.kind === "function"
-                    ? job.function
-                    : job.image || "Container",
-                ).slice(0, 28)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+    <div className="pipeline-graph">
+      <ExecutionGraph
+        jobs={jobs}
+        selected={selected}
+        onSelect={(name) => {
+          const job = jobs.find((item) => item.name === name);
+          if (job) onSelect(job);
+        }}
+      />
     </div>
   );
 }
+
 export function PipelineEditor({
   identity,
   project,
@@ -572,13 +451,13 @@ export function PipelineEditor({
             <button type="button" onClick={() => void validate()}>
               Validate
             </button>
-            <a
-              className="button"
-              download={`${definition.name || "pipeline"}.kionga.yaml`}
-              href={`data:application/yaml;charset=utf-8,${encodeURIComponent(yaml || validation?.yaml || "")}`}
+            <DownloadButton
+              filename={`${definition.name || "pipeline"}.kionga.yaml`}
+              content={mode === "yaml" ? yaml : validation?.yaml || ""}
+              language="yaml"
             >
               Download YAML
-            </a>
+            </DownloadButton>
           </div>
           <div
             id="definition-form-panel"
@@ -940,7 +819,13 @@ export function PipelineEditor({
               disabled={!writable || busy || mode === "yaml"}
             >
               <legend>Parameters and run overrides</legend>
-              <div className="field"><span className="field-caption">Default parameters (JSON object)</span><CodeEditor language="json" label="Default parameters (JSON object)"
+              <div className="field">
+                <span className="field-caption">
+                  Default parameters (JSON object)
+                </span>
+                <CodeEditor
+                  language="json"
+                  label="Default parameters (JSON object)"
                   id="definition-parameters"
                   rows={6}
                   value={parameters}
@@ -1055,7 +940,11 @@ export function PipelineEditor({
             aria-labelledby="definition-tab-yaml"
             hidden={mode !== "yaml"}
           >
-            <div className="field"><span className="field-caption">Definition YAML</span><CodeEditor language="yaml" label="Definition YAML"
+            <div className="field">
+              <span className="field-caption">Definition YAML</span>
+              <CodeEditor
+                language="yaml"
+                label="Definition YAML"
                 ref={yamlRef}
                 id="definition-yaml"
                 rows={24}
@@ -1324,7 +1213,20 @@ export function PipelineEditor({
               {diff && (
                 <div role="region" aria-label="Line differences">
                   <h3>Revision {diff.revision} to current</h3>
-                  <CodeBlock language="yaml" format={false} lineClasses={diff.parts.map(part=>`diff-line ${part.type}`)}>{diff.parts.map(part=>`${part.type === "add" ? "+" : part.type === "del" ? "-" : " "} ${part.text}`).join("\n")}</CodeBlock>
+                  <CodeBlock
+                    language="yaml"
+                    format={false}
+                    lineClasses={diff.parts.map(
+                      (part) => `diff-line ${part.type}`,
+                    )}
+                  >
+                    {diff.parts
+                      .map(
+                        (part) =>
+                          `${part.type === "add" ? "+" : part.type === "del" ? "-" : " "} ${part.text}`,
+                      )
+                      .join("\n")}
+                  </CodeBlock>
                 </div>
               )}
               <button

@@ -1,6 +1,7 @@
 "use client";
-import {Select} from "@/components/ui/Select";
-import {CodeEditor} from "@/components/ui/CodeEditor";
+import { AccessGuide } from "@/components/console/AccessGuide";
+import { Select } from "@/components/ui/Select";
+import { CodeEditor } from "@/components/ui/CodeEditor";
 import { useEffect, useState, type FormEvent } from "react";
 import { request } from "@/lib/api";
 import {
@@ -95,6 +96,7 @@ export function Access({ identity }: OperationsProps) {
   }
   return (
     <>
+      <AccessGuide />
       <div className="tabs" role="tablist" aria-label="Access management">
         {["users", "groups", "policies", "attachments", "simulator"].map(
           (value) => (
@@ -955,7 +957,11 @@ function PolicyEditor({
           />
         </label>
         {mode === "json" ? (
-          <div className="field"><span className="field-caption">Policy JSON</span><CodeEditor language="json" label="Policy JSON"
+          <div className="field">
+            <span className="field-caption">Policy JSON</span>
+            <CodeEditor
+              language="json"
+              label="Policy JSON"
               rows={20}
               value={json}
               onChange={(event) => setJson(event.target.value)}

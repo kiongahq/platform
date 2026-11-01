@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import localFont from "next/font/local";
+import "@xyflow/react/dist/style.css";
 import "./globals.css";
 
 const body = localFont({ src: [

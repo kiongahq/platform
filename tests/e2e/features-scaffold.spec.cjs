@@ -27,7 +27,7 @@ test.describe('scaffold and feature stores', () => {
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(plan.output_dir);
     expect(plan.output_dir).toBe(`/workspace/projects/${project.namespace}`);
-    await expect(dialog.locator('pre')).toHaveText(project.scaffold_command);
+    await expect(dialog.locator('pre .code-line-text')).toHaveText(project.scaffold_command);
     await expect(dialog.locator('ol li')).toHaveCount(plan.argv.length);
     await page.screenshot({path: screenshotPath(testInfo, 'scaffold-confirm'), fullPage: true});
     if (!plan.available) {

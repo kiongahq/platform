@@ -1,5 +1,8 @@
 "use client";
-import {CodeBlock} from "@/components/ui/CodeBlock";
+import { Icon } from "@/components/ui/Icon";
+import { storageHref } from "@/components/ui/StoragePath";
+import type { MouseEvent } from "react";
+import { CodeBlock } from "@/components/ui/CodeBlock";
 import { useEffect, useState } from "react";
 import { request } from "@/lib/api";
 import {
@@ -189,101 +192,156 @@ function historyReplace(url: URL) {
 export function Storage({ identity, project, onNavigate }: OperationsProps) {
   const [bucket, setBucket] = useState(""),
     [prefix, setPrefix] = useState(""),
-    [preview, setPreview] = useState<RecordData | null>(null),
-    [failure, setFailure] = useState("");
+    [objectKey, setObjectKey] = useState("");
   const query = useResource(
     bucket
       ? `/api/v1/storage/objects?${new URLSearchParams({ bucket, prefix })}`
       : "/api/v1/storage/buckets",
+  );
+  const preview = useResource<RecordData>(
+    bucket && objectKey
+      ? `/api/v1/storage/object?${new URLSearchParams({ bucket, key: objectKey })}`
+      : null,
   );
   const models = useResource(has(identity, "models") ? "/api/v1/models" : null),
     functions = useResource(
       has(identity, "functions") ? "/api/v1/functions" : null,
     );
   useEffect(() => {
-    const q = new URLSearchParams(location.search);
-    setBucket(q.get("bucket") || "");
-    setPrefix(q.get("prefix") || "");
+    const read = () => {
+      const q = new URLSearchParams(location.search),
+        key = q.get("key") || "";
+      setBucket(q.get("bucket") || "");
+      setPrefix(
+        q.get("prefix") ||
+          (key.includes("/") ? key.slice(0, key.lastIndexOf("/") + 1) : ""),
+      );
+      setObjectKey(key);
+    };
+    read();
+    window.addEventListener("popstate", read);
+    return () => window.removeEventListener("popstate", read);
   }, []);
-  function browse(nextBucket: string, nextPrefix: string) {
+  function browse(nextBucket: string, nextPrefix: string, key = "") {
     setBucket(nextBucket);
     setPrefix(nextPrefix);
-    const url = new URL(location.href);
-    for (const [key, value] of Object.entries({
-      bucket: nextBucket,
-      prefix: nextPrefix,
-    }))
-      value ? url.searchParams.set(key, value) : url.searchParams.delete(key);
-    historyReplace(url);
+    setObjectKey(key);
+    const url = nextBucket
+      ? storageHref(nextBucket, nextPrefix, key)
+      : "/console/storage";
+    window.history.pushState(null, "", url);
   }
+  function follow(
+    event: MouseEvent<HTMLAnchorElement>,
+    nextBucket: string,
+    nextPrefix: string,
+    key = "",
+  ) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+      return;
+    event.preventDefault();
+    browse(nextBucket, nextPrefix, key);
+  }
+  const segments = prefix.split("/").filter(Boolean);
   return (
     <>
-      <section className="panel">
+      <section className="panel storage-browser">
         <header className="page-header">
-          <h2>{bucket ? `${bucket}/${prefix}` : "Buckets"}</h2>
-          {bucket && (
-            <button
-              onClick={() => {
-                const parts = prefix.replace(/\/$/, "").split("/");
-                parts.pop();
-                browse(
-                  prefix ? bucket : "",
-                  parts.length ? parts.join("/") + "/" : "",
-                );
-              }}
-            >
-              Parent folder
-            </button>
-          )}
+          <h2>
+            <Icon name="bucket" />
+            {bucket ? "Objects" : "Buckets"}
+          </h2>
         </header>
-        {failure && (
-          <p role="alert" className="feedback error">
-            {failure}
-          </p>
+        {bucket && (
+          <nav className="storage-breadcrumbs" aria-label="S3 path">
+            <a
+              href="/console/storage"
+              onClick={(event) => follow(event, "", "")}
+            >
+              Buckets
+            </a>
+            <span aria-hidden="true">/</span>
+            <a
+              href={storageHref(bucket)}
+              onClick={(event) => follow(event, bucket, "")}
+            >
+              <Icon name="bucket" />
+              {bucket}
+            </a>
+            {segments.map((segment, index) => {
+              const path = segments.slice(0, index + 1).join("/") + "/";
+              return (
+                <span className="storage-crumb" key={path}>
+                  <span aria-hidden="true">/</span>
+                  <a
+                    href={storageHref(bucket, path)}
+                    onClick={(event) => follow(event, bucket, path)}
+                  >
+                    {segment}
+                  </a>
+                </span>
+              );
+            })}
+          </nav>
         )}
         <State {...query} retry={query.reload}>
           {!bucket ? (
-            <ul className="resource-list">
+            <ul className="bucket-list">
               {(query.data?.buckets || []).map((item: RecordData) => (
                 <li key={item.name}>
-                  <button onClick={() => browse(item.name, "")}>
-                    {item.name}
-                  </button>
+                  <a
+                    href={storageHref(item.name)}
+                    onClick={(event) => follow(event, item.name, "")}
+                  >
+                    <Icon name="bucket" />
+                    <span>
+                      <strong>{item.name}</strong>
+                      <small>s3://{item.name}/</small>
+                    </span>
+                    <Icon name="chevron-right" />
+                  </a>
                 </li>
               ))}
             </ul>
           ) : (
             <>
-              <ul className="resource-list">
+              <ul className="storage-folders">
                 {(query.data?.prefixes || []).map((value: string) => (
                   <li key={value}>
-                    <button onClick={() => browse(bucket, value)}>
-                      Folder {value.slice(prefix.length)}
-                    </button>
+                    <a
+                      href={storageHref(bucket, value)}
+                      onClick={(event) => follow(event, bucket, value)}
+                    >
+                      <Icon name="folder" />
+                      {value.slice(prefix.length)}
+                    </a>
                   </li>
                 ))}
               </ul>
               <Table
                 rows={query.data?.objects || []}
+                rowKey={(row) => row.key}
                 columns={[
                   {
                     key: "key",
                     label: "Object",
-                    render: (row) => row.key.slice(prefix.length),
+                    render: (row) => (
+                      <a
+                        className="storage-object-link"
+                        href={storageHref(bucket, prefix, row.key)}
+                        onClick={(event) =>
+                          follow(event, bucket, prefix, row.key)
+                        }
+                      >
+                        <Icon name="code" />
+                        <span>{row.key.slice(prefix.length)}</span>
+                      </a>
+                    ),
                   },
                   { key: "size", label: "Bytes" },
                 ]}
                 actions={(row) => (
-                  <button
-                    onClick={() => {
-                      setFailure("");
-                      request<RecordData>(
-                        `/api/v1/storage/object?${new URLSearchParams({ bucket, key: row.key })}`,
-                      )
-                        .then(setPreview)
-                        .catch((error) => setFailure(error.message));
-                    }}
-                  >
+                  <button onClick={() => browse(bucket, prefix, row.key)}>
                     Preview
                   </button>
                 )}
@@ -338,13 +396,30 @@ export function Storage({ identity, project, onNavigate }: OperationsProps) {
           </State>
         </section>
       )}
-      {preview && (
-        <Modal title={preview.key} onClose={() => setPreview(null)}>
-          <p>
-            {preview.content_type} {preview.size} bytes{" "}
-            {preview.truncated ? "Preview truncated" : ""}
-          </p>
-          <CodeBlock>{preview.content}</CodeBlock>
+      {objectKey && (
+        <Modal title={objectKey} onClose={() => browse(bucket, prefix)}>
+          <State {...preview} retry={preview.reload}>
+            {preview.data && (
+              <>
+                <p>
+                  {preview.data.content_type} · {preview.data.size} bytes{" "}
+                  {preview.data.truncated ? "· Preview truncated" : ""}
+                </p>
+                <CodeBlock
+                  filename={objectKey}
+                  language={
+                    objectKey.endsWith(".json")
+                      ? "json"
+                      : /\.ya?ml$/.test(objectKey)
+                        ? "yaml"
+                        : "text"
+                  }
+                >
+                  {preview.data.content}
+                </CodeBlock>
+              </>
+            )}
+          </State>
         </Modal>
       )}
     </>
@@ -400,9 +475,22 @@ export function Catalog() {
               key: "metadata",
               label: "Metadata",
               render: (row) =>
-                Array.isArray(row.metadata)
-                  ? row.metadata.join(", ")
-                  : JSON.stringify(row.metadata),
+                Array.isArray(row.metadata) ? (
+                  row.metadata.join(", ")
+                ) : (
+                  <span className="record-metadata">
+                    {Object.entries(row.metadata || {})
+                      .slice(0, 3)
+                      .map(([key, value]) => (
+                        <small key={key}>
+                          {key}:{" "}
+                          {value && typeof value === "object"
+                            ? "View details"
+                            : String(value ?? "—")}
+                        </small>
+                      ))}
+                  </span>
+                ),
             },
           ]}
           actions={(row) => (

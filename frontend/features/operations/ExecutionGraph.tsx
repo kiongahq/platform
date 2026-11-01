@@ -1,5 +1,7 @@
 "use client";
 import { useMemo } from "react";
+import { GraphCanvas } from "@/components/ui/GraphCanvas";
+import { Icon } from "@/components/ui/Icon";
 import type { RecordData } from "./shared";
 /** A dependency graph of actual pipeline nodes. Layout is derived from the DAG. */
 export function ExecutionGraph({
@@ -56,73 +58,65 @@ export function ExecutionGraph({
   if (!jobs.length)
     return <p className="empty-state">No execution nodes recorded.</p>;
   return (
-    <div
-      className="execution-graph"
-      style={{ overflow: "auto" }}
-      aria-label="Pipeline dependency graph"
-    >
-      <div
-        style={{
-          position: "relative",
-          width: layout.width,
-          height: layout.height,
+    <div className="execution-graph">
+      <GraphCanvas
+        label="Pipeline dependency graph"
+        onSelect={(ids) => {
+          if (ids[0]) onSelect?.(ids[0]);
         }}
-      >
-        <svg
-          width={layout.width}
-          height={layout.height}
-          style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-          aria-hidden="true"
-        >
-          {jobs.flatMap((job) =>
-            (job.depends_on || []).map((dependency: string) => {
-              const from = layout.positions.get(dependency),
-                to = layout.positions.get(job.name);
-              if (!from || !to) return null;
-              const start = from.x + 210,
-                end = to.x;
-              return (
-                <path
-                  key={`${dependency}-${job.name}`}
-                  d={`M ${start} ${from.y + 40} C ${(start + end) / 2} ${from.y + 40}, ${(start + end) / 2} ${to.y + 40}, ${end} ${to.y + 40}`}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                />
-              );
-            }),
-          )}
-        </svg>
-        {jobs.map((job) => {
-          const position = layout.positions.get(job.name)!;
-          return (
+        nodes={jobs.map((job) => ({
+          id: job.name,
+          x: layout.positions.get(job.name)!.x,
+          y: layout.positions.get(job.name)!.y,
+          selected: selected === job.name,
+          inputs: !!job.depends_on?.length,
+          outputs: jobs.some((item) => item.depends_on?.includes(job.name))
+            ? ["out"]
+            : [],
+          content: (
             <button
               type="button"
-              key={job.name}
-              className={
-                selected === job.name ? "graph-node selected" : "graph-node"
-              }
+              className={`graph-node execution-node state-${job.status || "draft"}${selected === job.name ? " selected" : ""}`}
               aria-pressed={selected === job.name}
               aria-label={`${job.name}${job.status ? `, ${job.status}` : ""}`}
               onClick={() => onSelect?.(job.name)}
-              style={{
-                position: "absolute",
-                left: position.x,
-                top: position.y,
-                width: 210,
-                minHeight: 80,
-                textAlign: "left",
-              }}
             >
+              <span className="execution-node-status">
+                <Icon
+                  name={
+                    job.status === "succeeded"
+                      ? "check"
+                      : job.status === "failed"
+                        ? "close"
+                        : "pipelines"
+                  }
+                />
+                {job.status || job.kind || "Container job"}
+              </span>
               <strong>{job.name}</strong>
-              <small>{job.status || job.kind || "Container job"}</small>
               {job.depends_on?.length > 0 && (
                 <small>After {job.depends_on.join(", ")}</small>
               )}
+              {job.attempt > 0 && <small>Attempt {job.attempt}</small>}
             </button>
-          );
-        })}
-      </div>
+          ),
+        }))}
+        edges={jobs.flatMap((job) =>
+          (job.depends_on || [])
+            .filter((name: string) => layout.positions.has(name))
+            .map((name: string) => ({
+              id: `${name}-${job.name}`,
+              from: name,
+              to: job.name,
+              port: "out",
+              status: job.status,
+            })),
+        )}
+      />
+      <p className="graph-help">
+        Select a node to inspect it. Drag the background to pan; use the
+        controls to zoom.
+      </p>
     </div>
   );
 }

@@ -77,7 +77,7 @@ test('branched DAG: schedule, manual run with override, parallel nodes, node log
   await card.getByRole('button', {name: 'Details', exact: true}).click();
   const detail = page.getByRole('dialog', {name, exact: true});
   await expect(detail.locator('.graph-node')).toHaveCount(4);
-  await expect(detail.locator('svg path')).toHaveCount(4);
+  await expect(detail.locator('.react-flow__edge')).toHaveCount(4);
   await detail.getByRole('button', {name: 'Pause'}).click();
   await expect(detail.locator('.toolbar .status')).toHaveText(/paused/i);
   await detail.getByRole('button', {name: 'Resume'}).click();

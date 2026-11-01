@@ -89,3 +89,19 @@ send console/studio reader links to the organization's publication origin.
 See [Publications](../docs/publications.md) for reader-only hosting and editorial
 ownership. API documentation uses bundled Swagger UI with the gateway's OpenAPI
 contract.
+
+## Operational controls and integrations
+
+Graph editing uses the shared React Flow canvas for panning, zooming, dragging
+and port connections. Agent node rules remain backed by the component registry
+and graph validation APIs. Pipeline node inspection queries logs by run and node;
+checkpoint resumes submit the existing preflight and saved-output reuse contract.
+
+Storage paths link into the bucket browser with addressable prefix/object state.
+Resource facts separate collections and source from scalar records. Native select
+pickers receive explicit application styling through `appearance: base-select`
+in supporting browsers, retaining platform form and keyboard behavior.
+
+See [Access rules](../docs/access-control.md) for policy evaluation and propagation
+and [GitHub connections](../docs/github-integration.md) for account encryption,
+App setup, repository import and its boundaries.
