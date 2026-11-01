@@ -2,8 +2,11 @@
   "name": "kionga-console-tests",
   "private": true,
   "scripts": {
-    "test:ui": "node --test tests/ui/*.test.cjs",
-    "test:e2e": "playwright test"
+    "test:ui": "npm test --prefix frontend && node --test tests/ui/vendor-integrity.test.cjs",
+    "test:e2e": "playwright test",
+    "build:frontend": "npm ci --prefix frontend --ignore-scripts && npm run build --prefix frontend",
+    "type-check": "npm run type-check --prefix frontend",
+    "test:core": "playwright test --config playwright.core.config.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

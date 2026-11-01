@@ -1,10 +1,14 @@
 # Kionga platform: control-plane Go services and the embedded console.
 # Running the whole stack lives in kiongahq/deploy (make -C ../deploy local-up).
-.PHONY: run test test-go test-integration test-security lint fmt-check format build verify test-ui test-browser
+.PHONY: run test test-go test-integration test-security lint fmt-check format build verify test-ui test-browser frontend
 
 GO_SERVICES := gateway operator integration-worker feature-gateway storage-proxy metrics-collector log-exporter cli
 
-run:
+frontend:
+	npm ci --prefix frontend --ignore-scripts
+	npm run build --prefix frontend
+
+run: frontend
 	cd go && go run ./cmd/gateway
 
 test: test-go test-ui
@@ -29,17 +33,16 @@ lint: fmt-check
 format:
 	cd go && gofmt -w .
 
-build:
+build: frontend
 	mkdir -p bin
 	cd go && for cmd in $(GO_SERVICES); do \
 		go build -buildvcs=false -o ../bin/mlaiops-$$cmd ./cmd/$$cmd || exit 1; \
 	done
 
 verify: lint test-go build
-	for f in go/cmd/gateway/web/js/*.js go/cmd/gateway/web/js/views/*.js go/cmd/gateway/web/*.js; do node --check $$f || exit 1; done
 	! rg -i '\b(nuclio|v3io|iguazio)\b' go
 
-test-ui:
+test-ui: frontend
 	npm ci --ignore-scripts
 	npm run test:ui
 
