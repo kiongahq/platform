@@ -1,0 +1,41 @@
+{
+  "name": "kionga-frontend",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --webpack && node scripts/export.mjs",
+    "type-check": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts tests/*.test.tsx"
+  },
+  "dependencies": {
+    "@tiptap/extension-highlight": "3.32.2",
+    "@tiptap/extension-link": "3.32.2",
+    "@tiptap/extension-placeholder": "3.32.2",
+    "@tiptap/extension-underline": "3.32.2",
+    "@tiptap/pm": "3.32.2",
+    "@tiptap/react": "3.32.2",
+    "@tiptap/starter-kit": "3.32.2",
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "swagger-ui-react": "5.34.1",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/swagger-ui-react": "^5.18.0",
+    "esbuild": "^0.25.0",
+    "jsdom": "^26.1.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "overrides": {
+    "@swagger-api/apidom-reference": {
+      "minimatch": "11.0.3"
+    }
+  }
+}
