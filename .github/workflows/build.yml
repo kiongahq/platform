@@ -26,7 +26,7 @@ jobs:
       matrix:
         service: [gateway, operator, integration-worker, feature-gateway, storage-proxy,
                   metrics-collector, log-exporter, cli]
-    uses: kiongahq/.github/.github/workflows/image.yml@main
+    uses: kiongahq/.github/.github/workflows/image.yml@76e4fed230c4f0b89b1bcf884df60e5b2fffca67
     with:
       image: ${{ matrix.service }}
       context: ${{ matrix.service == 'gateway' && '.' || 'go' }}
