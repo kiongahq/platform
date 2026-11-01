@@ -82,8 +82,9 @@ images use `go/Dockerfile` and do not require Node.js or frontend dependencies.
 `SERVICE` is one of `gateway`, `operator`, `integration-worker`, `feature-gateway`,
 `storage-proxy`, `metrics-collector`, `log-exporter` or `cli`. The **Build &
 Publish Images** workflow (`build.yml`) publishes each as
-`ghcr.io/kiongahq/<service>` on pushes to `main` that touch `go/` or `frontend/`, and on `v*`
-tags, tagged `sha-<short>`, `latest` and the semantic version.
+`ghcr.io/kiongahq/<service>` on pushes to `main` that touch `go/` or `frontend/`,
+using `edge` and SHA references. Published releases use exact version tags and
+attach image digest records to the GitHub release.
 
 ## Vendored browser libraries
 
@@ -125,3 +126,16 @@ why. A fingerprint pins one exact finding, so any new secret still fails the sca
 
 By contributing, you agree that your contributions are licensed under the
 [MIT License](LICENCE).
+
+## Release automation
+
+Configure `RELEASE_PLEASE_TOKEN` with Contents, Issues and Pull requests write
+permissions scoped to the participating repositories. Release PRs require
+independent review and all required checks; no bypass is granted to automation.
+The workflow reports an error until this credential is configured.
+
+Use reviewed `vX.Y.Z` releases, keep published tags and packages immutable, and
+pin container digests in deployments. Development builds use `edge` and SHA
+references; existing `latest` aliases stop updating. The
+[release handbook](https://kiongahq.github.io/docs/engineering/contributing/releases/)
+covers publication, dependency updates and rollback.
