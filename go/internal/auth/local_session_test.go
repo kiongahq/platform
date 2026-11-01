@@ -15,20 +15,20 @@ func TestLocalConsoleRequiresLogin(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	anonymous := httptest.NewRecorder()
-	handler.ServeHTTP(anonymous, httptest.NewRequest(http.MethodGet, "/console.html", nil))
-	if anonymous.Code != http.StatusFound || !strings.HasPrefix(anonymous.Header().Get("Location"), "/login.html") {
+	handler.ServeHTTP(anonymous, httptest.NewRequest(http.MethodGet, "/console", nil))
+	if anonymous.Code != http.StatusFound || !strings.HasPrefix(anonymous.Header().Get("Location"), "/login") {
 		t.Fatalf("anonymous console response: %d %s", anonymous.Code, anonymous.Header().Get("Location"))
 	}
 
-	form := url.Values{"username": {"admin"}, "password": {"correct-password"}, "return_to": {"/console.html"}}
+	form := url.Values{"username": {"admin"}, "password": {"correct-password"}, "return_to": {"/console"}}
 	login := httptest.NewRecorder()
 	loginRequest := httptest.NewRequest(http.MethodPost, "/auth/local/login", strings.NewReader(form.Encode()))
 	loginRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	handler.ServeHTTP(login, loginRequest)
-	if login.Code != http.StatusFound || login.Header().Get("Location") != "/console.html" {
+	if login.Code != http.StatusFound || login.Header().Get("Location") != "/console" {
 		t.Fatalf("login response: %d %s", login.Code, login.Header().Get("Location"))
 	}
-	request := httptest.NewRequest(http.MethodGet, "/console.html", nil)
+	request := httptest.NewRequest(http.MethodGet, "/console", nil)
 	for _, cookie := range login.Result().Cookies() {
 		request.AddCookie(cookie)
 	}
@@ -41,12 +41,12 @@ func TestLocalConsoleRequiresLogin(t *testing.T) {
 
 func TestLocalLoginRejectsInvalidCredentials(t *testing.T) {
 	manager := NewLocalSessionManager("admin", "correct-password")
-	form := url.Values{"username": {"admin"}, "password": {"wrong"}, "return_to": {"/workspace.html?tool=ide"}}
+	form := url.Values{"username": {"admin"}, "password": {"wrong"}, "return_to": {"/workspace?tool=ide"}}
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/auth/local/login", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	manager.Handler(http.NotFoundHandler()).ServeHTTP(response, request)
-	if response.Code != http.StatusFound || response.Header().Get("Location") != "/login.html?error=invalid&return_to="+url.QueryEscape("/workspace.html?tool=ide") {
+	if response.Code != http.StatusFound || response.Header().Get("Location") != "/login?error=invalid&return_to="+url.QueryEscape("/workspace?tool=ide") {
 		t.Fatalf("invalid login response: %d %s", response.Code, response.Header().Get("Location"))
 	}
 }
@@ -124,7 +124,7 @@ func (f *fakeAccounts) LocalAccountActive(subject string) bool {
 
 func localLogin(t *testing.T, handler http.Handler, username, password string) []*http.Cookie {
 	t.Helper()
-	form := url.Values{"username": {username}, "password": {password}, "return_to": {"/console.html"}}
+	form := url.Values{"username": {username}, "password": {password}, "return_to": {"/console"}}
 	request := httptest.NewRequest(http.MethodPost, "/auth/local/login", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response := httptest.NewRecorder()
@@ -171,7 +171,7 @@ func TestProvisionedLocalAccountsSignInAsNormalUsers(t *testing.T) {
 }
 
 func postLogin(handler http.Handler, username, password string, header http.Header) *httptest.ResponseRecorder {
-	form := url.Values{"username": {username}, "password": {password}, "return_to": {"/console.html"}}
+	form := url.Values{"username": {username}, "password": {password}, "return_to": {"/console"}}
 	request := httptest.NewRequest(http.MethodPost, "/auth/local/login", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	for key, values := range header {
@@ -205,7 +205,7 @@ func TestLocalLoginThrottlesRepeatedFailuresPerAccount(t *testing.T) {
 	}
 
 	clock = clock.Add(2 * time.Second)
-	if ok := postLogin(handler, "admin", "correct-password", nil); ok.Header().Get("Location") != "/console.html" {
+	if ok := postLogin(handler, "admin", "correct-password", nil); ok.Header().Get("Location") != "/console" {
 		t.Fatalf("login after the delay: %d %s", ok.Code, ok.Header().Get("Location"))
 	}
 	// Success clears the counter.
