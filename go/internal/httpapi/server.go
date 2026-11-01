@@ -139,7 +139,7 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	for _, register := range routeRegistrars {
 		register(server, mux)
 	}
-	mux.Handle("/", http.FileServer(http.FS(static)))
+	mux.Handle("/", frontendHandler(static))
 	resolver := func(subject string) (roles, services, projectIDs []string, disabled bool, ok bool) {
 		access, err := data.AccessFor(subject)
 		if err != nil {
