@@ -185,7 +185,7 @@ func (a *Authenticator) Handler(next http.Handler) http.Handler {
 				a.sso.loginWith(w, r, providers[0].ID)
 				return
 			}
-			http.Redirect(w, r, "/login.html?return_to="+url.QueryEscape(safeReturnTo(r.URL.Query().Get("return_to"))), http.StatusFound)
+			http.Redirect(w, r, "/login?return_to="+url.QueryEscape(safeReturnTo(r.URL.Query().Get("return_to"))), http.StatusFound)
 			return
 		case "/auth/sso/login":
 			if a.sso == nil {
@@ -312,7 +312,7 @@ func (a *Authenticator) knownProvider(id string) bool {
 // is signed in.
 func loginAsset(path string) bool {
 	switch path {
-	case "/login.html", "/login.css", "/login.js":
+	case "/login", "/login/", "/login.txt":
 		return true
 	}
 	return false

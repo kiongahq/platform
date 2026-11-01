@@ -148,15 +148,20 @@ func (v *Verifier) Middleware(next http.Handler) http.Handler {
 }
 
 func publicPath(method, path string) bool {
-	if method == http.MethodGet && (path == "/api/v1/blogs" || strings.HasPrefix(path, "/api/v1/blogs/") ||
-		strings.HasPrefix(path, "/media/blog/") || strings.HasPrefix(path, "/vendor/highlight/")) {
-		return true
-	}
-	switch path {
-	case "/", "/index.html", "/logo.svg", "/favicon.svg", "/icons.svg", "/landing.css", "/landing.js", "/api/v1/health", "/api/v1/ready",
-		"/api/openapi.json", "/api-docs.html", "/api-docs.css", "/api-docs.js",
-		"/blogs.html", "/blog.html", "/blog.css", "/blog.js":
-		return true
+	if method == http.MethodGet || method == http.MethodHead {
+		if strings.HasPrefix(path, "/_next/") || strings.HasPrefix(path, "/fonts/") || strings.HasPrefix(path, "/vendor/highlight/") || strings.HasPrefix(path, "/__next.") {
+			return true
+		}
+		switch strings.TrimSuffix(path, "/") {
+		case "", "/login", "/api-docs", "/blog", "/blog/read", "/index.txt", "/login.txt", "/api-docs.txt", "/blog.txt", "/blog/read.txt", "/logo.svg", "/favicon.svg", "/favicon-cobalt.svg", "/icons.svg", "/api/v1/health", "/api/v1/ready", "/api/openapi.json":
+			return true
+		}
+		if strings.HasPrefix(path, "/blog/__next.") || strings.HasPrefix(path, "/blog/read/__next.") || strings.HasPrefix(path, "/login/__next.") || strings.HasPrefix(path, "/api-docs/__next.") {
+			return true
+		}
+		if path == "/api/v1/blogs" || strings.HasPrefix(path, "/api/v1/blogs/") || strings.HasPrefix(path, "/media/blog/") {
+			return true
+		}
 	}
 	return strings.HasPrefix(path, "/auth/")
 }

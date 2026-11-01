@@ -186,7 +186,7 @@ func (s *SessionManager) callback(w http.ResponseWriter, r *http.Request) {
 	s.clearCookie(w, stateCookieName)
 	s.clearCookie(w, verifierCookie)
 	s.clearCookie(w, nonceCookieName)
-	target := "/console.html"
+	target := "/console"
 	if cookie, cookieErr := r.Cookie(returnCookieName); cookieErr == nil {
 		target = safeReturnTo(cookie.Value)
 	}
@@ -243,12 +243,12 @@ func randomToken(size int) (string, error) {
 
 func safeReturnTo(value string) string {
 	if value == "" {
-		return "/console.html"
+		return "/console"
 	}
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.IsAbs() || parsed.Host != "" || !strings.HasPrefix(parsed.Path, "/") ||
 		strings.HasPrefix(parsed.Path, "//") {
-		return "/console.html"
+		return "/console"
 	}
 	return parsed.RequestURI()
 }

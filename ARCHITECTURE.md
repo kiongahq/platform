@@ -45,9 +45,23 @@ One directory per binary; `make build` writes `bin/mlaiops-<name>`.
 | `log-exporter` | Ships one tenant's logs to Elasticsearch or OpenSearch |
 | `cli` | The `mlaiops` CLI |
 
-`go/cmd/gateway/web/` is the console: plain HTML, CSS and JavaScript modules
-(`js/core.js`, `js/views/*.js`), the blog editor (`editorial/`) and vendored
-libraries with an integrity manifest (`vendor/`).
+`frontend/` contains the Next.js App Router frontend. The `app/` directory defines
+routes; `components/` provides React/TypeScript page compositions, console views,
+dialogs and shared UI. `hooks/` and `lib/` contain API access, types and content
+serialization. The public blog uses React, and the studio uses Tiptap with the
+gateway's editorial API and article block schema.
+
+React owns all page state, form submission, dialogs, graph editing and editorial
+workflows. Console pages use `/console/<screen>` routes, studio pages use
+`/studio/<screen>`, and project/resource context uses query parameters. Shared
+hooks handle cancellation, refresh events and unsaved changes.
+
+The Next.js static export is generated into `go/cmd/gateway/frontend-dist/` and
+embedded into the gateway, including `_next` chunks. Run `make frontend` before
+building Go directly. Generated HTML is a deployment artifact; frontend source
+changes belong in `frontend/`. `httpapi/frontend.go` serves extensionless routes
+and rejects retired `.html` page URLs. Production runs as a single Go service without
+a separate Node.js server.
 
 ### `go/internal`
 

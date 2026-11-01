@@ -1,0 +1,55 @@
+const {test,expect}=require('@playwright/test');
+const {signIn,ADMIN,assertLayout}=require('./fixtures.cjs');
+const AxeBuilder=require('@axe-core/playwright').default;
+
+test('resource search opens assigned records with project context and Material close controls',async({page},testInfo)=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await signIn(page,ADMIN,'/console/projects');
+  await expect(page.getByRole('button',{name:/Jump to section/})).toHaveCount(0);
+  const contextBox=await page.locator('#project-context').boundingBox(), refreshBox=await page.locator('#refresh-view').boundingBox();
+  expect(Math.abs(contextBox.y+contextBox.height-refreshBox.y-refreshBox.height)).toBeLessThanOrEqual(3);
+  const projects=await (await page.request.get('/api/v1/projects')).json();
+  const project=(Array.isArray(projects)?projects:projects.items)[0];expect(project).toBeTruthy();
+  await page.getByRole('button',{name:'Search resources'}).click();
+  const modal=page.getByRole('dialog',{name:'Search resources'});
+  await expect(modal).toBeVisible();
+  await modal.getByRole('combobox',{name:'Search by name or resource ID'}).fill(project.id);
+  await expect(modal.locator('.resource-search-results [role="option"]')).toHaveCount(1);
+  const axe=await new AxeBuilder({page}).include('dialog[open]').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
+  expect(axe.violations).toEqual([]);
+  await modal.getByRole('combobox',{name:'Search by name or resource ID'}).press('Enter');
+  await expect(page).toHaveURL(new RegExp('resource='+project.id));
+  expect(new URL(page.url()).searchParams.get('project')).toBe(project.id);
+  await expect(page.getByRole('heading',{name:project.name,exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'All projects',exact:true}).click();
+  await page.getByRole('button',{name:'Search resources'}).click();
+  const close=page.getByRole('dialog',{name:'Search resources'}).getByRole('button',{name:'Close Search resources'});
+  await expect(close.locator('svg use')).toHaveAttribute('href','/icons.svg#close');
+  const dialogBox=await page.getByRole('dialog',{name:'Search resources'}).boundingBox(),closeBox=await close.boundingBox();
+  expect(closeBox.x+closeBox.width).toBeGreaterThan(dialogBox.x+dialogBox.width*.8);
+  await close.click();
+  await expect(page.getByRole('button',{name:'Search resources'})).toBeFocused();
+  await assertLayout(page,'resource search destination');expect(errors).toEqual([]);
+  await page.screenshot({path:testInfo.outputPath('console-layout.png'),fullPage:true});
+});
+
+test('JSON and YAML editors format source with aligned line gutters and report invalid input',async({page},testInfo)=>{
+  await signIn(page,ADMIN,'/console/pipeline-editor');
+  const json=page.getByRole('textbox',{name:'Default parameters (JSON object)',exact:true});
+  await json.fill('{"batch":32,"enabled":true}');
+  await page.getByRole('button',{name:'Format Default parameters (JSON object)',exact:true}).click();
+  await expect(json).toHaveValue('{\n  "batch": 32,\n  "enabled": true\n}');
+  await expect(json.locator('xpath=../..').locator('.code-editor-gutter span')).toHaveCount(4);
+  await page.getByRole('tab',{name:'YAML',exact:true}).click();
+  const yaml=page.getByRole('textbox',{name:'Definition YAML',exact:true});
+  await expect(yaml).toBeVisible();await expect(yaml).toContainText(/name:/);
+  const current=await yaml.inputValue();await yaml.fill('# keep this comment\n'+current);
+  await page.getByRole('button',{name:'Format Definition YAML',exact:true}).click();
+  await expect(yaml).toHaveValue(/# keep this comment/);
+  await expect(yaml).toBeFocused();
+  const axe=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();expect(axe.violations).toEqual([]);
+  await assertLayout(page,'numbered YAML editor');
+  await page.screenshot({path:testInfo.outputPath('yaml-editor.png'),fullPage:true});
+  await yaml.fill('name: [broken');await page.getByRole('button',{name:'Format Definition YAML',exact:true}).click();
+  await expect(page.locator('.code-format-error')).toBeVisible();await expect(yaml).toHaveValue('name: [broken');
+});

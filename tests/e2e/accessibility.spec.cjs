@@ -9,8 +9,9 @@ test.describe('accessibility', () => {
   test.beforeEach(async ({page}) => { await signIn(page, ADMIN); });
   for (const view of views) {
     test(`${view} has no serious accessibility violations`, async ({page}) => {
-      await page.goto(`/console.html?view=${view}`);
-      await expect(page.locator(`#${view}`)).toHaveAttribute('aria-busy', 'false');
+      await page.goto(view === "overview" ? "/console" : `/console/${view}`);
+      await expect(page.locator('#page-title')).toBeVisible();
+      await expect(page.getByText('Loading…', {exact: true})).toHaveCount(0);
       const results = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
       const serious = results.violations.filter(violation => ['serious', 'critical'].includes(violation.impact));
       const summary = serious.map(violation => `${violation.id} (${violation.impact}): ${violation.nodes.slice(0, 3).map(node => node.target.join(' ')).join(' | ')}`);

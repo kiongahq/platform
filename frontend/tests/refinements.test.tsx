@@ -1,0 +1,51 @@
+import './setup-dom';
+import React from 'react';
+import {test,afterEach,mock} from 'node:test';
+import assert from 'node:assert/strict';
+import {render,cleanup,waitFor,fireEvent} from '@testing-library/react';
+import {Table,Facts} from '../features/operations/shared';
+import {FileTree} from '../components/ui/FileTree';
+import {GitHubConnection} from '../components/console/GitHubConnection';
+afterEach(()=>{cleanup();mock.restoreAll();});
+test('catalog versions with the same names remain distinct across table updates',()=>{
+ const errors=mock.method(console,'error',()=>{});
+ const rows=[{name:'churn-classifier',kind:'model',version:'v1'},{name:'churn-classifier',kind:'model',version:'v2'},{name:'churn-classifier',kind:'agent',version:'v1'}];
+ const columns=[{key:'name',label:'Name'},{key:'version',label:'Version'}];
+ const view=render(<Table rows={rows} columns={columns}/>);
+ const first=view.container.querySelector('tbody tr');
+ view.rerender(<Table rows={[rows[2],rows[1],rows[0]]} columns={columns}/>);
+ assert.equal(view.container.querySelectorAll('tbody tr').length,3);
+ assert.equal(view.container.querySelectorAll('tbody tr')[2],first);
+ assert.equal(errors.mock.calls.length,0);
+});
+test('resource facts separate collections, commands, S3 links and structured records',()=>{
+ const view=render(<Facts value={{capabilities:['tests','ci'],scaffold_command:'kionga scaffold example',artifact:'s3://models/example/model.json',repository:{url:'https://github.com/org/repo'}}}/>);
+ assert.deepEqual([...view.container.querySelectorAll('.fact-values li')].map(item=>item.textContent),['tests','ci']);
+ assert.match(view.container.querySelector('.code-frame')?.textContent||'',/kionga scaffold example/);
+ assert.equal(view.getByRole('link',{name:'model.json'}).getAttribute('href'),'/console/storage?bucket=models&key=example%2Fmodel.json');
+ assert.equal(view.getByRole('link',{name:'example'}).getAttribute('href'),'/console/storage?bucket=models&prefix=example%2F');
+ assert.equal(view.container.querySelector('.fact-structured')?.hasAttribute('open'),false);
+});
+test('produced files form nested expandable directories rather than flat paths',()=>{
+ const view=render(<FileTree paths={['src/app/main.py','src/app/util.py','tests/test_app.py','README.md','src/app/main.py']}/>);
+ assert.equal(view.container.querySelectorAll('.file-tree-leaf').length,4);
+ assert.equal(view.container.querySelectorAll('details').length,3);
+ assert.equal(view.container.querySelector('summary')?.textContent,'src');
+ assert.equal(view.container.querySelector('details details summary')?.textContent,'app');
+});
+test('GitHub synchronization imports selected repositories through authorized project endpoints',async()=>{
+ const calls:{path:string;method:string;body:any}[]=[];
+ globalThis.fetch=async(input,options)=>{const path=String(input),method=options?.method||'GET';calls.push({path,method,body:options?.body?JSON.parse(String(options.body)):null});
+ const result=path==='/api/v1/settings/github'?{connected:true,configured:true,username:'alice',oauth_configured:false}:path==='/api/v1/settings/github/repositories'?{items:[{id:1,full_name:'org/existing',html_url:'https://github.com/org/existing',default_branch:'main'},{id:2,full_name:'org/new',html_url:'https://github.com/org/new',default_branch:'dev'}]}:path==='/api/v1/projects'?[{id:'prj-existing',repository:{url:'https://github.com/org/existing.git'}}]:{};
+ return new Response(JSON.stringify(result),{status:200});};
+ const view=render(<GitHubConnection canImport/>);
+ await waitFor(()=>assert.equal(view.getAllByRole('checkbox').length,2));
+ view.getAllByRole('checkbox').forEach(input=>fireEvent.click(input));
+ fireEvent.click(view.getByRole('button',{name:'Sync 2 selected'}));
+ await waitFor(()=>assert.match(view.container.textContent||'',/2 project connections synchronized/));
+ const created=calls.find(call=>call.path==='/api/v1/projects'&&call.method==='POST');
+ assert.equal(created?.body.repository_url,'https://github.com/org/new');
+ assert.equal(created?.body.default_branch,'dev');
+ const updated=calls.find(call=>call.path==='/api/v1/projects/prj-existing/repository'&&call.method==='PUT');
+ assert.deepEqual(updated?.body,{url:'https://github.com/org/existing',default_branch:'main'});
+});

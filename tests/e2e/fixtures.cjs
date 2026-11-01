@@ -7,8 +7,8 @@ const path = require('node:path');
 const ADMIN = {username: process.env.KIONGA_ADMIN_USER || 'admin', password: process.env.KIONGA_ADMIN_PASSWORD || 'mlaiops-local'};
 const USER = {username: 'e2e-user', password: 'e2e-user-password-123'};
 
-async function signIn(page, {username, password}, returnTo = '/console.html') {
-  await page.goto(`/login.html?return_to=${encodeURIComponent(returnTo)}`);
+async function signIn(page, {username, password}, returnTo = '/console') {
+  await page.goto(`/login?return_to=${encodeURIComponent(returnTo)}`);
   await page.fill('input[name="username"]', username);
   await page.fill('input[name="password"]', password);
   await Promise.all([page.waitForURL(url => !url.pathname.startsWith('/login')), page.click('button[type="submit"]')]);
@@ -17,7 +17,7 @@ async function signIn(page, {username, password}, returnTo = '/console.html') {
 /* Provision the normal user through the real admin API (idempotent). */
 async function ensureNormalUser(baseURL, {services = ['overview', 'projects', 'pipelines', 'models', 'features', 'storage', 'catalog', 'workbench', 'ide'], projectIDs = []} = {}) {
   const context = await requestFactory.newContext({baseURL});
-  const login = await context.post('/auth/local/login', {form: {...ADMIN, return_to: '/console.html'}, maxRedirects: 0});
+  const login = await context.post('/auth/local/login', {form: {...ADMIN, return_to: '/console'}, maxRedirects: 0});
   expect([200, 302]).toContain(login.status());
   const access = await context.put(`/api/v1/admin/users/${USER.username}`, {data: {
     email: 'e2e-user@example.com', role: 'user', services, project_ids: projectIDs,
@@ -65,6 +65,9 @@ async function assertLayout(page, label) {
       for (let j = i + 1; j < boxes.length; j++) {
         const a = boxes[i], b = boxes[j];
         if (a.control.contains(b.control) || b.control.contains(a.control)) continue;
+        // A graph connector deliberately straddles its own node's border.
+        // Other overlaps, including connectors on different nodes, still fail.
+        if ((a.control.matches('.design-port') || b.control.matches('.design-port')) && a.control.closest('.design-node') && a.control.closest('.design-node') === b.control.closest('.design-node')) continue;
         const x = Math.min(a.box.right, b.box.right) - Math.max(a.box.left, b.box.left);
         const y = Math.min(a.box.bottom, b.box.bottom) - Math.max(a.box.top, b.box.top);
         if (x > 2 && y > 2) overlaps.push(`${a.control.textContent.trim().slice(0, 30)} ⟷ ${b.control.textContent.trim().slice(0, 30)}`);

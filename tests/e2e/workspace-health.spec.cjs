@@ -7,8 +7,8 @@ test('browser IDE opens shared files over its remote WebSocket', async ({page}) 
       socketErrors.push(message.text());
     }
   });
-  await signIn(page, ADMIN, '/workspace.html?tool=ide');
-  await page.goto('/workspace.html?tool=ide');
+  await signIn(page, ADMIN, '/workspace?tool=ide');
+  await page.goto('/workspace?tool=ide');
   const frame = page.frameLocator('#workspace-frame');
   await expect(frame.getByText('quickstart.ipynb', {exact: true})).toBeVisible({timeout: 45_000});
   expect(socketErrors).toEqual([]);

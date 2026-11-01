@@ -18,25 +18,26 @@ test.describe('scaffold and feature stores', () => {
 
   test('run in workspace confirms the exact command and shows the result', async ({page}, testInfo) => {
     const project = await createProject(page);
-    await page.goto(`/console.html?view=projects&resource=${project.id}`);
-    const panel = page.locator('#scaffold-panel');
-    await expect(panel).toContainText(`/workspace/projects/${project.namespace}`);
+    await page.goto(`/console/projects?resource=${project.id}`);
+    const panel = page.locator('section.panel').filter({has: page.getByRole('heading', {name: 'Generate starter code'})});
     await expect(panel.getByRole('button', {name: /Copy command/})).toBeVisible();
     const plan = await (await page.request.get(`/api/v1/projects/${project.id}/scaffold-plan`)).json();
-    await panel.getByRole('button', {name: 'Run in workspace…'}).click();
-    const dialog = page.locator('#scaffold-confirm-dialog');
+    await panel.getByRole('button', {name: 'Run in workspace', exact: true}).click();
+    const dialog = page.getByRole('dialog', {name: 'Run scaffold in workspace'});
     await expect(dialog).toBeVisible();
-    await expect(page.locator('#scaffold-confirm-command')).toHaveText(project.scaffold_command);
-    await expect(dialog.locator('.argv-list li')).toHaveCount(plan.argv.length);
+    await expect(dialog).toContainText(plan.output_dir);
+    expect(plan.output_dir).toBe(`/workspace/projects/${project.namespace}`);
+    await expect(dialog.locator('pre .code-line-text')).toHaveText(project.scaffold_command);
+    await expect(dialog.locator('ol li')).toHaveCount(plan.argv.length);
     await page.screenshot({path: screenshotPath(testInfo, 'scaffold-confirm'), fullPage: true});
     if (!plan.available) {
-      await expect(page.locator('#scaffold-confirm-run')).toBeDisabled();
-      await expect(page.locator('#scaffold-confirm-error')).toHaveText(plan.reason);
+      await expect(page.getByRole('dialog', {name: 'Run scaffold in workspace'}).getByRole('button', {name: 'Run command', exact: true})).toBeDisabled();
+      await expect(dialog.getByRole('alert')).toHaveText(plan.reason);
       test.skip(true, `No workspace can run scaffold jobs here: ${plan.reason}`);
     }
-    await page.locator('#scaffold-confirm-run').click();
+    await page.getByRole('dialog', {name: 'Run scaffold in workspace'}).getByRole('button', {name: 'Run command', exact: true}).click();
     await expect(dialog).toBeHidden();
-    const progress = page.locator('#scaffold-run');
+    const progress = page.locator('section.panel').filter({has: page.getByRole('heading', {name: 'Generate starter code'})});
     await expect(progress).toContainText(/succeeded|failed/, {timeout: 60_000});
     await expect(progress).toContainText('succeeded');
     await expect(progress).toContainText('README.md');
@@ -47,10 +48,10 @@ test.describe('scaffold and feature stores', () => {
 
     // Running again must fail honestly: the folder already has files.
     await page.reload();
-    await page.locator('#scaffold-panel').getByRole('button', {name: 'Run in workspace…'}).click();
-    await page.locator('#scaffold-confirm-run').click();
-    await expect(page.locator('#scaffold-run [role=alert]')).toBeVisible({timeout: 60_000});
-    await expect(page.locator('#scaffold-run')).toContainText(/not empty/);
+    await page.locator('section.panel').filter({has: page.getByRole('heading', {name: 'Generate starter code'})}).getByRole('button', {name: 'Run in workspace', exact: true}).click();
+    await page.getByRole('dialog', {name: 'Run scaffold in workspace'}).getByRole('button', {name: 'Run command', exact: true}).click();
+    await expect(page.locator('main').getByText(/not empty/)).toBeVisible({timeout: 60_000});
+    await expect(page.locator('section.panel').filter({has: page.getByRole('heading', {name: 'Generate starter code'})})).toContainText(/not empty/);
   });
 
   test('features view shows stores and freshness; platform tests connections', async ({page}, testInfo) => {
@@ -64,24 +65,24 @@ test.describe('scaffold and feature stores', () => {
     expect(created.ok(), await created.text()).toBeTruthy();
     const store = await created.json();
 
-    await page.goto('/console.html?view=platform');
-    const item = page.locator(`#feature-store-connections [data-store-id="${store.id}"]`);
+    await page.goto('/console/platform');
+    const item = page.getByRole('row').filter({hasText: store.name});
     await expect(item).toContainText('configured');
     await item.getByRole('button', {name: 'Test'}).click();
     await expect(item.locator('.status')).toHaveText(process.env.KIONGA_E2E_FEAST_URL ? 'healthy' : 'unavailable', {timeout: 20_000});
-    await expect(page.locator('#feature-store-connections [data-store-id="internal"]')).toBeVisible();
+    await expect(page.getByRole('row').filter({hasText: 'Internal'})).toBeVisible();
     await page.evaluate(() => window.scrollTo(0, 0));
     await assertLayout(page, 'platform data connections');
     await page.screenshot({path: screenshotPath(testInfo, 'platform-data-connections'), fullPage: true});
 
-    await page.goto('/console.html?view=features');
-    await expect(page.locator('#feature-store-list [data-store-id="internal"]')).toContainText('Internal');
-    await expect(page.locator(`#feature-store-list [data-store-id="${store.id}"]`)).toContainText('All projects');
-    const card = page.locator('.feature-card', {hasText: name});
-    await expect(card.locator('.status.fresh')).toBeVisible();
-    await expect(card).toContainText('v1');
-    await card.click();
-    await expect(page.locator('#metadata-detail')).toContainText(`mat-${suffix}`);
+    await page.goto('/console/features');
+    await expect(page.locator('section.panel').filter({has: page.getByRole('heading', {name: 'Available stores'})}).getByRole('row').filter({hasText: 'Internal'})).toContainText(/internal/i);
+    await expect(page.getByRole('row').filter({hasText: store.name})).toContainText('All projects');
+    const card = page.getByRole('row').filter({hasText: name});
+    await expect(card.locator('.status').filter({hasText: 'fresh'})).toBeVisible();
+    await expect(card.getByRole('cell').nth(2)).toHaveText('1');
+    await card.getByRole('button', {name: 'Schema and lineage'}).click();
+    await expect(page.getByRole('dialog', {name})).toContainText(`mat-${suffix}`);
     await page.keyboard.press('Escape');
     await page.evaluate(() => window.scrollTo(0, 0));
     await assertLayout(page, 'features with stores');

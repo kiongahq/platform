@@ -17,8 +17,8 @@ func TestSafeReturnToRejectsOffSiteTargets(t *testing.T) {
 		}
 	}
 	for value, want := range map[string]string{
-		"": "/console.html", "/console.html": "/console.html",
-		"/workspace.html?tool=ide": "/workspace.html?tool=ide",
+		"": "/console", "/console": "/console",
+		"/workspace?tool=ide": "/workspace?tool=ide",
 	} {
 		if got := safeReturnTo(value); got != want {
 			t.Errorf("safeReturnTo(%q) = %q, want %q", value, got, want)

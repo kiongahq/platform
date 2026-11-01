@@ -52,6 +52,19 @@ make -C ../deploy local-up
 make test-browser        # Playwright with the installed Chrome; KIONGA_URL overrides the target
 ```
 
+The core backend browser checks run in CI and can also run locally:
+
+```bash
+npm run build:frontend
+npm run test:core
+```
+
+These checks start an isolated Go gateway with temporary state and a Langflow
+test upstream. They verify console navigation, instance selection, session-based
+launch, proxied workspace assets, access restrictions and core API responses.
+They do not connect to the development database, cluster or identity provider.
+Use the live-stack acceptance tests to validate a running Langflow installation.
+
 Use `make format` to apply gofmt and `make run` to start the gateway alone on
 `:8080` with a file-backed store.
 
@@ -59,19 +72,23 @@ Use `make format` to apply gofmt and `make run` to start the gateway alone on
 
 ```bash
 make build                                             # bin/mlaiops-<service>
-docker build -f go/Dockerfile --build-arg SERVICE=gateway -t gateway:dev go
+docker build -f Dockerfile.gateway -t gateway:dev .
+docker build --build-arg SERVICE=operator -t operator:dev go
 ```
+
+The gateway image builds the frontend with `Dockerfile.gateway`. Other Go service
+images use `go/Dockerfile` and do not require Node.js or frontend dependencies.
 
 `SERVICE` is one of `gateway`, `operator`, `integration-worker`, `feature-gateway`,
 `storage-proxy`, `metrics-collector`, `log-exporter` or `cli`. The **Build &
 Publish Images** workflow (`build.yml`) publishes each as
-`ghcr.io/kiongahq/<service>` on pushes to `main` that touch `go/`, and on `v*`
+`ghcr.io/kiongahq/<service>` on pushes to `main` that touch `go/` or `frontend/`, and on `v*`
 tags, tagged `sha-<short>`, `latest` and the semantic version.
 
 ## Vendored browser libraries
 
-The console vendors Dagre, Editor.js and highlight.js under
-`go/cmd/gateway/web/vendor/` with an integrity manifest. After you update one, run
+The console vendors highlight.js under
+`frontend/public/vendor/` with an integrity manifest. After you update one, run
 `python3 scripts/vendor-manifest.py` to verify it against upstream and rewrite the
 manifest; `tests/ui/vendor-integrity.test.cjs` checks it on every run.
 

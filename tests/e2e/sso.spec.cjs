@@ -17,7 +17,7 @@ test.describe('single sign-on', () => {
   });
 
   async function ssoSignIn(page, username, password = PASSWORD) {
-    await page.goto('/login.html?return_to=%2Fconsole.html');
+    await page.goto('/login?return_to=%2Fconsole');
     await page.getByRole('link', {name: 'Sign in with Company directory'}).click();
     await page.waitForURL(/\/dex\/auth\/ldap/);
     await page.fill('input[name="login"]', username);
@@ -31,13 +31,13 @@ test.describe('single sign-on', () => {
 
   async function adminRequests(page) {
     const context = page.context().request;
-    const login = await context.post('/auth/local/login', {form: {...ADMIN, return_to: '/console.html'}, maxRedirects: 0});
+    const login = await context.post('/auth/local/login', {form: {...ADMIN, return_to: '/console'}, maxRedirects: 0});
     expect([200, 302]).toContain(login.status());
     return (await (await context.get('/api/v1/admin/access-requests')).json()).items;
   }
 
   test('login page offers every method: directory, demo OAuth account and local break-glass', async ({page}) => {
-    await page.goto('/login.html');
+    await page.goto('/login');
     await expect(page.getByRole('link', {name: 'Sign in with Company directory'})).toBeVisible();
     await expect(page.getByRole('link', {name: 'Sign in with Demo account (local only)'})).toBeVisible();
     await expect(page.locator('#local-login')).toBeVisible();
@@ -46,7 +46,7 @@ test.describe('single sign-on', () => {
 
   test('a directory admin signs in through LDAP and gets the admin role from their group', async ({page}) => {
     await ssoSignIn(page, 'ada');
-    await page.waitForURL(url => url.pathname === '/console.html');
+    await page.waitForURL(url => url.pathname === '/console');
     const profile = await me(page);
     expect(profile.email).toBe('ada@kionga.dev');
     expect(profile.roles).toEqual(['admin']);
@@ -60,13 +60,13 @@ test.describe('single sign-on', () => {
 
   test('group mapping gives a data-team member the engineer role', async ({page}) => {
     await ssoSignIn(page, 'grace');
-    await page.waitForURL(url => url.pathname === '/console.html');
+    await page.waitForURL(url => url.pathname === '/console');
     expect((await me(page)).roles).toEqual(['engineer']);
   });
 
   test('a directory user in no mapped group signs up and waits for approval', async ({page}) => {
     await ssoSignIn(page, 'alan');
-    await page.waitForURL(url => url.pathname === '/console.html');
+    await page.waitForURL(url => url.pathname === '/console');
     const profile = await me(page);
     expect(profile.roles).toEqual(['user']);
     expect(profile.provisioned).toBe(false);
@@ -87,9 +87,9 @@ test.describe('single sign-on', () => {
   });
 
   test('the demo OAuth account signs up with one click', async ({page}) => {
-    await page.goto('/login.html?return_to=%2Fconsole.html');
+    await page.goto('/login?return_to=%2Fconsole');
     await page.getByRole('link', {name: 'Sign in with Demo account (local only)'}).click();
-    await page.waitForURL(url => url.pathname === '/console.html');
+    await page.waitForURL(url => url.pathname === '/console');
     const profile = await me(page);
     expect(profile.connector).toBe('mock');
     expect(profile.email).toBe('kilgore@kilgore.trout');
@@ -102,18 +102,18 @@ test.describe('single sign-on', () => {
   test('signing in from 127.0.0.1 lands on the callback host and completes', async ({page, baseURL}) => {
     const callbackHost = new URL(baseURL).hostname;
     test.skip(callbackHost !== 'localhost', 'needs the stack at localhost (its OIDC_REDIRECT_URL)');
-    await page.goto(baseURL.replace('localhost', '127.0.0.1') + '/login.html?return_to=%2Fconsole.html');
+    await page.goto(baseURL.replace('localhost', '127.0.0.1') + '/login?return_to=%2Fconsole');
     await page.getByRole('link', {name: 'Sign in with Demo account (local only)'}).click();
-    await page.waitForURL(url => url.pathname === '/console.html');
+    await page.waitForURL(url => url.pathname === '/console');
     expect(new URL(page.url()).hostname).toBe('localhost');
     expect((await me(page)).connector).toBe('mock');
   });
 
   test('the local break-glass admin reports a local sign-in next to single sign-on', async ({page}) => {
-    await page.goto('/login.html?return_to=%2Fconsole.html');
+    await page.goto('/login?return_to=%2Fconsole');
     await page.fill('input[name="username"]', ADMIN.username);
     await page.fill('input[name="password"]', ADMIN.password);
-    await Promise.all([page.waitForURL(url => url.pathname === '/console.html'), page.click('button[type="submit"]')]);
+    await Promise.all([page.waitForURL(url => url.pathname === '/console'), page.click('button[type="submit"]')]);
     const profile = await me(page);
     expect(profile).toMatchObject({mode: 'local', local_accounts: true});
     await expect(page.locator('#signup-banner')).toBeHidden();
@@ -128,7 +128,7 @@ test.describe('single sign-on', () => {
 
   test('sign-out ends the single sign-on session', async ({page}) => {
     await ssoSignIn(page, 'ada');
-    await page.waitForURL(url => url.pathname === '/console.html');
+    await page.waitForURL(url => url.pathname === '/console');
     await page.goto('/auth/logout');
     const status = await page.evaluate(async () => (await fetch('/api/v1/me')).status);
     expect(status).toBe(401);

@@ -78,7 +78,7 @@ func (s *LocalSessionManager) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/auth/login":
-			http.Redirect(w, r, "/login.html?return_to="+url.QueryEscape(safeReturnTo(r.URL.Query().Get("return_to"))), http.StatusFound)
+			http.Redirect(w, r, "/login?return_to="+url.QueryEscape(safeReturnTo(r.URL.Query().Get("return_to"))), http.StatusFound)
 			return
 		case r.URL.Path == "/auth/local/login" && r.Method == http.MethodPost:
 			s.login(w, r)
@@ -99,7 +99,7 @@ func (s *LocalSessionManager) Handler(next http.Handler) http.Handler {
 			}
 		case localConsolePath(r.URL.Path):
 			if _, ok := s.authenticated(r); !ok {
-				http.Redirect(w, r, "/login.html?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
+				http.Redirect(w, r, "/login?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
 				return
 			}
 		}
@@ -124,18 +124,18 @@ func (s *LocalSessionManager) verify(username, password string) bool {
 func (s *LocalSessionManager) login(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/login.html?error=invalid&return_to="+url.QueryEscape(safeReturnTo(r.FormValue("return_to"))), http.StatusFound)
+		http.Redirect(w, r, "/login?error=invalid&return_to="+url.QueryEscape(safeReturnTo(r.FormValue("return_to"))), http.StatusFound)
 		return
 	}
 	username := r.FormValue("username")
 	if wait := s.loginDelay(username); wait > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Round(time.Second).Seconds())+1))
-		http.Redirect(w, r, "/login.html?error=throttled&return_to="+url.QueryEscape(safeReturnTo(r.FormValue("return_to"))), http.StatusSeeOther)
+		http.Redirect(w, r, "/login?error=throttled&return_to="+url.QueryEscape(safeReturnTo(r.FormValue("return_to"))), http.StatusSeeOther)
 		return
 	}
 	if !s.verify(username, r.FormValue("password")) {
 		s.recordFailure(username)
-		http.Redirect(w, r, "/login.html?error=invalid&return_to="+url.QueryEscape(safeReturnTo(r.FormValue("return_to"))), http.StatusFound)
+		http.Redirect(w, r, "/login?error=invalid&return_to="+url.QueryEscape(safeReturnTo(r.FormValue("return_to"))), http.StatusFound)
 		return
 	}
 	token, err := randomToken(32)
@@ -243,5 +243,5 @@ func (s *LocalSessionManager) authenticated(r *http.Request) (string, bool) {
 }
 
 func localConsolePath(path string) bool {
-	return path == "/console.html" || path == "/workspace.html" || path == "/editorial.html" || strings.HasPrefix(path, "/editorial/") || strings.HasPrefix(path, "/js/") || path == "/styles.css" || strings.HasPrefix(path, "/workspaces/")
+	return path == "/console" || strings.HasPrefix(path, "/console/") || path == "/workspace" || path == "/workspace/" || path == "/studio" || strings.HasPrefix(path, "/studio/") || strings.HasPrefix(path, "/workspaces/")
 }

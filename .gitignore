@@ -54,3 +54,12 @@ artifacts/
 .codex/
 .cursor/
 .aider*
+
+# Next.js source builds
+frontend/.next/
+frontend/out/
+frontend/*.tsbuildinfo
+frontend/public/runtime/
+frontend/public/controllers/
+go/cmd/gateway/frontend-dist/*
+!go/cmd/gateway/frontend-dist/placeholder.txt

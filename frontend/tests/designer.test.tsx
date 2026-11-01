@@ -1,0 +1,24 @@
+import './setup-dom';
+import {test, afterEach} from 'node:test';
+import assert from 'node:assert/strict';
+import React from 'react';
+import {render, fireEvent, waitFor, cleanup, act} from '@testing-library/react';
+import {AgentDesigner} from '../features/designer/AgentDesigner';
+afterEach(cleanup);
+const identity:any={subject:'admin',roles:['admin'],services:[],permissions:{agents_write:true}};
+const design:any={id:'d1',project_id:'p1',name:'Original',revision:1,nodes:[{id:'input',kind:'input',name:'Input',x:40,y:100},{id:'prompt',kind:'prompt',name:'Prompt',x:300,y:100},{id:'output',kind:'output',name:'Output',x:600,y:100}],edges:[{from:'input',to:'prompt'},{from:'prompt',to:'output'}]};
+test('saving a graph preserves edits made while the request is pending and handles omitted node config',async()=>{
+ let finish!:(value:Response)=>void; let saving=false; const calls:any[]=[];
+ globalThis.fetch=async(input,init)=>{const path=String(input);calls.push([path,init?.method]);if(init?.method==='PUT'){saving=true;return new Promise(resolve=>{finish=resolve;});}const body=path==='/api/v1/agent-designs'?{items:[design]}:path==='/api/v1/project-options'?{items:[{id:'p1',name:'Project'}]}:path.endsWith('/components')?{components:[{kind:'prompt',label:'Prompt',config:[{key:'template',label:'Template',type:'string'}]}]}:{items:[]};return new Response(JSON.stringify(body));};
+ const view=render(<AgentDesigner identity={identity} view="agent-designer" project="p1" resource="d1" onNavigate={()=>{}}/>);
+ await waitFor(()=>assert.equal((view.getByLabelText('Name') as HTMLInputElement).value,'Original'));
+ fireEvent.click(view.container.querySelector('[data-design-select="prompt"]')!);
+ assert.equal((view.getByRole('textbox',{name:'Template'}) as HTMLInputElement).value,'');
+ fireEvent.change(view.getByLabelText('Name'),{target:{value:'Submitted'}});
+ fireEvent.click(view.getByRole('button',{name:'Save revision'}));await waitFor(()=>assert.ok(saving));
+ fireEvent.change(view.getByLabelText('Name'),{target:{value:'New edit'}});
+ await act(async()=>{finish(new Response(JSON.stringify({...design,name:'Submitted',revision:2})));});
+ await waitFor(()=>assert.match(view.getByText('Saved revision 2.').textContent||'',/Saved/));
+ assert.equal((view.getByLabelText('Name') as HTMLInputElement).value,'New edit');
+ assert.match(view.container.querySelector('#design-revision')?.textContent||'',/unsaved/i);
+});

@@ -35,7 +35,7 @@ func TestLandingAndConsoleRoutes(t *testing.T) {
 		path, expected string
 	}{
 		{"/", "Kionga landing"},
-		{"/console.html", "Kionga console"},
+		{"/console", "Kionga console"},
 	} {
 		response := httptest.NewRecorder()
 		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.path, nil))

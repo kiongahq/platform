@@ -70,33 +70,34 @@ test('branched DAG: schedule, manual run with override, parallel nodes, node log
   expect(definition.triggers[0].next_run_at).toBeTruthy();
 
   // Schedule: visible, pausable, resumable in the UI.
-  await page.goto(`/console.html?view=pipelines&project=${project.id}`);
-  const card = page.locator(`article[data-definition-detail="${definition.id}"]`);
+  await page.goto(`/console/pipelines?project=${project.id}`);
+  const card = page.getByRole('row').filter({hasText: name});
   await expect(card).toContainText('30 2 * * *');
   await expect(card).toContainText('Africa/Nairobi');
-  await card.click();
-  const detail = page.locator('#definition-detail-dialog');
-  await expect(detail.locator('.dag-node-group')).toHaveCount(4);
-  await expect(detail.locator('[data-edge]')).toHaveCount(4);
+  await card.getByRole('button', {name: 'Details', exact: true}).click();
+  const detail = page.getByRole('dialog', {name, exact: true});
+  await expect(detail.locator('.graph-node')).toHaveCount(4);
+  await expect(detail.locator('.react-flow__edge')).toHaveCount(4);
   await detail.getByRole('button', {name: 'Pause'}).click();
-  await expect(detail.locator('.schedule-line .status')).toHaveText(/paused/i);
+  await expect(detail.locator('.toolbar .status')).toHaveText(/paused/i);
   await detail.getByRole('button', {name: 'Resume'}).click();
-  await expect(detail.locator('.schedule-line .status')).toHaveText(/active/i);
-  await detail.getByRole('tab', {name: /Revisions/}).click();
-  await expect(detail.locator('.revision-row')).toHaveCount(3);
+  await expect(detail.locator('.toolbar .status')).toHaveText(/active/i);
+  await expect(detail.getByRole('heading', {name: 'Revision history'})).toBeVisible();
+  await expect(detail.locator('table').last().locator('tbody tr')).toHaveCount(3);
   await page.screenshot({path: screenshotPath(testInfo, 'acceptance-flow-detail'), fullPage: true});
 
   // Manual run with an allowed override, after a passing preflight.
-  await detail.getByRole('button', {name: '▶ Run'}).click();
-  const dialog = page.locator('#submit-dialog');
-  await expect(dialog.locator('[data-param="window"]')).toBeVisible();
-  await dialog.locator('[data-param="window"]').fill('weekly');
+  await detail.getByRole('button', {name: `Close ${name}`, exact: true}).click();
+  await card.getByRole('button', {name: 'Run', exact: true}).click();
+  const dialog = page.getByRole('dialog', {name: 'Run pipeline', exact: true});
+  await expect(dialog.getByLabel(/^window Default:/)).toBeVisible();
+  await dialog.getByLabel(/^window Default:/).fill('weekly');
   await dialog.getByRole('button', {name: 'Check run'}).click();
-  await expect(dialog.locator('#submit-checks')).toContainText('parameters.window');
-  await expect(dialog.getByRole('button', {name: 'Start run'})).toBeEnabled();
+  await expect(dialog).toContainText('parameters.window');
+  await expect(dialog.getByRole('button', {name: 'Submit run'})).toBeEnabled();
   await assertLayout(page, 'run configuration');
   await page.screenshot({path: screenshotPath(testInfo, 'acceptance-run-config'), fullPage: true});
-  await dialog.getByRole('button', {name: 'Start run'}).click();
+  await dialog.getByRole('button', {name: 'Submit run'}).click();
   await expect(dialog).toBeHidden();
 
   // Wait for the run to finish.
@@ -138,13 +139,46 @@ test('branched DAG: schedule, manual run with override, parallel nodes, node log
   expect(extract.map(entry => entry.message)).toContain('window weekly');
 
   // Node detail in the UI.
-  await page.goto(`/console.html?view=pipelines&project=${project.id}&resource=${run.id}`);
-  const runDialog = page.locator('#run-dialog');
+  await page.goto(`/console/pipelines?project=${project.id}&resource=${run.id}`);
+  const runDialog = page.getByRole('dialog', {name: run.name, exact: true});
   await expect(runDialog).toBeVisible();
-  await runDialog.locator('[data-graph-node="left"]').click();
-  const panel = runDialog.locator('#run-node-detail');
-  await expect(panel).toContainText('Docker container');
-  await expect(panel.locator('.logs')).toContainText('left start');
+  await runDialog.getByRole('button', {name: /^left,/}).click();
+  const panel = runDialog;
+  await expect(panel).toContainText('docker-container');
+  await expect(panel.locator('.logs').first()).toContainText('left start');
   await panel.scrollIntoViewIfNeeded();
   await panel.screenshot({path: screenshotPath(testInfo, 'acceptance-node-logs')});
+});
+
+test('an unavailable pipeline engine keeps checked overrides visible and blocks submission', async ({page}, testInfo) => {
+  await signIn(page, ADMIN);
+  const options = await (await page.request.get('/api/v1/project-options')).json();
+  test.skip(!options.items?.length, 'needs an assigned project');
+  const project = options.items[0];
+  const name = `engine-check-${testInfo.project.name}-${Date.now()}`;
+  const created = await page.request.post('/api/v1/pipelines/definitions/yaml', {data: {yaml: flowYAML(project.id, name), message: 'Unavailable engine preflight acceptance'}});
+  expect(created.status(), await created.text()).toBe(201);
+  const definition = await created.json();
+  const request = {project_id: project.id, definition_id: definition.id, name: 'Engine availability check', overrides: {parameters: {window: 'weekly'}}};
+  const checked = await (await page.request.post('/api/v1/pipelines/preflight', {data: request})).json();
+  const engineFailure = checked.checks.find(check => check.status === 'fail' && /No pipeline engine is configured/.test(check.message));
+  test.skip(!engineFailure, 'A pipeline engine is configured; this scenario requires an unconfigured engine');
+  expect(checked.allowed).toBe(false);
+  const field = checked.fields.find(field => field.field === 'parameters.window');
+  expect(field).toMatchObject({default: 'daily', effective: 'weekly', overridden: true, locked: false});
+
+  await page.goto(`/console/pipelines?project=${project.id}`);
+  await page.getByRole('row').filter({hasText: name}).getByRole('button', {name: 'Run', exact: true}).click();
+  const dialog = page.getByRole('dialog', {name: 'Run pipeline', exact: true});
+  await dialog.getByLabel(/^window Default:/).fill('weekly');
+  const response = page.waitForResponse(response => response.url().endsWith('/api/v1/pipelines/preflight') && response.request().method() === 'POST');
+  await dialog.getByRole('button', {name: 'Check run', exact: true}).click();
+  expect((await response).ok()).toBeTruthy();
+  await expect(dialog).toContainText(engineFailure.message);
+  const effective = dialog.getByRole('region', {name: 'Effective run fields'});
+  await expect(effective.getByRole('row').filter({hasText: 'parameters.window'})).toContainText('weekly');
+  await expect(dialog.getByRole('button', {name: 'Submit run', exact: true})).toBeDisabled();
+  await assertLayout(page, 'unavailable engine preflight');
+  const runs = await (await page.request.get('/api/v1/pipelines/runs')).json();
+  expect(runs.some(run => run.definition_id === definition.id)).toBe(false);
 });

@@ -294,7 +294,7 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 			if kind == "langflow" && os.Getenv("KIONGA_WORKSPACE_NAMESPACE") != "" {
 				e.State = "managed"
 				e.Message = "Choose an instance in Langflow"
-				e.URL = "/console.html?view=langflow"
+				e.URL = "/console/langflow"
 				return
 			}
 			target, err := workspaceTarget(kind, r)
@@ -343,7 +343,7 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 			e.State = workspaceReady
 			e.Available = true
 			if os.Getenv("KIONGA_ENVIRONMENT") == "production" && os.Getenv("KIONGA_WORKSPACE_BASE_DOMAIN") != "" {
-				e.URL = "/workspace.html?tool=" + kind
+				e.URL = "/workspace?tool=" + kind
 				e.Message = "Ready · isolated workspace"
 			} else {
 				e.URL = "/workspaces/" + kind + "/"

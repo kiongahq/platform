@@ -41,6 +41,13 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/v1/health", server.health)
 	mux.HandleFunc("GET /api/v1/ready", server.ready)
 	mux.HandleFunc("GET /api/v1/me", server.me)
+	mux.HandleFunc("GET /api/v1/settings/github", server.githubAccount)
+	mux.HandleFunc("PUT /api/v1/settings/github", server.githubAccount)
+	mux.HandleFunc("DELETE /api/v1/settings/github", server.githubAccount)
+	mux.HandleFunc("GET /api/v1/settings/github/connect", server.githubConnect)
+	mux.HandleFunc("GET /api/v1/settings/github/callback", server.githubCallback)
+	mux.HandleFunc("GET /api/v1/settings/github/installations", server.listGitHubInstallations)
+	mux.HandleFunc("GET /api/v1/settings/github/repositories", server.githubRepositories)
 	mux.HandleFunc("GET /api/v1/settings/huggingface", server.huggingFaceAccount)
 	mux.HandleFunc("PUT /api/v1/settings/huggingface", server.huggingFaceAccount)
 	mux.HandleFunc("DELETE /api/v1/settings/huggingface", server.huggingFaceAccount)
@@ -139,7 +146,7 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	for _, register := range routeRegistrars {
 		register(server, mux)
 	}
-	mux.Handle("/", http.FileServer(http.FS(static)))
+	mux.Handle("/", frontendHandler(static))
 	resolver := func(subject string) (roles, services, projectIDs []string, disabled bool, ok bool) {
 		access, err := data.AccessFor(subject)
 		if err != nil {
