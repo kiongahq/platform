@@ -153,7 +153,7 @@ func publicPath(method, path string) bool {
 			return true
 		}
 		switch strings.TrimSuffix(path, "/") {
-		case "", "/login", "/api-docs", "/blog", "/blog/read", "/index.txt", "/login.txt", "/api-docs.txt", "/blog.txt", "/blog/read.txt", "/logo.svg", "/favicon.svg", "/icons.svg", "/api/v1/health", "/api/v1/ready", "/api/openapi.json":
+		case "", "/login", "/api-docs", "/blog", "/blog/read", "/index.txt", "/login.txt", "/api-docs.txt", "/blog.txt", "/blog/read.txt", "/logo.svg", "/favicon.svg", "/favicon-cobalt.svg", "/icons.svg", "/api/v1/health", "/api/v1/ready", "/api/openapi.json":
 			return true
 		}
 		if strings.HasPrefix(path, "/blog/__next.") || strings.HasPrefix(path, "/blog/read/__next.") || strings.HasPrefix(path, "/login/__next.") || strings.HasPrefix(path, "/api-docs/__next.") {

@@ -1,4 +1,6 @@
 "use client";
+import { createPortal } from "react-dom";
+import { readConsolePreferences } from "@/lib/preferences";
 import { Select } from "@/components/ui/Select";
 import { SessionNotice } from "@/components/layout/SessionNotice";
 import Link from "next/link";
@@ -102,6 +104,15 @@ function ConsoleApplication({ view }: { view: string }) {
     [searchOpen, setSearchOpen] = useState(false),
     [sidebarWidth, setSidebarWidth] = useState(224);
   const [isMobile, setIsMobile] = useState(false);
+  const [navigationHint, setNavigationHint] = useState<{label:string;left:number;top:number} | null>(null);
+  const iconNavigation = !isMobile && sidebarWidth <= 112;
+  useEffect(() => setNavigationHint(null), [sidebarWidth, isMobile, view]);
+  function showNavigationHint(target: EventTarget | null) {
+    const link = target instanceof Element ? target.closest<HTMLAnchorElement>("a[aria-label]") : null;
+    if (!iconNavigation || !link) { setNavigationHint(null); return; }
+    const bounds = link.getBoundingClientRect();
+    setNavigationHint({label:link.getAttribute("aria-label")!,left:bounds.right+12,top:Math.max(24,Math.min(window.innerHeight-24,bounds.top+bounds.height/2))});
+  }
   const navWasOpen = useRef(false);
   const toggleRef = useRef<HTMLButtonElement>(null),
     sidebarRef = useRef<HTMLElement>(null);
@@ -157,10 +168,9 @@ function ConsoleApplication({ view }: { view: string }) {
     resource = query.get("resource") || "";
   const readPreferences = useCallback(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem("kionga.console.preferences") || "{}");
-      setPrefs({...stored, theme: stored?.theme === "dark" ? "dark" : "light"});
+      setPrefs(readConsolePreferences());
       const width = Number(localStorage.getItem("kionga.sidebar.width"));
-      if (width >= 180 && width <= 360) setSidebarWidth(width);
+      if (width >= 64 && width <= 360) setSidebarWidth(width);
     } catch {
       /* preferences are optional */
     }
@@ -255,14 +265,14 @@ function ConsoleApplication({ view }: { view: string }) {
   const title =
     view === "pipeline-editor" ? "Pipeline editor" : titles[view] || "Console";
   function resize(width: number) {
-    const value = Math.max(180, Math.min(360, width));
+    const value = Math.max(64, Math.min(360, Math.round(width)));
     setSidebarWidth(value);
-    localStorage.setItem("kionga.sidebar.width", String(value));
+    try { localStorage.setItem("kionga.sidebar.width", String(value)); } catch { /* resizing remains available without storage */ }
   }
   return (
     <UnsavedContext.Provider value={setDirty}>
       <div
-        className={`app-shell${navOpen ? " nav-open" : ""}`}
+        className={`app-shell${navOpen ? " nav-open" : ""}${iconNavigation ? " nav-icons" : ""}`}
         style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
         <a className="skip-link" href="#main">
@@ -274,9 +284,17 @@ function ConsoleApplication({ view }: { view: string }) {
           className="app-sidebar"
           id="sidebar"
           aria-label="Console navigation"
+          onPointerOver={(event) => showNavigationHint(event.target)}
+          onPointerLeave={() => setNavigationHint(null)}
+          onFocus={(event) => showNavigationHint(event.target)}
+          onBlur={() => setNavigationHint(null)}
+          onClick={() => setNavigationHint(null)}
+          onScroll={() => setNavigationHint(null)}
+          onKeyDown={(event) => { if (event.key === "Escape") setNavigationHint(null); }}
         >
           <Link
             className="wordmark"
+            aria-label="Kionga overview"
             href="/console"
             onClick={(event) => {
               event.preventDefault();
@@ -284,7 +302,7 @@ function ConsoleApplication({ view }: { view: string }) {
             }}
           >
             <img src="/logo.svg" width={30} height={30} alt="" />
-            Kionga
+            <span>Kionga</span>
           </Link>
           <button
             className="mobile-menu icon-button"
@@ -313,6 +331,7 @@ function ConsoleApplication({ view }: { view: string }) {
                     <Link
                       key={id}
                       data-view={id}
+                      aria-label={label}
                       href={url(id)}
                       prefetch={false}
                       aria-current={view === id ? "page" : undefined}
@@ -335,6 +354,7 @@ function ConsoleApplication({ view }: { view: string }) {
                 <a
                   id={`${tool === "workbench" ? "workbench" : "ide"}-link`}
                   key={tool}
+                  aria-label={tool === "workbench" ? "JupyterLab" : "Browser IDE"}
                   href={`/workspace?tool=${tool}${project ? `&project=${encodeURIComponent(project)}` : ""}`}
                 >
                   <Icon name={tool} />
@@ -344,7 +364,7 @@ function ConsoleApplication({ view }: { view: string }) {
                 </a>
               ))}
             {hasService(identity, "langflow") && (
-              <a id="langflow-link" href={url("langflow")}>
+              <a id="langflow-link" aria-label="Langflow canvas" href={url("langflow")}>
                 <Icon name="langflow" />
                 <span>Langflow canvas</span>
               </a>
@@ -355,27 +375,39 @@ function ConsoleApplication({ view }: { view: string }) {
             aria-label="Navigation width"
             role="separator"
             aria-orientation="vertical"
-            aria-valuemin={180}
+            aria-valuemin={64}
+            aria-valuetext={iconNavigation ? `${sidebarWidth} pixels, icons only` : `${sidebarWidth} pixels`}
             aria-valuemax={360}
             aria-valuenow={sidebarWidth}
             onDoubleClick={() => resize(224)}
             onKeyDown={(event) => {
+              if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
               if (event.key === "ArrowRight") resize(sidebarWidth + 10);
               if (event.key === "ArrowLeft") resize(sidebarWidth - 10);
+              if (event.key === "Home") resize(64);
+              if (event.key === "End") resize(360);
             }}
             onPointerDown={(event) => {
+              event.preventDefault();
               const element = event.currentTarget;
+              const startX = event.clientX, startWidth = sidebarWidth;
               element.setPointerCapture(event.pointerId);
-              const move = (e: PointerEvent) => resize(e.clientX);
+              const move = (e: PointerEvent) => resize(startWidth + e.clientX - startX);
               const stop = () => {
                 element.removeEventListener("pointermove", move);
                 element.removeEventListener("pointerup", stop);
+                element.removeEventListener("pointercancel", stop);
+                element.removeEventListener("lostpointercapture", stop);
               };
               element.addEventListener("pointermove", move);
               element.addEventListener("pointerup", stop);
+              element.addEventListener("pointercancel", stop);
+              element.addEventListener("lostpointercapture", stop);
             }}
           />
         </aside>
+        {navigationHint && createPortal(<div className="sidebar-tooltip" role="tooltip" style={{left:navigationHint.left,top:navigationHint.top}}>{navigationHint.label}</div>,document.body)}
         <div className="app-content" inert={isMobile && navOpen}>
           <header className="app-topbar">
             <button

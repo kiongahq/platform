@@ -157,3 +157,37 @@ test('public, developer and editorial surfaces use shared tokens without horizon
     await page.screenshot({path: screenshotPath(testInfo, `unified-${url.replace(/[^a-z]/g, '') || 'landing'}`), fullPage: true});
   }
 });
+
+test('navigation resizes to an icon rail with hover and focus names', async ({page}, testInfo) => {
+  await signIn(page, ADMIN);
+  await page.evaluate(() => localStorage.setItem('kionga.sidebar.width', '64'));
+  await page.reload();
+  const sidebar=page.getByRole('complementary',{name:'Console navigation'});
+  const overview=sidebar.locator('a[data-view="overview"]');
+  if(testInfo.project.name==='narrow') {
+    await page.locator('#sidebar-toggle').click();
+    await expect(overview.locator('span')).toBeVisible();
+    await expect(page.locator('.app-shell')).not.toHaveClass(/nav-icons/);
+    await expect(page.getByRole('separator',{name:'Navigation width'})).toBeHidden();
+  } else {
+    const resizer=page.getByRole('separator',{name:'Navigation width'});
+    await expect(resizer).toHaveAttribute('aria-valuenow','64');
+    await expect(overview.locator('span')).toBeHidden();
+    await expect(overview).toHaveAccessibleName('Overview');
+    await overview.hover();await expect(page.getByRole('tooltip')).toHaveText('Overview');
+    await overview.focus();await expect(page.getByRole('tooltip')).toHaveText('Overview');
+    await page.keyboard.press('Escape');await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await resizer.focus();await page.keyboard.press('End');await expect(resizer).toHaveAttribute('aria-valuenow','360');
+    await expect(overview.locator('span')).toBeVisible();
+    const handle=await resizer.boundingBox();
+    await page.mouse.move(handle.x+handle.width/2,handle.y+80);await page.mouse.down();await page.mouse.move(65,handle.y+80,{steps:15});await page.mouse.up();
+    await expect(page.locator('.app-shell')).toHaveClass(/nav-icons/);
+    await resizer.focus();await page.keyboard.press('Home');await expect(resizer).toHaveAttribute('aria-valuenow','64');
+    await page.reload();await expect(resizer).toHaveAttribute('aria-valuenow','64');
+    await sidebar.locator('a[data-view="storage"]').scrollIntoViewIfNeeded();
+    await sidebar.locator('a[data-view="storage"]').hover();await expect(page.getByRole('tooltip')).toHaveText('Storage');
+    const tooltip=await page.getByRole('tooltip').boundingBox();expect(tooltip.x).toBeGreaterThan(64);
+  }
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(1);
+  await page.screenshot({path:testInfo.outputPath('navigation-icons.png')});
+});

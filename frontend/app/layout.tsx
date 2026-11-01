@@ -19,7 +19,7 @@ const mono = localFont({ src: [
 export const metadata = {
   title: { default: "Kionga", template: "%s | Kionga" },
   description: "The self-hosted control plane for ML, data, and AI.",
-  icons: { icon: "/favicon.svg" },
+  icons: { icon: "/favicon-cobalt.svg" },
 };
 export default function RootLayout({ children }: { children: ReactNode }) {
   return <html lang="en" className={`${body.variable} ${display.variable} ${mono.variable}`} suppressHydrationWarning><body>{children}</body></html>;

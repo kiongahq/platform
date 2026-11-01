@@ -1,4 +1,5 @@
 "use client";
+import { readConsolePreferences } from "@/lib/preferences";
 import { GitHubConnection } from "@/components/console/GitHubConnection";
 import { Select } from "@/components/ui/Select";
 import { CodeBlock } from "@/components/ui/CodeBlock";
@@ -45,9 +46,7 @@ export function Settings({ identity }: OperationsProps) {
   });
   useEffect(() => {
     try {
-      const stored = JSON.parse(
-        localStorage.getItem("kionga.console.preferences") || "{}",
-      );
+      const stored = readConsolePreferences();
       setPreferences((old) => ({
         ...old,
         ...stored,
@@ -58,7 +57,7 @@ export function Settings({ identity }: OperationsProps) {
     }
   }, []);
   function preference(name: string, value: unknown) {
-    const next = { ...preferences, [name]: value };
+    const next = { ...preferences, [name]: value, themeVersion: 1 };
     setPreferences(next);
     try {
       localStorage.setItem("kionga.console.preferences", JSON.stringify(next));

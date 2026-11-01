@@ -589,3 +589,19 @@ button, .button, .button-link { white-space: nowrap; }
 .storage-path-link { flex-wrap: wrap; gap: var(--space-1); font-family: var(--font-mono); font-size: 13px; }.storage-path-link .storage-crumb { gap: var(--space-1); }.storage-path-link > code { font-size: inherit; }
 /* Graph controls inherit the explicit application theme, including dark ink pairs. */
 .flow-surface .react-flow { background: var(--color-paper-2); color: var(--color-ink); }.flow-surface .react-flow__controls-button { background: var(--color-key-face); color: var(--color-ink); border-color: var(--color-rule); }.flow-surface .react-flow__controls-button:hover { background: var(--color-accent-wash); }.flow-surface .react-flow__controls-button svg { fill: currentColor; }
+
+/* Resizable navigation keeps labels accessible when reduced to an icon rail. */
+@media (min-width: 961px) {
+  .app-sidebar .wordmark, .app-sidebar nav a, .workspace-links a { min-width: 0; }
+  .app-sidebar .wordmark > span, .app-sidebar nav a > span, .workspace-links a > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nav-icons .app-sidebar { padding-inline: 8px; }
+  .nav-icons .app-sidebar .wordmark { justify-content: center; gap: 0; }
+  .nav-icons .app-sidebar .wordmark > span, .nav-icons .app-sidebar nav a > span, .nav-icons .workspace-links a > span { display: none; }
+  .nav-icons .nav-group-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .nav-icons .app-sidebar nav a, .nav-icons .workspace-links a { justify-content: center; gap: 0; min-height: 40px; padding: 8px; }
+  .nav-icons .nav-group { padding-block: 12px; }
+  .nav-icons .workspace-links { gap: 4px; }
+  .sidebar-resizer { right: 0; touch-action: none; }
+  .sidebar-resizer:focus-visible { background: var(--color-accent); outline-offset: -2px; }
+}
+.sidebar-tooltip { position: fixed; z-index: 200; transform: translateY(-50%); padding: 7px 11px; border: 1px solid var(--color-rule); border-radius: var(--radius-input); color: var(--color-ink); background: var(--color-paper); box-shadow: var(--shadow-key); font-size: 13px; line-height: 1.4; white-space: nowrap; pointer-events: none; }

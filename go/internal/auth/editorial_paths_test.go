@@ -27,7 +27,7 @@ func TestBlogReaderPathsArePublicEditorialIsNot(t *testing.T) {
 }
 
 func TestFrontendFontAndFrameworkAssetsArePublicReadOnly(t *testing.T) {
-	for _, path := range []string{"/fonts/ibm-plex-sans-400.ttf", "/_next/static/application.js"} {
+	for _, path := range []string{"/fonts/ibm-plex-sans-400.ttf", "/_next/static/application.js", "/favicon.svg", "/favicon-cobalt.svg"} {
 		if !publicPath(http.MethodGet, path) || !publicPath(http.MethodHead, path) {
 			t.Errorf("%s must load on public and sign-in pages", path)
 		}
