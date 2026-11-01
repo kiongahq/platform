@@ -149,7 +149,7 @@ func (s *authSetup) do(method, target string, cookies []*http.Cookie, form url.V
 // response and the cookies the browser would hold afterwards.
 func (s *authSetup) ssoLogin(t *testing.T, connector string) (*httptest.ResponseRecorder, []*http.Cookie) {
 	t.Helper()
-	start := s.do(http.MethodGet, "/auth/sso/login?connector="+connector+"&return_to=%2Fconsole.html%3Fview%3Dmodels", nil, nil)
+	start := s.do(http.MethodGet, "/auth/sso/login?connector="+connector+"&return_to=%2Fconsole%3Fview%3Dmodels", nil, nil)
 	if start.Code != http.StatusFound {
 		t.Fatalf("sso login returned %d: %s", start.Code, start.Body)
 	}
@@ -179,7 +179,7 @@ func cookieNamed(cookies []*http.Cookie, name string) *http.Cookie {
 func TestSSOLoginThroughConnectorUsesPKCENonceAndMapsGroupsToRoles(t *testing.T) {
 	setup := newAuthSetup(t, false, []Provider{{ID: "ldap", Name: "Company directory", Type: "ldap"}})
 	callback, cookies := setup.ssoLogin(t, "ldap")
-	if callback.Code != http.StatusFound || callback.Header().Get("Location") != "/console.html?view=models" {
+	if callback.Code != http.StatusFound || callback.Header().Get("Location") != "/console?view=models" {
 		t.Fatalf("callback = %d %q: %s", callback.Code, callback.Header().Get("Location"), callback.Body)
 	}
 	if setup.idp.pkceFailed {
@@ -252,17 +252,17 @@ func TestProvidersEndpointListsSignInOptionsOnly(t *testing.T) {
 
 func TestLoginGoesStraightToTheIdPOnlyWhenItIsTheOnlyWayIn(t *testing.T) {
 	ssoOnly := newAuthSetup(t, false, nil)
-	direct := ssoOnly.do(http.MethodGet, "/auth/login?return_to=%2Fconsole.html", nil, nil)
+	direct := ssoOnly.do(http.MethodGet, "/auth/login?return_to=%2Fconsole", nil, nil)
 	if location := direct.Header().Get("Location"); !strings.HasPrefix(location, ssoOnly.idp.server.URL+"/auth?") ||
 		strings.Contains(location, "connector_id") {
 		t.Fatalf("SSO-only login should go to the IdP chooser, got %q", location)
 	}
 	both := newAuthSetup(t, true, []Provider{{ID: "ldap", Name: "Directory"}})
-	page := both.do(http.MethodGet, "/auth/login?return_to=%2Fconsole.html", nil, nil)
-	if page.Header().Get("Location") != "/login.html?return_to=%2Fconsole.html" {
+	page := both.do(http.MethodGet, "/auth/login?return_to=%2Fconsole", nil, nil)
+	if page.Header().Get("Location") != "/login?return_to=%2Fconsole" {
 		t.Fatalf("with local accounts too, login shows the page; got %q", page.Header().Get("Location"))
 	}
-	asset := both.do(http.MethodGet, "/login.js", nil, nil)
+	asset := both.do(http.MethodGet, "/_next/static/login.js", nil, nil)
 	if asset.Code != http.StatusOK {
 		t.Fatalf("login assets must load before sign-in, got %d", asset.Code)
 	}
@@ -273,7 +273,7 @@ func TestLocalBreakGlassSignInWorksAlongsideSSOAndEverythingElseFailsClosed(t *t
 	if api := setup.do(http.MethodGet, "/api/v1/projects", nil, nil); api.Code != http.StatusUnauthorized {
 		t.Fatalf("API without identity = %d, want 401", api.Code)
 	}
-	if console := setup.do(http.MethodGet, "/console.html", nil, nil); console.Code != http.StatusFound ||
+	if console := setup.do(http.MethodGet, "/console", nil, nil); console.Code != http.StatusFound ||
 		!strings.HasPrefix(console.Header().Get("Location"), "/auth/login?") {
 		t.Fatalf("console without identity = %d %q", console.Code, console.Header().Get("Location"))
 	}
@@ -284,7 +284,7 @@ func TestLocalBreakGlassSignInWorksAlongsideSSOAndEverythingElseFailsClosed(t *t
 	if !strings.Contains(bad.Header().Get("Location"), "error=invalid") {
 		t.Fatalf("wrong password = %q", bad.Header().Get("Location"))
 	}
-	login := setup.do(http.MethodPost, "/auth/local/login", nil, url.Values{"username": {"admin"}, "password": {"break-glass-password"}, "return_to": {"/console.html"}})
+	login := setup.do(http.MethodPost, "/auth/local/login", nil, url.Values{"username": {"admin"}, "password": {"break-glass-password"}, "return_to": {"/console"}})
 	local := cookieNamed(login.Result().Cookies(), localSessionCookie)
 	if local == nil || local.Value == "" {
 		t.Fatalf("local login set no session: %d %q", login.Code, login.Header().Get("Location"))
@@ -510,13 +510,13 @@ func TestLoginMovesToTheCallbackHostBeforeSettingCookies(t *testing.T) {
 	setup := newAuthSetup(t, false, []Provider{{ID: "mock", Name: "Demo account", Type: "mockCallback"}})
 	// Started at 127.0.0.1 while the IdP returns to kionga.example: cookies set
 	// here would never reach the callback.
-	start := setup.do(http.MethodGet, "http://127.0.0.1:8080/auth/sso/login?connector=mock&return_to=%2Fconsole.html", nil, nil)
+	start := setup.do(http.MethodGet, "http://127.0.0.1:8080/auth/sso/login?connector=mock&return_to=%2Fconsole", nil, nil)
 	if start.Code != http.StatusFound || len(start.Result().Cookies()) != 0 {
 		t.Fatalf("want a cookie-free hop to the callback host, got %d with %d cookies", start.Code, len(start.Result().Cookies()))
 	}
 	hop, _ := url.Parse(start.Header().Get("Location"))
 	if hop.Scheme != "https" || hop.Host != "kionga.example" || hop.Path != "/auth/sso/login" ||
-		hop.Query().Get("connector") != "mock" || hop.Query().Get("return_to") != "/console.html" || hop.Query().Get("canonical") != "1" {
+		hop.Query().Get("connector") != "mock" || hop.Query().Get("return_to") != "/console" || hop.Query().Get("canonical") != "1" {
 		t.Fatalf("hop = %s", hop)
 	}
 	// On the callback host the login proceeds to the IdP with cookies.

@@ -17,7 +17,7 @@ func TestSessionLoginCreatesStateAndRedirects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "https://kionga.example/auth/login?return_to=%2Fconsole.html%3Fview%3Dmodels", nil)
+	request := httptest.NewRequest(http.MethodGet, "https://kionga.example/auth/login?return_to=%2Fconsole%3Fview%3Dmodels", nil)
 	response := httptest.NewRecorder()
 	manager.Handler(http.NotFoundHandler()).ServeHTTP(response, request)
 	if response.Code != http.StatusFound {
@@ -52,11 +52,11 @@ func TestSessionLoginCreatesStateAndRedirects(t *testing.T) {
 
 func TestSafeReturnToPreventsExternalRedirect(t *testing.T) {
 	for _, value := range []string{"https://evil.example", "//evil.example/path", "javascript:alert(1)", ""} {
-		if got := safeReturnTo(value); got != "/console.html" {
+		if got := safeReturnTo(value); got != "/console" {
 			t.Errorf("safeReturnTo(%q) = %q", value, got)
 		}
 	}
-	if got := safeReturnTo("/console.html?view=models"); got != "/console.html?view=models" {
+	if got := safeReturnTo("/console?view=models"); got != "/console?view=models" {
 		t.Fatalf("valid return path changed: %s", got)
 	}
 }
@@ -67,7 +67,7 @@ func TestVerifierRedirectsBrowserButNotAPI(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	console := httptest.NewRecorder()
-	handler.ServeHTTP(console, httptest.NewRequest(http.MethodGet, "/console.html", nil))
+	handler.ServeHTTP(console, httptest.NewRequest(http.MethodGet, "/console", nil))
 	if console.Code != http.StatusFound || !strings.HasPrefix(console.Header().Get("Location"), "/auth/login?") {
 		t.Fatalf("console must redirect to login: %d %s", console.Code, console.Header().Get("Location"))
 	}
