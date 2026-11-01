@@ -1,3 +1,5 @@
+# Backend Go services build independently of frontend tooling.
+# Build the gateway with Dockerfile.gateway from the platform root.
 # Local Go-service build context, kept inside go/ to minimize build inputs.
 FROM golang:1.26.10-alpine AS build
 WORKDIR /src/go
