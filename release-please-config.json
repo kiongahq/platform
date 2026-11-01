@@ -56,7 +56,8 @@
           "section": "Maintenance",
           "hidden": false
         }
-      ]
+      ],
+      "initial-version": "0.1.0"
     }
   },
   "bootstrap-sha": "683c7bf779edc6a79156ccf61877099479ea7900"
