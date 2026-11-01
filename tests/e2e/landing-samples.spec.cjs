@@ -79,6 +79,14 @@ test('landing character art fills the hero and resource examples update the insp
   const wordmark=page.getByRole('img',{name:'Kionga, drawn in ASCII characters'});
   await wordmark.scrollIntoViewIfNeeded();
   await expect(wordmark).toHaveClass(/ascii-wordmark-painted/);
+  const footer=await page.locator('.brand-footer').boundingBox();
+  const footerCanvas=await wordmark.locator('canvas').boundingBox();
+  expect(Math.abs(footerCanvas.width-footer.width)).toBeLessThanOrEqual(2);
+  expect(Math.abs(footerCanvas.height-footer.height)).toBeLessThanOrEqual(2);
+  const footerFrame=()=>wordmark.locator('canvas').evaluate(canvas=>canvas.toDataURL());
+  const moving=await footerFrame();await page.waitForTimeout(200);expect(await footerFrame()).not.toBe(moving);
+  await page.emulateMedia({reducedMotion:'reduce'});await page.waitForTimeout(100);
+  const settled=await footerFrame();await page.waitForTimeout(200);expect(await footerFrame()).toBe(settled);
   const report=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
   expect(report.violations).toEqual([]);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(1);

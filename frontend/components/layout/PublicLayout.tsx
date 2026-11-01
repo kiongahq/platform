@@ -28,6 +28,7 @@ export function PublicLayout({
       </header>
       <main id="main">{children}</main>
       <footer className={`site-footer${brandFooter ? " brand-footer" : ""}`}>
+        {brandFooter && <AsciiWordmark />}
         <div className="footer-top">
           <Link className="wordmark" href="/">
             Kionga
@@ -38,7 +39,6 @@ export function PublicLayout({
             <a href="https://github.com/kiongahq">GitHub</a>
           </nav>
         </div>
-        {brandFooter && <AsciiWordmark />}
       </footer>
     </div>
   );
