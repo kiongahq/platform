@@ -341,7 +341,7 @@ onClick("[data-revision-diff]", async node => {
 });
 onClick("[data-revision-rollback]", async node => {
   const revision = node.dataset.revisionRollback;
-  if (!confirm(`Roll back to revision ${revision}? This saves revision ${revision}'s content as a new revision; history is kept.`)) return;
+  if (!await confirmAction(`This saves revision ${revision}'s content as a new revision. History is kept.`, {title: "Restore pipeline revision", confirmLabel: "Restore revision", destructive: false})) return;
   await withBusy(node, () => api(`/api/v1/pipelines/definitions/${encodeURIComponent(definitionDetail.id)}/revisions/${revision}/rollback`, {method: "POST", body: "{}"}), {success: `Rolled back to revision ${revision}.`});
   await Promise.all([openDefinitionDetail(definitionDetail.id, "revisions"), loadRuns()]);
 });

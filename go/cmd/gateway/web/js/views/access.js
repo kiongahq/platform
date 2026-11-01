@@ -173,13 +173,13 @@ onClick("[data-request-review]", async node => {
   if (requestData) fillAccessForm({subject: requestData.subject, email: requestData.email, requested_services: requestData.requested_services}, requestData.id);
 });
 onClick("[data-request-reject]", async node => {
-  const note = prompt("Why is this request being rejected? The requester sees this note.");
+  const note = await requestNote("Explain the decision so the requester knows what to do next.", {title: "Reject access request", confirmLabel: "Reject request", noteLabel: "Reason shown to the requester", required: true});
   if (note === null) return;
   await withBusy(node, () => api(`/api/v1/admin/access-requests/${encodeURIComponent(node.dataset.requestReject)}`, {method: "PATCH", body: JSON.stringify({status: "rejected", note})}), {success: "Access request rejected."});
   await loadAccess();
 });
 onClick("[data-access-delete]", async node => {
-  if (!confirm(`Revoke all access for ${node.dataset.accessDelete}? Their sessions stop working on the next request.`)) return;
+  if (!await confirmAction(`Revoke all access for ${node.dataset.accessDelete}? Their sessions stop working on the next request.`, {title: "Revoke user access", confirmLabel: "Revoke access"})) return;
   await withBusy(node, async () => {
     await api(`/api/v1/admin/users/${encodeURIComponent(node.dataset.accessDelete)}`, {method: "DELETE"});
     if (me.local_accounts ?? me.mode === "local") await api(`/api/v1/admin/users/${encodeURIComponent(node.dataset.accessDelete)}/local-password`, {method: "DELETE"}).catch(() => {});

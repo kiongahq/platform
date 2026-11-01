@@ -23,7 +23,7 @@ function studioApp(overrides = {}, view = 'agent-designer') {
   w.CSS = {escape: value => value};
   w.KiongaPipelineGraph = {render: () => '<svg></svg>', enhance: () => {}};
   w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
-  w.HTMLDialogElement.prototype.close = function () { this.open = false; };
+  w.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new w.Event('close')); };
   w.HTMLCanvasElement.prototype.getContext = () => ({scale() {}, clearRect() {}, fillText() {}, beginPath() {}, roundRect() {}, fill() {}});
   w.EventSource = class { close() {} };
   w.confirm = () => true;
@@ -379,7 +379,6 @@ test('test cases carry judge criteria, required calls and tags; results show sco
     [`/api/v1/agent-evaluations/${evaluation.id}`]: evaluation,
     [`POST /api/v1/agent-evaluations/${evaluation.id}/cases/judged/review`]: reviewed,
   });
-  w.prompt = () => 'tone';
   await tick();
   d.querySelector('#design-list').value = saved.id;
   d.querySelector('#design-list').dispatchEvent(new w.Event('change', {bubbles: true}));
@@ -408,6 +407,12 @@ test('test cases carry judge criteria, required calls and tags; results show sco
   const review = d.querySelector('[data-review-case="judged"]');
   review.value = 'needs_changes';
   review.dispatchEvent(new w.Event('change', {bubbles: true}));
+  await tick();
+  const reviewDialog = d.querySelector('.confirmation-dialog');
+  assert.equal(reviewDialog.open, true);
+  reviewDialog.querySelector('[name="note"]').value = 'tone';
+  reviewDialog.returnValue = 'confirm';
+  reviewDialog.close();
   await tick();
   assert.deepEqual(JSON.parse(w.__bodies.find(item => item.path.endsWith('/review')).body), {status: 'needs_changes', note: 'tone'});
   assert.match(d.querySelector('#design-eval-detail').textContent, /needs changes by user-1: tone/);

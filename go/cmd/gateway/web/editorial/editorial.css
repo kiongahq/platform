@@ -2,6 +2,8 @@
  * workspace layout, the writing canvas and editor-specific widgets live here. */
 
 body.editorial { background-attachment: fixed; }
+.ed-bar { left: var(--gutter); }
+.ed-bar .app-brand { display: flex; }
 .ed-shell {
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr);
@@ -23,7 +25,7 @@ body.editorial { background-attachment: fixed; }
 }
 .ed-nav[hidden] + .ed-main { grid-column: 1 / -1; }
 .ed-nav .nav-item { text-decoration: none; color: var(--text); display: flex; align-items: center; }
-.ed-nav .nav-item.active { color: #fff; }
+.ed-nav .nav-item.active { color: var(--accent-contrast); }
 .ed-main { padding: var(--space-6) var(--space-6) var(--space-10); }
 .ed-main:focus { outline: none; }
 .ed-member { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }

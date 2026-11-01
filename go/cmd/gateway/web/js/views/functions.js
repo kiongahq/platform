@@ -83,7 +83,7 @@ onClick("[data-function-invoke]", node => {
   document.querySelector("#function-dialog").showModal();
 });
 onClick("[data-function-delete]", async node => {
-  if (!confirm(`Remove ${node.dataset.functionDelete}? Pipelines referencing it will no longer run.`)) return;
+  if (!await confirmAction(`Remove ${node.dataset.functionDelete}? Pipelines referencing it will no longer run.`, {title: "Remove function", confirmLabel: "Remove function"})) return;
   await withBusy(node, () => api(`/api/v1/functions/${encodeURIComponent(node.dataset.functionDelete)}`, {method: "DELETE"}), {success: "Function removed."});
   await loadFunctions();
 });

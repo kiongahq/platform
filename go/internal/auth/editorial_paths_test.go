@@ -25,3 +25,17 @@ func TestBlogReaderPathsArePublicEditorialIsNot(t *testing.T) {
 		t.Error("local mode should send signed-out visitors of the workspace to login")
 	}
 }
+
+func TestSharedAppearanceAssetsArePublicReadOnly(t *testing.T) {
+	for _, path := range []string{"/tokens.css", "/appearance.js"} {
+		if !publicPath(http.MethodGet, path) || !publicPath(http.MethodHead, path) {
+			t.Errorf("%s must load on public and sign-in pages", path)
+		}
+		if publicPath(http.MethodPost, path) {
+			t.Errorf("%s must not allow public mutations", path)
+		}
+	}
+	if publicPath(http.MethodGet, "/js/core.js") || publicPath(http.MethodGet, "/api/v1/settings/tokens") {
+		t.Error("shared appearance must not expose console code or account APIs")
+	}
+}

@@ -117,7 +117,7 @@ document.querySelector('#langflow-list').addEventListener('click', async event =
   const button = event.target.closest('[data-langflow-action]');
   if (!button) return;
   const {langflowAction: action, langflowId: id} = button.dataset;
-  if (action === 'delete' && !confirm('Delete this Langflow workspace and its stored flows? This cannot be undone.')) return;
+  if (action === 'delete' && !await confirmAction('Delete this Langflow workspace and its stored flows? This cannot be undone.', {title: 'Delete workspace', confirmLabel: 'Delete workspace'})) return;
   if (action === 'open') {
     const item = langflowItems.find(value => value.id === id);
     location.assign(`/workspace.html?tool=langflow&instance=${encodeURIComponent(id)}${item?.project_id ? `&project=${encodeURIComponent(item.project_id)}` : ''}`);

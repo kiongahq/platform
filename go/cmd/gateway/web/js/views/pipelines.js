@@ -122,7 +122,7 @@ onClick("[data-run-definition]", async node => {
 onClick("[data-definition-detail]", node => openDefinitionDetail(node.dataset.definitionDetail), {ignoreControls: true});
 onClick("[data-run-action]", async node => {
   const action = node.dataset.runAction;
-  if (action === "cancel" && !confirm("Cancel this run? Running jobs are stopped and the run is marked cancelled.")) return;
+  if (action === "cancel" && !await confirmAction("Running jobs will stop and the run will be marked cancelled.", {title: "Cancel pipeline run", confirmLabel: "Stop run"})) return;
   await withBusy(node, () => api(`/api/v1/pipelines/runs/${encodeURIComponent(node.dataset.runId)}/${action}`, {method: "POST", body: "{}"}), {success: action === "cancel" ? "Cancellation requested." : "Retry submitted."});
   document.querySelector("#run-dialog").close();
   await loadRuns();

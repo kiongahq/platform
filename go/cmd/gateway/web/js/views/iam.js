@@ -317,7 +317,7 @@ document.querySelector("#add-iam-group").addEventListener("click", () => openGro
 document.querySelector("#add-iam-policy").addEventListener("click", () => openPolicyDialog());
 onClick("[data-iam-group-edit]", node => openGroupDialog(iamState.groups.find(group => group.id === node.dataset.iamGroupEdit)));
 onClick("[data-iam-group-delete]", async node => {
-  if (!confirm(`Delete group ${node.dataset.iamGroupDelete}? Detach its policies first.`)) return;
+  if (!await confirmAction(`Delete group ${node.dataset.iamGroupDelete}? Detach its policies first.`, {title: "Delete group", confirmLabel: "Delete group"})) return;
   await withBusy(node, () => api(`/api/v1/admin/iam/groups/${encodeURIComponent(node.dataset.iamGroupDelete)}`, {method: "DELETE"}), {success: "Group deleted."});
   await loadIAM();
 });
@@ -334,12 +334,12 @@ onClick("[data-iam-policy-history]", async node => {
   document.querySelector("#metadata-dialog").showModal();
 });
 onClick("[data-iam-policy-delete]", async node => {
-  if (!confirm(`Delete policy ${node.dataset.iamPolicyDelete}? Its revisions stay in history.`)) return;
+  if (!await confirmAction(`Delete policy ${node.dataset.iamPolicyDelete}? Its revisions stay in history.`, {title: "Delete policy", confirmLabel: "Delete policy"})) return;
   await withBusy(node, () => api(`/api/v1/admin/iam/policies/${encodeURIComponent(node.dataset.iamPolicyDelete)}`, {method: "DELETE"}), {success: "Policy deleted."});
   await loadIAM();
 });
 onClick("[data-iam-detach]", async node => {
-  if (!confirm("Detach this policy? The principal loses its grants (or denials) on the next request.")) return;
+  if (!await confirmAction("The principal loses this policy's grants or denials on the next request.", {title: "Detach policy", confirmLabel: "Detach policy"})) return;
   await withBusy(node, () => api(`/api/v1/admin/iam/attachments/${encodeURIComponent(node.dataset.iamDetach)}`, {method: "DELETE"}), {success: "Policy detached."});
   await loadIAM();
 });

@@ -148,6 +148,9 @@ func (v *Verifier) Middleware(next http.Handler) http.Handler {
 }
 
 func publicPath(method, path string) bool {
+	if (method == http.MethodGet || method == http.MethodHead) && (path == "/tokens.css" || path == "/appearance.js") {
+		return true
+	}
 	if method == http.MethodGet && (path == "/api/v1/blogs" || strings.HasPrefix(path, "/api/v1/blogs/") ||
 		strings.HasPrefix(path, "/media/blog/") || strings.HasPrefix(path, "/vendor/highlight/")) {
 		return true

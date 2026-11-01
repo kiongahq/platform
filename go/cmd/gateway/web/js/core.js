@@ -9,6 +9,18 @@ const api = async (path, options = {}) => {
   const contentType = response.headers.get("content-type") || "";
   const body = response.status === 204 ? {} : contentType.includes("application/json") ? await response.json() : {message: await response.text()};
   if (response.status === 401) {
+    // Proxied services can reject their own credentials. Confirm the platform
+    // session before sending a signed-in user away from their current page.
+    let sessionActive = false;
+    if (path !== "/api/v1/me") {
+      try { sessionActive = (await fetch("/api/v1/me", {cache: "no-store", signal: AbortSignal.timeout(10000), headers: {Accept: "application/json"}})).ok; }
+      catch { /* retain the original failure when the identity check fails */ }
+    }
+    if (sessionActive) {
+      const error = new Error("This service could not authenticate with its connection. Your Kionga session is still active. Ask an administrator to check the connection credentials.");
+      error.status = 401;
+      throw error;
+    }
     if (eventSource) eventSource.close();
     const returnTo = encodeURIComponent(location.pathname + location.search);
     location.assign(`/auth/login?return_to=${returnTo}`);
@@ -67,7 +79,45 @@ function toast(message, kind = "info", failure = null) {
   node.classList.toggle("error", kind === "error");
   node.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => node.classList.remove("show"), decision ? 9000 : kind === "error" ? 5000 : 2600);
+  // Notifications stay visible above native modal dialogs without taking focus.
+  if (typeof node.showPopover === "function" && !node.matches(":popover-open")) node.showPopover();
+  toastTimer = setTimeout(() => {
+    node.classList.remove("show");
+    if (typeof node.hidePopover === "function" && node.matches(":popover-open")) node.hidePopover();
+  }, decision ? 9000 : kind === "error" ? 5000 : 2600);
+}
+
+/* Shared confirmation for destructive actions. Cancel is focused by default;
+ * Escape, backdrop dismissal and navigation all resolve without applying it. */
+function actionDialog(message, {title = "Confirm action", confirmLabel = "Confirm", destructive = true, noteLabel = "", required = false} = {}) {
+  if (document.querySelector(".confirmation-dialog[open]")) return Promise.resolve({confirmed: false, note: ""});
+  const dialog = document.createElement("dialog");
+  dialog.className = "confirmation-dialog";
+  dialog.setAttribute("aria-labelledby", "confirmation-title");
+  dialog.setAttribute("aria-describedby", "confirmation-message");
+  dialog.innerHTML = `<form method="dialog" class="confirmation-content"><p class="eyebrow">${destructive ? "REVIEW CHANGE" : "CONFIRM CHANGE"}</p><h2 id="confirmation-title">${escapeHTML(title)}</h2><p id="confirmation-message">${escapeHTML(message)}</p>${noteLabel ? `<label>${escapeHTML(noteLabel)}<textarea name="note" rows="4" maxlength="4000" ${required ? "required" : ""}></textarea></label>` : ""}<div class="form-actions"><button type="submit" value="cancel" formnovalidate autofocus>Cancel</button><button type="submit" value="confirm" class="primary${destructive ? " danger" : ""}">${escapeHTML(confirmLabel)}</button></div></form>`;
+  const previous = document.activeElement;
+  document.body.appendChild(dialog);
+  return new Promise(resolve => {
+    dialog.addEventListener("close", () => {
+      const confirmed = dialog.returnValue === "confirm";
+      const note = dialog.querySelector('[name="note"]')?.value.trim() || "";
+      dialog.remove();
+      if (previous?.isConnected && !previous.closest("[inert]")) previous.focus({preventScroll: true});
+      resolve({confirmed, note});
+    }, {once: true});
+    dialog.addEventListener("click", event => {
+      if (event.target !== dialog) return;
+      const box = dialog.getBoundingClientRect();
+      if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) dialog.close("cancel");
+    });
+    dialog.showModal();
+  });
+}
+async function confirmAction(message, options) { return (await actionDialog(message, options)).confirmed; }
+async function requestNote(message, options) {
+  const result = await actionDialog(message, {...options, noteLabel: options?.noteLabel || "Note"});
+  return result.confirmed ? result.note : null;
 }
 
 /* Renders a policy decision and its explain trace. */
@@ -118,25 +168,33 @@ async function copyText(value) {
 
 /* Show a transient success/failure state on a button without changing its
  * accessible name permanently. */
+const buttonFlashTimers = new WeakMap();
 function flashButton(button, state, label) {
   if (!button) return;
+  clearTimeout(buttonFlashTimers.get(button));
   const original = button.dataset.originalLabel || button.innerHTML;
   button.dataset.originalLabel = original;
   button.dataset.state = state;
   if (label) button.innerHTML = label;
-  setTimeout(() => {
+  buttonFlashTimers.set(button, setTimeout(() => {
     delete button.dataset.state;
-    button.innerHTML = button.dataset.originalLabel;
+    button.innerHTML = original;
     delete button.dataset.originalLabel;
-  }, 1600);
+    buttonFlashTimers.delete(button);
+  }, 1600));
 }
 
 /* Run an async action with a busy button. Errors surface as a toast and the
  * button's failure state; the promise still rejects for callers that care. */
+const busyActions = new WeakMap();
 async function withBusy(button, action, {success = "", failure = true} = {}) {
+  if (button && busyActions.has(button)) return busyActions.get(button);
+  const wasDisabled = button?.disabled;
   if (button) { button.setAttribute("aria-busy", "true"); button.disabled = true; }
+  const running = Promise.resolve().then(action);
+  if (button) busyActions.set(button, running);
   try {
-    const result = await action();
+    const result = await running;
     if (button) flashButton(button, "success");
     if (success) toast(success);
     return result;
@@ -145,7 +203,7 @@ async function withBusy(button, action, {success = "", failure = true} = {}) {
     if (failure) toast(error.message, "error", error);
     throw error;
   } finally {
-    if (button) { button.removeAttribute("aria-busy"); button.disabled = false; }
+    if (button) { busyActions.delete(button); button.removeAttribute("aria-busy"); button.disabled = Boolean(wasDisabled); }
   }
 }
 
@@ -299,7 +357,7 @@ async function showView(id, options = {}) {
   if (!viewLoaders[id]) id = "profile";
   const blocked = canOpenView(id);
   if (blocked) { toast(blocked, "error"); return; }
-  if ((id !== activeView || (options.project !== undefined && options.project !== selectedProject)) && viewMeta[activeView]?.beforeLeave && !viewMeta[activeView].beforeLeave()) {
+  if ((id !== activeView || (options.project !== undefined && options.project !== selectedProject)) && viewMeta[activeView]?.beforeLeave && !await viewMeta[activeView].beforeLeave()) {
     syncProjectContext();
     if (options.history === false) history.replaceState({}, "", routeURL(activeView, selectedResource));
     return;
@@ -316,6 +374,13 @@ async function showView(id, options = {}) {
     node.classList.toggle("active", node.dataset.view === id);
     node.setAttribute("aria-current", node.dataset.view === id ? "page" : "false");
   });
+  const activeNav = document.querySelector("#sidebar .nav-item.active");
+  if (activeNav) {
+    const navigation = activeNav.closest("nav");
+    const itemBox = activeNav.getBoundingClientRect(), navBox = navigation.getBoundingClientRect();
+    if (itemBox.bottom > navBox.bottom) navigation.scrollTop += itemBox.bottom - navBox.bottom;
+    else if (itemBox.top < navBox.top) navigation.scrollTop -= navBox.top - itemBox.top;
+  }
   const meta = viewMeta[id] || {};
   document.querySelector("#page-eyebrow").textContent = meta.eyebrow || "ML WORKSPACE";
   document.querySelector("#page-title").textContent = meta.title || "Workspace";
@@ -444,14 +509,22 @@ function closeDialog(node) {
   modal.close();
 }
 document.querySelectorAll("dialog .close, dialog [data-dialog-close]").forEach(button => button.addEventListener("click", () => closeDialog(button)));
-document.querySelectorAll("dialog").forEach(modal => modal.addEventListener("click", event => {
-  if (event.target === modal) closeDialog(modal);
-}));
+document.querySelectorAll("dialog").forEach(modal => {
+  modal.addEventListener("click", event => {
+    if (event.target !== modal) return;
+    const box = modal.getBoundingClientRect();
+    if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) closeDialog(modal);
+  });
+  modal.addEventListener("close", () => modal.querySelectorAll(".form-error").forEach(error => { error.textContent = ""; }));
+});
 
 // ---- preferences --------------------------------------------------------------
 const preferenceKey = "kionga.console.preferences";
 function readPreferences() {
-  try { return JSON.parse(localStorage.getItem(preferenceKey) || "{}"); } catch { return {}; }
+  try {
+    const value = JSON.parse(localStorage.getItem(preferenceKey) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch { return {}; }
 }
 function applyPreferences() {
   const prefs = readPreferences();
@@ -490,11 +563,31 @@ function connectEvents() {
 const shell = document.querySelector(".shell");
 const sidebarToggle = document.querySelector("#sidebar-toggle");
 const isMobile = () => window.matchMedia("(max-width: 640px)").matches;
+function syncSidebar() {
+  const mobile = isMobile();
+  const open = mobile ? shell.classList.contains("mobile-nav-open") : !shell.classList.contains("sidebar-collapsed");
+  document.querySelector("#sidebar").inert = mobile && !open;
+  sidebarToggle.setAttribute("aria-expanded", String(open));
+  sidebarToggle.setAttribute("aria-label", mobile ? (open ? "Close navigation" : "Open navigation") : (open ? "Collapse navigation" : "Expand navigation"));
+  if (mobile) {
+    document.querySelector("#main").inert = open;
+    document.body.classList.toggle("mobile-nav-active", open);
+  } else {
+    shell.classList.remove("mobile-nav-open");
+    document.querySelector("#main").inert = false;
+    document.body.classList.remove("mobile-nav-active");
+  }
+}
+function closeMobileSidebar({restoreFocus = false} = {}) {
+  shell.classList.remove("mobile-nav-open");
+  syncSidebar();
+  if (restoreFocus) sidebarToggle.focus();
+}
 function toggleSidebar() {
   if (isMobile()) {
-    const open = shell.classList.toggle("mobile-nav-open");
-    sidebarToggle.setAttribute("aria-expanded", String(open));
-    sidebarToggle.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+    shell.classList.toggle("mobile-nav-open");
+    syncSidebar();
+    if (shell.classList.contains("mobile-nav-open")) (document.querySelector("#sidebar .nav-item.active:not([hidden])") || document.querySelector("#sidebar .nav-item:not([hidden])"))?.focus();
     return;
   }
   const collapsed = shell.classList.toggle("sidebar-collapsed");
@@ -509,6 +602,17 @@ try {
     sidebarToggle.setAttribute("aria-label", "Expand navigation");
   }
 } catch { /* storage unavailable */ }
+syncSidebar();
+window.matchMedia("(max-width: 640px)").addEventListener?.("change", syncSidebar);
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && isMobile() && shell.classList.contains("mobile-nav-open")) {
+    event.preventDefault();
+    closeMobileSidebar({restoreFocus: true});
+  }
+});
+shell.addEventListener("click", event => {
+  if (isMobile() && event.target === shell && shell.classList.contains("mobile-nav-open")) closeMobileSidebar({restoreFocus: true});
+});
 
 async function showAbout() {
   let health = {status: "unreachable", version: "?"};
@@ -545,10 +649,10 @@ document.querySelectorAll(".app-brand").forEach(link => link.addEventListener("c
   showView(hasService("overview") ? "overview" : "profile");
 }));
 document.querySelectorAll(".nav-item").forEach(button => button.addEventListener("click", () => {
-  showView(button.dataset.view, {resource: ""});
   if (isMobile()) {
-    shell.classList.remove("mobile-nav-open");
-    sidebarToggle.setAttribute("aria-expanded", "false");
+    closeMobileSidebar();
   }
+  showView(button.dataset.view, {resource: ""});
 }));
+document.querySelectorAll("#sidebar .nav-item").forEach(button => { button.title ||= button.textContent.trim(); });
 document.querySelectorAll("[data-view-target]:not(.app-brand)").forEach(button => button.addEventListener("click", () => showView(button.dataset.viewTarget, {resource: ""})));

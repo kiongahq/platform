@@ -143,6 +143,45 @@ test('native designer keeps edits made while a revision is saving', async () => 
  assert.deepEqual(app.errors,[]);
 });
 
+test('shared confirmation escapes messages and cancellation leaves the action unapplied', async t => {
+ const app=consoleApp(['projects'],'projects'); t.after(()=>app.dom.window.close()); await tick();
+ const d=app.w.document;
+ const result=app.w.confirmAction('<img src=x onerror=alert(1)>',{title:'Delete project',confirmLabel:'Delete project'});
+ const dialog=d.querySelector('.confirmation-dialog');
+ assert.equal(dialog.open,true);
+ assert.equal(dialog.querySelector('img'),null);
+ assert.match(dialog.textContent,/<img src=x/);
+ assert.equal(await app.w.confirmAction('Another action'),false,'only one confirmation can be active');
+ dialog.returnValue='cancel'; dialog.close();
+ assert.equal(await result,false);
+ assert.equal(d.querySelector('.confirmation-dialog'),null);
+});
+
+test('busy controls share pending work and restore their disabled state', async t => {
+ const app=consoleApp(['projects'],'projects'); t.after(()=>app.dom.window.close()); await tick();
+ const button=app.w.document.createElement('button'); button.disabled=true;
+ let finish, calls=0;
+ const action=()=>{calls++;return new Promise(resolve=>{finish=resolve;});};
+ const first=app.w.withBusy(button,action), second=app.w.withBusy(button,action);
+ await Promise.resolve();
+ assert.equal(calls,1);
+ assert.equal(button.getAttribute('aria-busy'),'true');
+ finish('saved');
+ assert.deepEqual(await Promise.all([first,second]),['saved','saved']);
+ assert.equal(button.disabled,true);
+ assert.equal(button.hasAttribute('aria-busy'),false);
+});
+
+test('an upstream authentication failure preserves the valid platform session', async t => {
+ const app=consoleApp(['projects'],'projects'); t.after(()=>app.dom.window.close()); await tick();
+ const originalFetch=app.w.fetch;
+ app.w.fetch=async (url,options)=>url==='/api/v1/projects' ? {ok:false,status:401,headers:{get:()=> 'application/json'},json:async()=>({message:'upstream denied'})} : originalFetch(url,options);
+ app.w.document.querySelector('#refresh-view').click(); await tick(); await tick();
+ assert.match(app.w.document.querySelector('#view-feedback-message').textContent,/Your Kionga session is still active/);
+ assert.equal(app.w.location.pathname,'/console.html');
+ assert.ok(app.requests.filter(request=>request==='/api/v1/me').length>=2);
+});
+
 test('native designer keeps unsaved work when project navigation is cancelled', async () => {
  const app=consoleApp(['agents'],'agent-designer',{
   '/api/v1/me':{subject:'user-1',roles:['user'],services:['agents'],mode:'local',permissions:{agents_write:true},project_ids:['p1','p2'],provisioned:true},
@@ -150,10 +189,12 @@ test('native designer keeps unsaved work when project navigation is cancelled', 
  });
  await tick();
  app.w.document.querySelector('[data-design-add="prompt"]').click();
- app.w.confirm=()=>false;
  const projects=app.w.document.querySelector('#project-context');
  projects.value='p2'; projects.dispatchEvent(new app.w.Event('change',{bubbles:true}));
  await tick();
+ const confirmation=app.w.document.querySelector('.confirmation-dialog');
+ assert.equal(confirmation.open,true);
+ confirmation.returnValue='cancel'; confirmation.close(); await tick();
  assert.equal(app.w.document.querySelector('.view.active').id,'agent-designer');
  assert.equal(projects.value,'');
  assert.equal(app.w.document.querySelectorAll('.design-node').length,3);

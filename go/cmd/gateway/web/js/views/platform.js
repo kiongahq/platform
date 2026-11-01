@@ -51,12 +51,12 @@ onClick("[data-storage-test]", async node => {
   await loadDataConnections();
 });
 onClick("[data-feature-store-delete]", async node => {
-  if (!window.confirm("Remove this feature store connection? Projects using it lose access.")) return;
+  if (!await confirmAction("Projects using this feature store connection will lose access.", {title: "Remove feature store", confirmLabel: "Remove connection"})) return;
   await withBusy(node, () => api(`/api/v1/admin/feature-stores/${encodeURIComponent(node.dataset.featureStoreDelete)}`, {method: "DELETE"}), {success: "Feature store removed."});
   await loadDataConnections();
 });
 onClick("[data-storage-delete]", async node => {
-  if (!window.confirm("Remove this storage connection?")) return;
+  if (!await confirmAction("Projects using this storage connection will lose access.", {title: "Remove storage connection", confirmLabel: "Remove connection"})) return;
   await withBusy(node, () => api(`/api/v1/admin/storage-connections/${encodeURIComponent(node.dataset.storageDelete)}`, {method: "DELETE"}), {success: "Storage connection removed."});
   await loadDataConnections();
 });

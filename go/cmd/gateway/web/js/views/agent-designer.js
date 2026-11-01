@@ -324,8 +324,8 @@ async function loadAgentDesigner() {
   designRender();
   if (typeof designStudioLoaded === "function") designStudioLoaded();
 }
-registerView("agent-designer", loadAgentDesigner, {eyebrow: "AGENT BUILDER", title: "Agent designer", beforeLeave: () => {
-  if (!agentDesignState.dirty || confirm("Discard unsaved agent design changes?")) { agentDesignState.dirty = false; return true; }
+registerView("agent-designer", loadAgentDesigner, {eyebrow: "AGENT BUILDER", title: "Agent designer", beforeLeave: async () => {
+  if (!agentDesignState.dirty || await confirmAction("Your unsaved agent design changes will be discarded.", {title: "Discard changes", confirmLabel: "Discard changes"})) { agentDesignState.dirty = false; return true; }
   return false;
 }, openResource: id => { if (!agentDesignState.list.some(item => item.id === id)) designMessage("Design not found in this project.", true); }});
 window.addEventListener("beforeunload", event => {
@@ -340,8 +340,8 @@ function designOpen(draft, message, dirty = false) {
   designResetHistory(); designMessage(message); designRender();
   if (typeof designStudioLoaded === "function") designStudioLoaded();
 }
-document.querySelector("#design-new").addEventListener("click", () => { if (agentDesignState.dirty && !confirm("Discard unsaved design changes?")) return; designOpen(blankAgentDesign(), "New design. Add nodes and save the first revision."); });
-document.querySelector("#design-list").addEventListener("change", event => { if (agentDesignState.dirty && !confirm("Discard unsaved design changes?")) { designRender(); return; } const item = agentDesignState.list.find(value => value.id === event.target.value); designOpen(item ? structuredClone(item) : blankAgentDesign(), ""); });
+document.querySelector("#design-new").addEventListener("click", async () => { if (agentDesignState.dirty && !await confirmAction("Your unsaved design changes will be discarded.", {title: "Start a new design", confirmLabel: "Discard changes"})) return; designOpen(blankAgentDesign(), "New design. Add nodes and save the first revision."); });
+document.querySelector("#design-list").addEventListener("change", async event => { if (agentDesignState.dirty && !await confirmAction("Your unsaved design changes will be discarded.", {title: "Switch agent design", confirmLabel: "Discard changes"})) { designRender(); return; } const item = agentDesignState.list.find(value => value.id === event.target.value); designOpen(item ? structuredClone(item) : blankAgentDesign(), ""); });
 // Imported and template graphs open as new unsaved designs in the current
 // project; the gateway validates them on save and on Validate.
 function designFromGraph(graph, name) {
@@ -351,10 +351,10 @@ function designFromGraph(graph, name) {
   const edges = graph.edges.map(edge => ({from: String(edge.from || ""), to: String(edge.to || ""), ...(edge.from_port ? {from_port: String(edge.from_port)} : {}), ...(edge.to_port ? {to_port: String(edge.to_port)} : {})}));
   return {...base, name: String(name || graph.name || base.name).slice(0, 100), description: String(graph.description || "").slice(0, 1000), nodes, edges, ...(graph.settings ? {settings: graph.settings} : {})};
 }
-document.querySelector("#design-template").addEventListener("change", event => {
+document.querySelector("#design-template").addEventListener("change", async event => {
   const template = agentDesignState.templates.find(item => item.id === event.target.value);
   event.target.value = "";
-  if (!template || (agentDesignState.dirty && !confirm("Discard unsaved design changes?"))) return;
+  if (!template || (agentDesignState.dirty && !await confirmAction("Your unsaved design changes will be replaced by this template.", {title: "Load template", confirmLabel: "Replace design"}))) return;
   designOpen(designFromGraph(template.graph, template.name), `${template.name} template loaded. Choose its resources, then save.`, true);
 });
 document.querySelector("#design-import-button").addEventListener("click", () => document.querySelector("#design-import").click());
@@ -362,7 +362,7 @@ document.querySelector("#design-import").addEventListener("change", async event 
   const file = event.target.files?.[0]; event.target.value = "";
   if (!file) return;
   if (file.size > 2 * 1024 * 1024) { designMessage("Import files can be at most 2 MiB.", true); return; }
-  if (agentDesignState.dirty && !confirm("Discard unsaved design changes?")) return;
+  if (agentDesignState.dirty && !await confirmAction("Your unsaved design changes will be replaced by the imported design.", {title: "Import design", confirmLabel: "Replace design"})) return;
   try {
     const parsed = JSON.parse(await file.text());
     const graph = parsed.graph && parsed.graph.nodes ? parsed.graph : parsed;
@@ -522,10 +522,10 @@ document.querySelector("#design-inspector-content").addEventListener("click", ev
     designMarkDirty(); designRender();
   }
 });
-document.querySelector("#design-revisions").addEventListener("click", event => {
+document.querySelector("#design-revisions").addEventListener("click", async event => {
   const button = event.target.closest("[data-design-restore]"); if (!button || !can("agents_write")) return;
   const snapshot = (agentDesignState.draft.history || []).find(item => String(item.revision) === button.dataset.designRestore);
-  if (!snapshot || !confirm(`Restore revision ${snapshot.revision} into the editor? Save to create a new revision.`)) return;
+  if (!snapshot || !await confirmAction(`Load revision ${snapshot.revision} into the editor. Save to create a new revision.`, {title: "Restore agent revision", confirmLabel: "Restore revision", destructive: false})) return;
   Object.assign(agentDesignState.draft, {name: snapshot.name, description: snapshot.description || "", nodes: structuredClone(snapshot.nodes), edges: structuredClone(snapshot.edges), settings: snapshot.settings ? structuredClone(snapshot.settings) : undefined});
   agentDesignState.selected = ""; designMarkDirty(); designRender(); designMessage(`Revision ${snapshot.revision} loaded. Save to create a new revision.`);
 });

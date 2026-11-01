@@ -6,6 +6,8 @@
   <meta name="color-scheme" content="light dark">
   <title>Kionga Console</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/tokens.css">
+  <script src="/appearance.js"></script>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -568,7 +570,7 @@ mlaiops projects list</pre><div class="form-actions"><button class="primary" typ
   <dialog id="preview-dialog" class="wide"><div class="detail-sheet"><div id="preview-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
   <dialog id="run-dialog"><div class="detail-sheet"><div id="run-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
   <dialog id="metadata-dialog" class="wide"><div class="detail-sheet"><div id="metadata-detail"></div><div class="form-actions"><button type="button" data-dialog-close>Close</button></div></div></dialog>
-  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="toast" popover="manual" role="status" aria-live="polite"></div>
   <script src="/vendor/dagre.min.js" integrity="sha384-AzQ70cQk8D+zQhLIF5sw1ZNJprV/OYEvT65aRyn0VxZJxNdcsyLtfMheBEDhEfRM"></script>
   <script src="/pipeline-graph.js"></script>
   <script src="/js/code-format.js"></script>

@@ -1,0 +1,90 @@
+/* ---- tokens ------------------------------------------------------------- */
+:root {
+  color-scheme: light dark;
+  --text: light-dark(#1d1d1f, #f2f2f5);
+  --text-secondary: light-dark(#5f5f66, #b4b4bc);
+  --text-tertiary: light-dark(#686872, #a0a0ac);
+  --secondary: var(--text-secondary);
+  --tertiary: var(--text-tertiary);
+  --muted: var(--text-secondary);
+  --accent: light-dark(#0066d6, #4d9dff);
+  --accent-hover: light-dark(#0059bd, #6aaeff);
+  --accent-soft: light-dark(rgba(0, 102, 214, .1), rgba(77, 157, 255, .16));
+  --accent-contrast: light-dark(#fff, #06172d);
+  --blue: var(--accent);
+  --success: light-dark(#1c7c3a, #5fd47e);
+  --success-soft: light-dark(rgba(40, 167, 69, .13), rgba(48, 209, 88, .16));
+  --warning: light-dark(#9a5a0d, #ffb44d);
+  --warning-soft: light-dark(rgba(255, 159, 10, .15), rgba(255, 159, 10, .18));
+  --danger: light-dark(#c4261d, #ff6b61);
+  --danger-soft: light-dark(rgba(215, 0, 21, .1), rgba(255, 69, 58, .17));
+  --info: light-dark(#5b3fb8, #b9a2ff);
+  --info-soft: light-dark(rgba(116, 82, 222, .12), rgba(160, 130, 255, .18));
+  --neutral-soft: light-dark(rgba(118, 118, 128, .12), rgba(160, 160, 170, .16));
+  --green: var(--success);
+  --orange: var(--warning);
+
+  --page: light-dark(#eef1f6, #121318);
+  --page-glow-1: light-dark(rgba(194, 224, 255, .35), rgba(40, 70, 120, .22));
+  --page-glow-2: light-dark(rgba(234, 207, 255, .2), rgba(80, 50, 110, .16));
+  --page-glow-3: light-dark(rgba(180, 231, 224, .2), rgba(30, 90, 85, .16));
+  --surface: light-dark(rgba(255, 255, 255, .88), rgba(30, 31, 37, .92));
+  --surface-strong: light-dark(#fff, #1f2026);
+  --surface-raised: light-dark(rgba(255, 255, 255, .97), rgba(38, 39, 46, .98));
+  --surface-muted: light-dark(rgba(118, 118, 128, .07), rgba(255, 255, 255, .05));
+  --surface-sunken: light-dark(#f5f6f8, #17181d);
+  --panel: var(--surface-strong);
+  --chrome: light-dark(rgba(255, 255, 255, .94), rgba(24, 25, 30, .96));
+  --line: light-dark(rgba(60, 60, 67, .16), rgba(255, 255, 255, .12));
+  --line-strong: light-dark(rgba(60, 60, 67, .28), rgba(255, 255, 255, .22));
+  --code-bg: #1c1c1e;
+  --code-text: #e5e5e7;
+  --focus-ring: 0 0 0 3px light-dark(rgba(0, 102, 214, .25), rgba(77, 157, 255, .4));
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 18px;
+  --fs-2xl: 22px;
+  --fs-3xl: 26px;
+  --lh-tight: 1.25;
+  --lh-body: 1.5;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .06);
+  --shadow-md: 0 1px 3px light-dark(rgba(39, 55, 77, .06), rgba(0, 0, 0, .25));
+  --shadow-lg: 0 20px 60px rgba(27, 39, 56, .18), 0 2px 10px rgba(27, 39, 56, .08);
+  --shadow: var(--shadow-lg);
+
+  --control-h: 36px;
+  --control-h-sm: 30px;
+  --app-bar-h: 56px;
+  --sidebar-w: 240px;
+  --sidebar-w-collapsed: 64px;
+  --gutter: 8px;
+  --radius-shell: 14px;
+  --glass-edge: light-dark(rgba(255, 255, 255, .7), rgba(255, 255, 255, .08));
+  --shadow-glass: 0 2px 12px light-dark(rgba(27, 39, 56, .07), rgba(0, 0, 0, .25));
+  --content-max: 1480px;
+  --motion: .16s ease;
+}
+
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }

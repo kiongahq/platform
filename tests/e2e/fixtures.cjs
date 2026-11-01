@@ -65,6 +65,9 @@ async function assertLayout(page, label) {
       for (let j = i + 1; j < boxes.length; j++) {
         const a = boxes[i], b = boxes[j];
         if (a.control.contains(b.control) || b.control.contains(a.control)) continue;
+        // A graph connector deliberately straddles its own node's border.
+        // Other overlaps, including connectors on different nodes, still fail.
+        if ((a.control.matches('.design-port') || b.control.matches('.design-port')) && a.control.closest('.design-node') && a.control.closest('.design-node') === b.control.closest('.design-node')) continue;
         const x = Math.min(a.box.right, b.box.right) - Math.max(a.box.left, b.box.left);
         const y = Math.min(a.box.bottom, b.box.bottom) - Math.max(a.box.top, b.box.top);
         if (x > 2 && y > 2) overlaps.push(`${a.control.textContent.trim().slice(0, 30)} ⟷ ${b.control.textContent.trim().slice(0, 30)}`);

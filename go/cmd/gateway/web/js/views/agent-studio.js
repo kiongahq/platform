@@ -353,7 +353,8 @@ function studioReviewCell(evaluationID, result) {
 document.querySelector("#design-evaluations").addEventListener("change", async event => {
   const select = event.target.closest("[data-review-case]");
   if (!select || !select.value) return;
-  const note = prompt(`Note for ${select.dataset.reviewCase} (optional)`) || "";
+  const note = await requestNote(`Review test case ${select.dataset.reviewCase}.`, {title: "Review evaluation case", confirmLabel: "Save review", noteLabel: "Review note (optional)", destructive: false});
+  if (note === null) { studioRenderEvaluations(); return; }
   try {
     designStudio.evaluation = await api(`/api/v1/agent-evaluations/${encodeURIComponent(select.dataset.reviewEvaluation)}/cases/${encodeURIComponent(select.dataset.reviewCase)}/review`,
       {method: "POST", body: JSON.stringify({status: select.value, note})});

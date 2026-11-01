@@ -61,7 +61,7 @@ document.querySelector("#copy-api-token").addEventListener("click", async event 
   catch (failure) { toast(`${failure.message} Select the key and copy it manually.`, "error"); }
 });
 onClick("[data-token-revoke]", async node => {
-  if (!confirm("Revoke this API key? Any tool using it immediately loses access.")) return;
+  if (!await confirmAction("Any tool using this key will immediately lose access.", {title: "Revoke API key", confirmLabel: "Revoke key"})) return;
   await withBusy(node, () => api(`/api/v1/settings/tokens/${encodeURIComponent(node.dataset.tokenRevoke)}`, {method: "DELETE"}), {success: "API key revoked."});
   await loadSettings();
 });

@@ -169,6 +169,11 @@ test('denial toast offers Why? and explains the decision for the current user', 
   app.fixtures['/api/v1/admin/iam/attachments/read-p1%3Agroup%3Aanalysts'] = () => app.respond(403, {error: 'access_denied', message: deny.reason, decision: deny});
   doc.querySelector('#access-tab-attachments').click();
   doc.querySelector('[data-iam-detach]').click(); await tick(60);
+  const confirmation = doc.querySelector('.confirmation-dialog');
+  assert.equal(confirmation.open, true);
+  assert.ok(!app.requests.some(request => request.method === 'DELETE'), 'no mutation before confirmation');
+  confirmation.returnValue = 'confirm';
+  confirmation.close(); await tick(60);
   const toastNode = doc.querySelector('#toast');
   assert.match(toastNode.textContent, /Explicit deny/);
   const why = toastNode.querySelector('.toast-action');
