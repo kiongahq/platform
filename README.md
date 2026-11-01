@@ -53,14 +53,21 @@ services, use `make run`.
 ### Agent builders
 
 For the full Langflow canvas, open **Agents → Langflow canvas** (or
-`/console.html?view=langflow`). Kionga manages separate, persistent Langflow
+`/console/langflow`). Kionga manages separate, persistent Langflow
 workspaces on Kubernetes and offers an optional local Compose instance. The
 native designer remains available beside it. See the
 [Langflow guide](https://kiongahq.github.io/docs/guides/langflow/).
 
+For the local Compose stack, start the canvas and its API helper with
+`make -C ../deploy langflow-up`. The Compose gateway uses
+`KIONGA_LANGFLOW_UPSTREAM=http://langflow:7860`. A gateway started separately with
+`make run` requires its own upstream configuration using an address reachable
+from the host; Compose service names resolve only inside the container network.
+The shared local canvas is restricted to the bootstrap administrator account.
+
 #### Native agent designer
 
-Open **Agents → Agent designer** (or `/console.html?view=agent-designer`) to build,
+Open **Agents → Agent designer** (or `/console/agent-designer`) to build,
 test, evaluate and publish agent graphs inside the Kionga console.
 
 - **Build.** Start from a template (RAG assistant, customer support, tool-using
@@ -106,6 +113,13 @@ gateway and runner processes.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, the checks CI
 runs and the commit conventions.
+
+## Frontend development
+
+The [`frontend/`](frontend/README.md) application uses Next.js, React and
+TypeScript. Run `make run` to build the frontend and start the Go gateway, or
+`make frontend` before building Go directly. Canonical routes include `/console`,
+`/blog` and `/studio`. Each console and studio screen has a page route. Retired `.html` page URLs are unavailable.
 
 ## License
 
