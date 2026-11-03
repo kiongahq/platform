@@ -186,7 +186,7 @@ func TestFeatureVersionsLineageAndFreshness(t *testing.T) {
 	admin := domainServer(repository, localAdmin)
 	apply := func(body string) {
 		response := httptest.NewRecorder()
-		server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/features", strings.NewReader(body)))
+		server.ServeHTTP(response, newTestRequest(http.MethodPost, "/api/v1/features", strings.NewReader(body)))
 		if response.Code != http.StatusCreated {
 			t.Fatalf("apply: %d %s", response.Code, response.Body.String())
 		}

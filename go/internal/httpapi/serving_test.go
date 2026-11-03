@@ -13,7 +13,7 @@ import (
 func registerDeployableModel(t *testing.T, server http.Handler) string {
 	t.Helper()
 	projectID := createTestProject(t, server)
-	register := httptest.NewRequest(http.MethodPost, "/api/v1/models", strings.NewReader(
+	register := newTestRequest(http.MethodPost, "/api/v1/models", strings.NewReader(
 		`{"project_id":"`+projectID+`","name":"churn-classifier","version":"3","artifact_uri":"models:/churn-classifier/3","serving_image":"ghcr.io/acme/churn-xgboost:3","metrics":{"accuracy":0.93}}`))
 	registered := httptest.NewRecorder()
 	server.ServeHTTP(registered, register)
@@ -47,7 +47,7 @@ func TestDeployModelStartsRealServing(t *testing.T) {
 
 	server := testServer()
 	modelID := registerDeployableModel(t, server)
-	deploy := httptest.NewRequest(http.MethodPost, "/api/v1/models/"+modelID+"/deploy", strings.NewReader(`{"canary_weight":0}`))
+	deploy := newTestRequest(http.MethodPost, "/api/v1/models/"+modelID+"/deploy", strings.NewReader(`{"canary_weight":0}`))
 	deployed := httptest.NewRecorder()
 	server.ServeHTTP(deployed, deploy)
 	if deployed.Code != http.StatusAccepted {
@@ -69,7 +69,7 @@ func TestDeployModelFailsClosedWhenServingRejects(t *testing.T) {
 
 	server := testServer()
 	modelID := registerDeployableModel(t, server)
-	deploy := httptest.NewRequest(http.MethodPost, "/api/v1/models/"+modelID+"/deploy", strings.NewReader(`{"canary_weight":0}`))
+	deploy := newTestRequest(http.MethodPost, "/api/v1/models/"+modelID+"/deploy", strings.NewReader(`{"canary_weight":0}`))
 	deployed := httptest.NewRecorder()
 	server.ServeHTTP(deployed, deploy)
 	if deployed.Code != http.StatusBadGateway {
@@ -94,10 +94,10 @@ func TestPredictProxiesToLiveEndpoint(t *testing.T) {
 
 	server := testServer()
 	modelID := registerDeployableModel(t, server)
-	deploy := httptest.NewRequest(http.MethodPost, "/api/v1/models/"+modelID+"/deploy", strings.NewReader(`{"canary_weight":0}`))
+	deploy := newTestRequest(http.MethodPost, "/api/v1/models/"+modelID+"/deploy", strings.NewReader(`{"canary_weight":0}`))
 	server.ServeHTTP(httptest.NewRecorder(), deploy)
 
-	predict := httptest.NewRequest(http.MethodPost, "/api/v1/models/"+modelID+"/predict", strings.NewReader(`{"inputs":[[1,2,3]]}`))
+	predict := newTestRequest(http.MethodPost, "/api/v1/models/"+modelID+"/predict", strings.NewReader(`{"inputs":[[1,2,3]]}`))
 	predicted := httptest.NewRecorder()
 	server.ServeHTTP(predicted, predict)
 	if predicted.Code != http.StatusOK || !strings.Contains(predicted.Body.String(), `"predictions":[1]`) {
@@ -108,7 +108,7 @@ func TestPredictProxiesToLiveEndpoint(t *testing.T) {
 func TestPredictWithoutLiveEndpointIsConflict(t *testing.T) {
 	server := testServer()
 	modelID := registerDeployableModel(t, server)
-	predict := httptest.NewRequest(http.MethodPost, "/api/v1/models/"+modelID+"/predict", strings.NewReader(`{}`))
+	predict := newTestRequest(http.MethodPost, "/api/v1/models/"+modelID+"/predict", strings.NewReader(`{}`))
 	predicted := httptest.NewRecorder()
 	server.ServeHTTP(predicted, predict)
 	if predicted.Code != http.StatusConflict {

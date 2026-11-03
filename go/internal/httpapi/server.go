@@ -154,7 +154,7 @@ func New(data store.Repository, static fs.FS) http.Handler {
 		}
 		return []string{access.Role}, access.Services, access.ProjectIDs, access.Disabled, true
 	}
-	return logging(securityHeaders(cors(auth.RBACWithResolver(mux, resolver))))
+	return logging(securityHeaders(cors(crossOriginGuard(auth.RBACWithResolver(mux, resolver)))))
 }
 
 // me reports the caller's identity and effective permissions so the console
@@ -218,7 +218,7 @@ func (s *Server) resourceProfiles(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) upsertUserAccess(w http.ResponseWriter, r *http.Request) {
 	var req api.UpsertUserAccessRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if decision := s.authorize(r, policy.UserManage, policy.UserResource(r.PathValue("subject"))); !decision.Allowed {
@@ -269,7 +269,7 @@ func (s *Server) myAccessRequests(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createAccessRequest(w http.ResponseWriter, r *http.Request) {
 	var req api.CreateAccessRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	value := principal(r)
@@ -285,7 +285,7 @@ func (s *Server) accessRequests(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) reviewAccessRequest(w http.ResponseWriter, r *http.Request) {
 	var req api.ReviewAccessRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	for _, pending := range s.store.AccessRequests() {
@@ -311,7 +311,7 @@ func (s *Server) apiTokens(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createAPIToken(w http.ResponseWriter, r *http.Request) {
 	var req api.CreateAPITokenRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	value := principal(r)
@@ -444,7 +444,7 @@ func (s *Server) setProjectRepository(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.SetProjectRepositoryRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	item, err := s.store.SetProjectRepository(projectID, req, actor(r))
@@ -481,7 +481,7 @@ func (s *Server) pipelineDefinition(w http.ResponseWriter, r *http.Request) {
 func (s *Server) upsertPipelineDefinition(w http.ResponseWriter, r *http.Request) {
 	var req api.UpsertPipelineDefinitionRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	normalized, issues := pipelinespec.Validate(req)
@@ -499,7 +499,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.CreateProjectRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if _, err := api.NormalizeProjectRequest(&req); err != nil {
@@ -583,7 +583,7 @@ func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) {
 func (s *Server) updateRunStep(w http.ResponseWriter, r *http.Request) {
 	var req api.UpdateRunStepRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	// Executing pipelines report as the service identity. Anyone else must
@@ -614,7 +614,7 @@ func (s *Server) retryRun(w http.ResponseWriter, r *http.Request) {
 func (s *Server) submitPipeline(w http.ResponseWriter, r *http.Request) {
 	var req api.SubmitPipelineRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	// Policy first (who may run this pipeline, and which overrides), then
@@ -704,7 +704,7 @@ func (s *Server) features(w http.ResponseWriter, r *http.Request) {
 func (s *Server) applyFeatureView(w http.ResponseWriter, r *http.Request) {
 	var req api.ApplyFeatureViewRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if decision := s.authorize(r, policy.FeatureWrite, policy.FeatureResource(req.Name)); !decision.Allowed {
@@ -721,7 +721,7 @@ func (s *Server) applyFeatureView(w http.ResponseWriter, r *http.Request) {
 func (s *Server) reportMaterialization(w http.ResponseWriter, r *http.Request) {
 	var req api.MaterializationReport
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if decision := s.authorize(r, policy.FeatureWrite, policy.FeatureResource(r.PathValue("name"))); !decision.Allowed {
@@ -945,7 +945,7 @@ func (s *Server) reportRealtime(w http.ResponseWriter, r *http.Request) {
 	demo := r.PathValue("demo")
 	var payload map[string]any
 	if err := decode(r, &payload); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	payload["updated_at"] = time.Now().UTC().Format(time.RFC3339)
@@ -1019,7 +1019,7 @@ func (s *Server) deployFunction(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.DeployFunctionRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if req.ProjectID == "" && privileged(principal(r)) {
@@ -1137,7 +1137,7 @@ func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 func (s *Server) registerModel(w http.ResponseWriter, r *http.Request) {
 	var req api.RegisterModelRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if !projectAllowed(s.store, principal(r), req.ProjectID) {
@@ -1155,7 +1155,7 @@ func (s *Server) promoteModel(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.PromoteModelRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	item, err := s.store.PromoteModel(r.PathValue("id"), req.Stage, actor(r))
@@ -1168,7 +1168,7 @@ func (s *Server) deployModel(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.DeployModelRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	item, err := s.store.DeployModel(r.PathValue("id"), req.CanaryWeight, actor(r))
@@ -1306,7 +1306,7 @@ func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deployAgent(w http.ResponseWriter, r *http.Request) {
 	var req api.DeployAgentRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if !projectAllowed(s.store, principal(r), req.ProjectID) {
@@ -1343,7 +1343,7 @@ func (s *Server) agentTraffic(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.TrafficRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	item, err := s.store.SetAgentTraffic(r.PathValue("id"), req.CanaryWeight, actor(r))
@@ -1447,7 +1447,7 @@ func (s *Server) invokeAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.InvokeAgentRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if strings.TrimSpace(req.Message) == "" {
@@ -1515,7 +1515,7 @@ func (s *Server) agentUsage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) recordTrace(w http.ResponseWriter, r *http.Request) {
 	var req api.RecordTraceRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	item, err := s.store.RecordTrace(req)
@@ -1530,7 +1530,7 @@ func (s *Server) tools(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) registerTool(w http.ResponseWriter, r *http.Request) {
 	var req api.RegisterToolRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	item, err := s.store.RegisterTool(req, actor(r))
@@ -1545,7 +1545,7 @@ func (s *Server) connections(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) createConnection(w http.ResponseWriter, r *http.Request) {
 	var req api.CreateConnectionRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if decision := s.authorize(r, policy.InfraProvision, policy.ConnectionResource("*")); !decision.Allowed {
@@ -1614,6 +1614,9 @@ func actor(r *http.Request) string {
 }
 
 func decode(r *http.Request, target any) error {
+	if err := requireJSON(r); err != nil {
+		return err
+	}
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	return decoder.Decode(target)

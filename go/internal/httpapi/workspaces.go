@@ -485,7 +485,7 @@ func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 		ProjectID string `json:"project_id"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	destination := "/workspaces/" + kind + "/"

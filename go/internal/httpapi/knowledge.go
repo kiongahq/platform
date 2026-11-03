@@ -125,7 +125,7 @@ func (s *Server) createKnowledgeBase(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 	var base knowledgeBase
 	if err := decode(r, &base); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if base.ProjectID == "" || !projectAllowed(s.store, principal(r), base.ProjectID) {
@@ -254,7 +254,7 @@ func (s *Server) addKnowledgeChunk(w http.ResponseWriter, r *http.Request) {
 	}
 	var point knowledgePoint
 	if err := decode(r, &point); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	metadata, _ := json.Marshal(point.Metadata)
@@ -294,7 +294,7 @@ func (s *Server) searchKnowledge(w http.ResponseWriter, r *http.Request) {
 	}
 	var query knowledgeQuery
 	if err := decode(r, &query); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if !validKnowledgeVector(query.Vector, base.Dimensions) || query.Limit < 1 || query.Limit > 20 {

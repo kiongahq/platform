@@ -29,7 +29,7 @@ func TestLangflowStableEndpointActivatesAndRollsBackReadyDeployment(t *testing.T
 	t.Setenv("AGENT_RUNTIME_URL", runtime.URL)
 	server, repository := accessServer(t)
 	invoke := func(method, path, body string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req := newTestRequest(method, path, strings.NewReader(body))
 		req = req.WithContext(auth.WithPrincipal(req.Context(), auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}}))
 		response := httptest.NewRecorder()
 		server.ServeHTTP(response, req)
@@ -75,7 +75,7 @@ func TestLangflowStableEndpointActivatesAndRollsBackReadyDeployment(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	outsider := httptest.NewRequest(http.MethodPost, path+"/invoke", strings.NewReader(`{"message":"hello"}`))
+	outsider := newTestRequest(http.MethodPost, path+"/invoke", strings.NewReader(`{"message":"hello"}`))
 	outsider = outsider.WithContext(auth.WithPrincipal(outsider.Context(), auth.Principal{Subject: "bob", Roles: []string{auth.RoleUser}, Provisioned: true, Services: []string{"langflow", "agents"}, ProjectIDs: []string{other.ID}}))
 	denied := httptest.NewRecorder()
 	server.ServeHTTP(denied, outsider)

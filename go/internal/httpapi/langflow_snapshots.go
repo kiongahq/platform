@@ -271,7 +271,7 @@ func (s *Server) activateLangflowDeployment(w http.ResponseWriter, r *http.Reque
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	var selected *api.Agent
@@ -324,7 +324,7 @@ func (s *Server) captureLangflowSnapshot(w http.ResponseWriter, r *http.Request)
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if !langflowFlowID.MatchString(req.FlowID) {
@@ -444,7 +444,7 @@ func (s *Server) publishLangflowSnapshot(w http.ResponseWriter, r *http.Request)
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	flow, revision := snapshot.Flow, snapshot.Revision

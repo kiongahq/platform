@@ -165,7 +165,7 @@ func (s *Server) createScaffoldJob(w http.ResponseWriter, r *http.Request) {
 	var req api.CreateScaffoldJobRequest
 	if r.ContentLength != 0 {
 		if err := decode(r, &req); err != nil && !errors.Is(err, io.EOF) {
-			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			writeDecodeError(w, err)
 			return
 		}
 	}

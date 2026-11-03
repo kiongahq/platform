@@ -157,6 +157,10 @@ func (s *Server) githubAccount(w http.ResponseWriter, r *http.Request) {
 			InstallationID int64  `json:"installation_id"`
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		if err := requireJSON(r); err != nil {
+			writeDecodeError(w, err)
+			return
+		}
 		if decode(r, &body) != nil {
 			writeError(w, 400, "invalid_request", "Enter a token or choose an installation")
 			return

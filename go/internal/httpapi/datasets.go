@@ -39,7 +39,7 @@ func (s *Server) createProjectDataset(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 	var dataset projectDataset
 	if err := decode(r, &dataset); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if dataset.ProjectID == "" || !projectAllowed(s.store, principal(r), dataset.ProjectID) {
