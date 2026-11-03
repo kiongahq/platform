@@ -107,17 +107,16 @@ func scaffoldWorkspace(r *http.Request, requested string) (string, *workspaceDes
 	return "", nil, reason
 }
 
-// workspaceJobToken is the shared job token. Discovered per-user Kubernetes
-// workspaces use their own generated credential (the sidecar falls back to
-// JUPYTER_TOKEN/PASSWORD), so one gateway-wide token never spans tenants.
+// workspaceJobToken is the credential sent as X-Kionga-Workspace-Token for
+// scaffold jobs. Discovered per-user Kubernetes workspaces use their own
+// job-token key, so one gateway-wide token never spans tenants; other
+// workspaces use KIONGA_WORKSPACE_JOB_TOKEN. The editor login token is never
+// used: without a job token, scaffold jobs are reported unavailable.
 func workspaceJobToken(target *workspaceDestination) string {
 	if target.name != "" {
-		return target.token
+		return target.jobToken
 	}
-	if token := os.Getenv("KIONGA_WORKSPACE_JOB_TOKEN"); token != "" {
-		return token
-	}
-	return target.token
+	return os.Getenv("KIONGA_WORKSPACE_JOB_TOKEN")
 }
 
 func (s *Server) scaffoldPlan(w http.ResponseWriter, r *http.Request) {

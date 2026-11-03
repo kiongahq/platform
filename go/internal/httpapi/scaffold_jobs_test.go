@@ -277,6 +277,7 @@ func TestScaffoldJobAccessAndConcurrency(t *testing.T) {
 	defer close(block)
 	t.Setenv("KIONGA_JUPYTER_UPSTREAM", runner.URL)
 	t.Setenv("KIONGA_JUPYTER_TOKEN", "notebook-secret")
+	t.Setenv("KIONGA_WORKSPACE_JOB_TOKEN", "job-secret")
 	repository := store.New()
 	project := scaffoldProjectFixture(t, repository)
 	admin := domainServer(repository, localAdmin)

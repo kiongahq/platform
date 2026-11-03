@@ -99,10 +99,19 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		if previousSubject != "" && previousSubject != workspace.Spec.Subject {
 			delete(authSecret.Data, "api-token")
 			delete(authSecret.Data, "token")
+			delete(authSecret.Data, "job-token")
 		}
-		for _, key := range []string{"token", "api-token", "langflow-secret"} {
+		// token is the editor login credential; job-token authorizes
+		// scaffold jobs on the workspace sidecar (KIONGA_WORKSPACE_JOB_TOKEN)
+		// so the two can be rotated separately. Secrets created before
+		// job-token existed gain it on the next reconcile.
+		for _, key := range []string{"token", "api-token", "langflow-secret", "job-token"} {
 			if len(authSecret.Data[key]) == 0 {
-				token := make([]byte, 24)
+				size := 24
+				if key == "job-token" {
+					size = 32 // the sidecar requires at least 32 bytes
+				}
+				token := make([]byte, size)
 				if _, randomErr := rand.Read(token); randomErr != nil {
 					return randomErr
 				}
@@ -255,7 +264,10 @@ func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.KiongaWorkspace, au
 			credentialName = ""
 		}
 		if credentialName != "" {
-			environment = append(environment, corev1.EnvVar{Name: credentialName, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: authSecret}, Key: "token"}}})
+			environment = append(environment,
+				corev1.EnvVar{Name: credentialName, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: authSecret}, Key: "token"}}},
+				corev1.EnvVar{Name: "KIONGA_WORKSPACE_JOB_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: authSecret}, Key: "job-token"}}},
+			)
 		}
 		container := corev1.Container{
 			Name: service, Image: image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: port}},
