@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -110,13 +111,14 @@ func TestScaffoldJobTokenNeverReusesTheLoginToken(t *testing.T) {
 		"spec":     map[string]any{"subject": "alice", "services": []any{"workbench"}},
 	}}
 	gvr := schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: "kiongaworkspaces"}
+	encode := func(value string) string { return base64.StdEncoding.EncodeToString([]byte(value)) }
 	for _, tc := range []struct {
 		name string
 		data map[string]any
 		want string
 	}{
-		{"dedicated job token", map[string]any{"token": "bG9naW4=", "job-token": "am9iLXNlY3JldA=="}, "job-secret"},
-		{"secret predating job-token", map[string]any{"token": "bG9naW4="}, ""},
+		{"dedicated job token", map[string]any{"token": encode("login"), "job-token": encode("job-secret")}, "job-secret"},
+		{"secret predating job-token", map[string]any{"token": encode("login")}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			secret := &unstructured.Unstructured{Object: map[string]any{
