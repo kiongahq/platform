@@ -1,9 +1,12 @@
 package httpapi
 
 import (
+	"bytes"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -150,5 +153,15 @@ func TestSecurityHeadersOnEveryResponse(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/workspaces/workbench/", nil))
 	if got := response.Header().Get("X-Frame-Options"); got != "" {
 		t.Fatalf("workspace response carries X-Frame-Options %q", got)
+	}
+}
+
+func TestRequestLogCannotBeSplitByAnEncodedNewline(t *testing.T) {
+	var buffer bytes.Buffer
+	log.SetOutput(&buffer)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	logging(http.NotFoundHandler()).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/x%0amethod=GET", nil))
+	if lines := strings.Count(strings.TrimSpace(buffer.String()), "\n"); lines != 0 {
+		t.Fatalf("request path produced %d extra log lines: %q", lines, buffer.String())
 	}
 }

@@ -1675,7 +1675,8 @@ func logging(next http.Handler) http.Handler {
 		requestCount.WithLabelValues(r.Method, category).Inc()
 		requestDuration.WithLabelValues(category).Observe(time.Since(start).Seconds())
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			log.Printf("method=%s path=%s duration=%s", r.Method, r.URL.Path, time.Since(start))
+			// %q keeps a decoded %0a in the path from forging a log line.
+			log.Printf("method=%s path=%q duration=%s", r.Method, r.URL.Path, time.Since(start))
 		}
 	})
 }
