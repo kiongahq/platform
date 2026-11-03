@@ -37,7 +37,7 @@ test('Swagger renders the gateway contract outside product navigation', async ({
   await page.getByPlaceholder('Filter by tag or path').fill('projects');
   await expect(page.locator('.swagger-ui')).toContainText('/api/v1/projects');
   await expect(page.locator('.site-header')).toHaveCount(0);
-  expect(external.filter(url=>url.includes('validator.swagger.io'))).toEqual([]);
+  expect(external.filter(url=>new URL(url).hostname==='validator.swagger.io')).toEqual([]);
   expect(errors).toEqual([]);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(1);
 });
