@@ -120,6 +120,11 @@ a separate Node.js server.
   and HTTPS URLs.
 - **Secrets stay out of plain config.** `KIONGA_CONFIG_FILE` rejects secret names;
   secrets come from the environment or `<NAME>_FILE`.
+- **Registered resources read scoped secrets only.** A knowledge base or agent API
+  connection names a caller-chosen endpoint, so its `env:` reference resolves only
+  from `KIONGA_KB_SECRET_*` or `KIONGA_CONNECTION_SECRET_*`, the documented names, or
+  the `KIONGA_KB_SECRET_REFS` and `KIONGA_CONNECTION_SECRET_REFS` allowlists. The
+  gateway's own secrets are always refused (`httpapi/secret_refs.go`).
 - **Banned technologies.** CI fails on any reference to excluded products.
 - **One schedule slot fires once.** The scheduler holds a lease and claims each
   slot before submitting.

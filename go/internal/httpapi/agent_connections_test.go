@@ -13,7 +13,7 @@ import (
 )
 
 func TestAgentAPIConnectionKeepsTokenServerSideAndChecksProject(t *testing.T) {
-	t.Setenv("KIONGA_TEST_API_TOKEN", "private-upstream-token")
+	t.Setenv("KIONGA_CONNECTION_SECRET_TEST", "private-upstream-token")
 	calls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -33,7 +33,7 @@ func TestAgentAPIConnectionKeepsTokenServerSideAndChecksProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin := domainServer(repository, auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}})
-	body := `{"project_id":"` + project.ID + `","name":"support-api","description":"Lookup support cases","endpoint":"` + upstream.URL + `","secret_ref":"env:KIONGA_TEST_API_TOKEN"}`
+	body := `{"project_id":"` + project.ID + `","name":"support-api","description":"Lookup support cases","endpoint":"` + upstream.URL + `","secret_ref":"env:KIONGA_CONNECTION_SECRET_TEST"}`
 	created := call(t, admin, http.MethodPost, "/api/v1/admin/agent-api-connections", body)
 	if created.Code != 201 {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())
@@ -42,7 +42,7 @@ func TestAgentAPIConnectionKeepsTokenServerSideAndChecksProject(t *testing.T) {
 	if err := json.Unmarshal(created.Body.Bytes(), &summary); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(created.Body.String(), upstream.URL) || strings.Contains(created.Body.String(), "TOKEN") {
+	if strings.Contains(created.Body.String(), upstream.URL) || strings.Contains(created.Body.String(), "SECRET") {
 		t.Fatalf("sensitive config returned: %s", created.Body.String())
 	}
 	alice := domainServer(repository, auth.Principal{Subject: "alice", Roles: []string{auth.RoleUser}, Provisioned: true, Services: []string{"langflow"}, ProjectIDs: []string{project.ID}})
