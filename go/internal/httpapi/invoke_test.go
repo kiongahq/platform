@@ -184,3 +184,38 @@ func TestInvokeAgentRuntimeDown(t *testing.T) {
 		t.Fatalf("expected 503, got %d %s", response.Code, response.Body.String())
 	}
 }
+
+// agent-runtime requires the internal token on /invoke in production and
+// takes the end user only from X-MLAIOps-User-ID.
+func TestInvokeAgentAuthenticatesToRuntimeAndForwardsCaller(t *testing.T) {
+	t.Setenv("MLAIOPS_INTERNAL_TOKEN", "internal-token-for-tests")
+	headers := make(chan http.Header, 1)
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			if r.Header.Get("Authorization") != "" {
+				t.Errorf("the health probe must not carry the internal token")
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		headers <- r.Header.Clone()
+		_, _ = w.Write([]byte(`{"reply":"hello"}`))
+	}))
+	defer runtime.Close()
+	t.Setenv("AGENT_RUNTIME_URL", runtime.URL)
+	server := testServer()
+	agentID := deployTestAgent(t, server)
+	request := newTestRequest(http.MethodPost, "/api/v1/agents/"+agentID+"/invoke", strings.NewReader(`{"message":"hi","user_id":"spoofed"}`))
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("invoke: %d %s", response.Code, response.Body.String())
+	}
+	got := <-headers
+	if got.Get("Authorization") != "Bearer internal-token-for-tests" {
+		t.Fatalf("runtime Authorization = %q", got.Get("Authorization"))
+	}
+	if got.Get("X-MLAIOps-User-ID") != "local-dev" {
+		t.Fatalf("runtime caller = %q, want the authenticated principal", got.Get("X-MLAIOps-User-ID"))
+	}
+}

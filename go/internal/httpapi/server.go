@@ -1472,6 +1472,13 @@ func (s *Server) invokeAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	request.Header.Set("Content-Type", "application/json")
 	setAgentRuntimeHeaders(request, agent)
+	// The runtime authenticates the gateway with the shared internal token
+	// (required in production) and trusts the end user only from this
+	// header, never from the request body.
+	if token := os.Getenv("MLAIOPS_INTERNAL_TOKEN"); token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	request.Header.Set("X-MLAIOps-User-ID", principal(r).Subject)
 	client := &http.Client{Timeout: 120 * time.Second}
 	response, err := client.Do(request)
 	if err != nil {
