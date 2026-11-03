@@ -117,3 +117,16 @@ func TestPostgresEditorialRevisionsMediaAndSchedule(t *testing.T) {
 	defer repository.Close()
 	storetest.Editorial(t, repository)
 }
+
+func TestPostgresRevokesTokensWhenAccessIsWithdrawn(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	repository, err := store.OpenPostgres(context.Background(), databaseURL, fmt.Sprintf("tokens-%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	storetest.TokenRevocation(t, repository, fmt.Sprint(time.Now().UnixNano()))
+}

@@ -71,12 +71,18 @@ func (s *Store) UpsertUserAccess(subject string, req api.UpsertUserAccessRequest
 			access.CreatedAt = s.data.UserAccess[i].CreatedAt
 			s.data.UserAccess[i] = access
 			s.record("access.updated", "user_access", subject, actor, nil)
+			if access.Disabled {
+				s.revokeSubjectTokens(subject, actor, "owner_suspended")
+			}
 			return access, s.persist()
 		}
 	}
 	access.CreatedAt = now
 	s.data.UserAccess = append([]api.UserAccess{access}, s.data.UserAccess...)
 	s.record("access.created", "user_access", subject, actor, nil)
+	if access.Disabled {
+		s.revokeSubjectTokens(subject, actor, "owner_suspended")
+	}
 	return access, s.persist()
 }
 
@@ -87,6 +93,7 @@ func (s *Store) DeleteUserAccess(subject, actor string) error {
 		if s.data.UserAccess[i].Subject == subject {
 			s.data.UserAccess = append(s.data.UserAccess[:i], s.data.UserAccess[i+1:]...)
 			s.record("access.deleted", "user_access", subject, actor, nil)
+			s.revokeSubjectTokens(subject, actor, "owner_removed")
 			return s.persist()
 		}
 	}

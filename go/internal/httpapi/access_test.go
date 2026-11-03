@@ -337,3 +337,45 @@ func TestPersonalAPITokenAPIHidesHashAndRevokes(t *testing.T) {
 		t.Fatalf("revoke token: %d %s", revoke.Code, revoke.Body.String())
 	}
 }
+
+// Regression for #33: a personal API token must lose reach as soon as its
+// owner does. Removing a project or service from the owner applies to the
+// token immediately, and suspension stops it.
+func TestAPITokenFollowsOwnerAccessThenStopsOnSuspension(t *testing.T) {
+	server, repository := accessServer(t)
+	handler := auth.APITokenMiddleware(repository.ResolveAPIToken, server)
+	created, err := repository.CreateAPIToken("user-1", api.CreateAPITokenRequest{Name: "laptop CLI", Services: []string{"projects", "pipelines"}, ProjectIDs: []string{"prj-demo"}, ExpiresInDays: 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(path string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer "+created.Secret)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	if response := call("/api/v1/projects/prj-demo"); response.Code != http.StatusOK {
+		t.Fatalf("token before any change = %d: %s", response.Code, response.Body.String())
+	}
+	grant := api.UpsertUserAccessRequest{
+		Email: "user@example.com", Role: "user", Services: []string{"overview", "projects"},
+		Compute: api.ComputeGrant{VCPUs: 2, MemoryGB: 4, MaxVMs: 1, MaxProjects: 1, MaxRuns: 1},
+	}
+	if _, err := repository.UpsertUserAccess("user-1", grant, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if response := call("/api/v1/projects/prj-demo"); response.Code != http.StatusNotFound && response.Code != http.StatusForbidden {
+		t.Fatalf("token still reaches a project removed from its owner: %d %s", response.Code, response.Body.String())
+	}
+	if response := call("/api/v1/pipelines/runs"); response.Code != http.StatusForbidden {
+		t.Fatalf("token still reaches a service removed from its owner: %d %s", response.Code, response.Body.String())
+	}
+	grant.Disabled = true
+	if _, err := repository.UpsertUserAccess("user-1", grant, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if response := call("/api/v1/projects"); response.Code != http.StatusForbidden && response.Code != http.StatusUnauthorized {
+		t.Fatalf("suspended owner's token still works: %d %s", response.Code, response.Body.String())
+	}
+}
