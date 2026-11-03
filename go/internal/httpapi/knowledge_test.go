@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/kiongahq/platform/internal/auth"
@@ -183,5 +184,39 @@ func TestKnowledgeConfigurationRejectsInlineCredentials(t *testing.T) {
 	result := call(t, server, http.MethodPost, "/api/v1/admin/knowledge-bases", body)
 	if result.Code != 422 {
 		t.Fatalf("inline credential accepted: %d %s", result.Code, result.Body.String())
+	}
+}
+
+func TestKnowledgeBackendCannotReachMetadataServices(t *testing.T) {
+	for address, forbidden := range map[string]bool{
+		"169.254.169.254": true, "[fe80::1]": true, "[fd00:ec2::254]": true, "168.63.129.16": true,
+		"100.100.100.200": true, "0.0.0.0": true, "[::]": true, "224.0.0.1": true, "[::ffff:169.254.169.254]": true,
+		"10.0.0.5": false, "192.168.1.20": false, "127.0.0.1": false, "[fd12:3456::1]": false,
+	} {
+		err := refuseMetadataDial("tcp", address+":6333", nil)
+		if (err != nil) != forbidden {
+			t.Errorf("dial %s: error %v, forbidden %v", address, err, forbidden)
+		}
+	}
+	// The real client refuses before any packet leaves, even when a hostname
+	// would only resolve to such an address at request time.
+	response, err := knowledgeHTTP.Get("http://169.254.169.254/latest/meta-data/")
+	if err == nil {
+		_ = response.Body.Close()
+		t.Fatal("the knowledge client reached a metadata address")
+	}
+	if !strings.Contains(err.Error(), "is not allowed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	repository := store.New()
+	project, err := repository.CreateProject(api.CreateProjectRequest{Name: "Metadata"}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := New(repository, fstest.MapFS{})
+	created := httptest.NewRecorder()
+	handler.ServeHTTP(created, httptest.NewRequest(http.MethodPost, "/api/v1/admin/knowledge-bases", strings.NewReader(`{"project_id":"`+project.ID+`","name":"meta-docs","backend":"qdrant","dimensions":3,"endpoint":"http://169.254.169.254","secret_ref":"none"}`)))
+	if created.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("metadata endpoint registration = %d %s", created.Code, created.Body.String())
 	}
 }

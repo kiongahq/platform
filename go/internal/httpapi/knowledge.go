@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -26,7 +28,44 @@ import (
 const knowledgeKind = "knowledge_base"
 
 var knowledgeRef = regexp.MustCompile(`^env:[A-Z][A-Z0-9_]*$`)
-var knowledgeHTTP = &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+// knowledgeHTTP calls the Qdrant endpoint an administrator registered. Those
+// endpoints are usually private addresses, so private ranges and loopback stay
+// reachable, but the dialer refuses cloud-metadata and other non-routable
+// destinations at connect time, after DNS resolution, so a hostname cannot
+// resolve around the check. Redirects are not followed and no proxy is used,
+// so the address checked is the address connected to.
+var knowledgeHTTP = &http.Client{
+	Timeout:       10 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	Transport:     &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: 5 * time.Second, Control: refuseMetadataDial}).DialContext},
+}
+
+// Metadata services that are not in a link-local range.
+var metadataAddresses = []net.IP{net.ParseIP("fd00:ec2::254"), net.ParseIP("168.63.129.16"), net.ParseIP("100.100.100.200")}
+
+func forbiddenBackendIP(ip net.IP) bool {
+	if ip == nil || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsUnspecified() {
+		return true
+	}
+	for _, metadata := range metadataAddresses {
+		if ip.Equal(metadata) {
+			return true
+		}
+	}
+	return false
+}
+
+func refuseMetadataDial(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	if forbiddenBackendIP(net.ParseIP(host)) {
+		return fmt.Errorf("knowledge backend address %s is not allowed", host)
+	}
+	return nil
+}
 
 type knowledgeBase struct {
 	ID         string    `json:"id"`
@@ -141,6 +180,10 @@ func (s *Server) createKnowledgeBase(w http.ResponseWriter, r *http.Request) {
 		target, err := url.Parse(base.Endpoint)
 		if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.User != nil || target.RawQuery != "" || target.Fragment != "" || (base.SecretRef != "none" && !knowledgeRef.MatchString(base.SecretRef)) {
 			writeError(w, 422, "invalid_request", "Qdrant requires an HTTP(S) endpoint and none or an env: API-key reference")
+			return
+		}
+		if ip := net.ParseIP(target.Hostname()); ip != nil && forbiddenBackendIP(ip) {
+			writeError(w, 422, "invalid_request", "Qdrant endpoint must not be a link-local, metadata or unspecified address")
 			return
 		}
 		if base.DSNRef != "" {
