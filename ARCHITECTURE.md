@@ -129,7 +129,11 @@ a separate Node.js server.
 - **sdk-python**, the CLI and the console call the REST API.
 - **pipeline-runner** executes Prefect runs the gateway submits and reports steps
   and logs back. The Go `execution` package shares its scheduling rules.
-- **serving** starts model servers for the gateway (`SERVING_MANAGER_URL`).
+- **serving** starts model servers for the gateway (`SERVING_MANAGER_URL`). The
+  gateway waits `KIONGA_SERVING_REQUEST_TIMEOUT_SECONDS` (default 90) for the
+  manager's answer; keep it above the manager's `SERVE_READY_TIMEOUT_SECONDS`
+  (default 80) so a model server that never becomes ready is reported by the
+  manager rather than cut off by the gateway.
 - **agent-runtime** serves agents the gateway proxies to, and reports sessions with
   the internal service token.
 - **trace-proxy** runs as the operator's sidecar in every agent pod.

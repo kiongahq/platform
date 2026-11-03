@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1185,6 +1186,9 @@ func (s *Server) deployModel(w http.ResponseWriter, r *http.Request) {
 	// container starts and the live endpoint is recorded. Fail closed when the
 	// serving manager rejects it.
 	if managerURL := os.Getenv("SERVING_MANAGER_URL"); managerURL != "" {
+		// The serving manager answers once the model server is ready, which
+		// can take longer than the listener's 30s write timeout.
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(servingRequestTimeout() + 10*time.Second))
 		endpoint, deployErr := s.requestServing(r, managerURL, item)
 		if deployErr != nil {
 			item, _ = s.store.SetModelEndpoint(item.ID, "", "failed")
@@ -1196,6 +1200,27 @@ func (s *Server) deployModel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusAccepted, item)
+}
+
+// defaultServingRequestTimeout stays above the serving manager's own
+// readiness wait (SERVE_READY_TIMEOUT_SECONDS, default 80), so the manager,
+// not the gateway, reports a model server that never became ready.
+const defaultServingRequestTimeout = 90 * time.Second
+
+// servingRequestTimeout is KIONGA_SERVING_REQUEST_TIMEOUT_SECONDS, the
+// gateway's wait for the serving manager. Keep it above the manager's
+// SERVE_READY_TIMEOUT_SECONDS; invalid values fall back to 90s.
+func servingRequestTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("KIONGA_SERVING_REQUEST_TIMEOUT_SECONDS"))
+	if raw == "" {
+		return defaultServingRequestTimeout
+	}
+	seconds, err := strconv.Atoi(raw)
+	if err != nil || seconds < 1 || seconds > 3600 {
+		log.Printf("KIONGA_SERVING_REQUEST_TIMEOUT_SECONDS=%q is not 1-3600 seconds; using %s", raw, defaultServingRequestTimeout)
+		return defaultServingRequestTimeout
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func (s *Server) requestServing(r *http.Request, managerURL string, model api.Model) (string, error) {
@@ -1212,7 +1237,7 @@ func (s *Server) requestServing(r *http.Request, managerURL string, model api.Mo
 	if token := os.Getenv("MLAIOPS_INTERNAL_TOKEN"); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
-	client := &http.Client{Timeout: 90 * time.Second}
+	client := &http.Client{Timeout: servingRequestTimeout()}
 	response, err := client.Do(request) // #nosec G704 -- host is operator config (STORAGE_PROXY_URL, LANGFUSE_URL, SERVING_MANAGER_URL); paths are fixed or escaped
 	if err != nil {
 		return "", err

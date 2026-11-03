@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // registerDeployableModel registers a model whose metrics pass the evaluation
@@ -113,5 +114,48 @@ func TestPredictWithoutLiveEndpointIsConflict(t *testing.T) {
 	server.ServeHTTP(predicted, predict)
 	if predicted.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d %s", predicted.Code, predicted.Body.String())
+	}
+}
+
+func TestServingRequestTimeoutStaysAboveTheManagerReadinessWait(t *testing.T) {
+	for raw, want := range map[string]time.Duration{"": 90 * time.Second, "150": 150 * time.Second, "0": 90 * time.Second, "-5": 90 * time.Second, "soon": 90 * time.Second, "7200": 90 * time.Second} {
+		t.Setenv("KIONGA_SERVING_REQUEST_TIMEOUT_SECONDS", raw)
+		if got := servingRequestTimeout(); got != want {
+			t.Errorf("KIONGA_SERVING_REQUEST_TIMEOUT_SECONDS=%q = %s, want %s", raw, got, want)
+		}
+	}
+	// serving's SERVE_READY_TIMEOUT_SECONDS defaults to 80.
+	if defaultServingRequestTimeout <= 80*time.Second {
+		t.Fatalf("default gateway wait %s must exceed the serving manager's 80s readiness wait", defaultServingRequestTimeout)
+	}
+}
+
+// A model server that takes longer than the listener's write timeout to
+// become ready must still produce a response: deployModel extends its own
+// write deadline to cover the serving manager wait.
+func TestDeployModelOutlivesTheListenerWriteTimeout(t *testing.T) {
+	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(400 * time.Millisecond) // the manager waiting for readiness
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"endpoint":"http://mlaiops-serve-churn-classifier:5001"}`))
+	}))
+	defer manager.Close()
+	t.Setenv("SERVING_MANAGER_URL", manager.URL)
+	t.Setenv("KIONGA_SERVING_REQUEST_TIMEOUT_SECONDS", "5")
+	handler := testServer()
+	modelID := registerDeployableModel(t, handler)
+	gateway := httptest.NewUnstartedServer(handler)
+	gateway.Config.WriteTimeout = 100 * time.Millisecond // stands in for the 30s production limit
+	gateway.Start()
+	defer gateway.Close()
+	request, _ := http.NewRequest(http.MethodPost, gateway.URL+"/api/v1/models/"+modelID+"/deploy", strings.NewReader(`{"canary_weight":0}`))
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("deploy response was cut off by the write timeout: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusAccepted {
+		t.Fatalf("deploy = %d", response.StatusCode)
 	}
 }
