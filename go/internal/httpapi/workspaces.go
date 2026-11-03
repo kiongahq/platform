@@ -36,13 +36,17 @@ type workspaceDestination struct {
 
 type edgeContextKey struct{}
 
+// ideSessionKey caches one backend session per destination and credential, so
+// a rotated password never reuses a session opened with the old one.
+type ideSessionKey struct{ target, password string }
+
 var ideSessions = struct {
 	sync.Mutex
-	values map[string]struct {
+	values map[ideSessionKey]struct {
 		cookie  string
 		expires time.Time
 	}
-}{values: make(map[string]struct {
+}{values: make(map[ideSessionKey]struct {
 	cookie  string
 	expires time.Time
 })}
@@ -51,7 +55,7 @@ func ideSession(ctx context.Context, target *workspaceDestination) (string, erro
 	if target.token == "" {
 		return "", nil
 	}
-	key := fmt.Sprintf("%x", sha256.Sum256([]byte(target.String()+target.token)))
+	key := ideSessionKey{target: target.String(), password: target.token}
 	ideSessions.Lock()
 	cached := ideSessions.values[key]
 	ideSessions.Unlock()
