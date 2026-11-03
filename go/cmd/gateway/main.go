@@ -79,7 +79,11 @@ func main() {
 		if dataPath == "" {
 			dataPath = "data/platform.json"
 		}
-		repository = store.New(dataPath)
+		fileStore, err := store.Open(dataPath)
+		if err != nil {
+			log.Fatalf("file repository: %v", err)
+		}
+		repository = fileStore
 		log.Printf("using local file repository at %s", dataPath)
 	}
 	handler := httpapi.New(repository, static)
