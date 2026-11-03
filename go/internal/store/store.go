@@ -369,7 +369,13 @@ func recordStepReport(run *api.PipelineRun, req api.UpdateRunStepRequest, now ti
 	if req.Status == "failed" {
 		level = "error"
 	}
-	run.Logs = appendBoundedLog(run.Logs, api.RunLog{Timestamp: now, Step: req.Step, Level: level, Message: stepMessage(req)})
+	message := stepMessage(req)
+	if run.Status == "cancelled" {
+		// Workloads wind down after a cancel; their reports are kept for the
+		// record but never move the run out of cancelled.
+		level, message = "warning", "post-cancel report: "+message
+	}
+	run.Logs = appendBoundedLog(run.Logs, api.RunLog{Timestamp: now, Step: req.Step, Level: level, Message: message})
 	applyStepTransition(run, req, now)
 	run.UpdatedAt = now
 }

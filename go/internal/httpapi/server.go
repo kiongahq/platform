@@ -32,6 +32,8 @@ type Server struct {
 
 	realtimeMu sync.RWMutex
 	realtime   map[string]map[string]any
+
+	executions runExecutions
 }
 
 func New(data store.Repository, static fs.FS) http.Handler {
@@ -567,6 +569,9 @@ func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := s.store.CancelRun(r.PathValue("id"), actor(r))
+	if err == nil && s.stopRunExecution(item.ID) {
+		log.Printf("run %s cancelled: stopping its in-process workloads", item.ID)
+	}
 	if err == nil && item.EngineRunID != "" && s.prefectConfigured() {
 		// Best effort: the control-plane cancellation is authoritative; the
 		// engine cancellation stops the actual execution.
@@ -600,7 +605,7 @@ func (s *Server) retryRun(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.runFor(w, r, policy.PipelineRun); !ok {
 		return
 	}
-	if err := enforceRunQuota(s.store, principal(r)); err != nil {
+	if err := s.enforceRunQuota(principal(r)); err != nil {
 		writeError(w, http.StatusForbidden, "quota_exceeded", err.Error())
 		return
 	}

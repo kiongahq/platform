@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"log"
 	"os"
 	"sync"
@@ -86,6 +85,10 @@ func (s *Server) dispatchKubernetes(run api.PipelineRun) api.PipelineRun {
 	if run.Provenance != nil && run.Provenance.Overrides != nil {
 		maxParallel = run.Provenance.Overrides.MaxParallelism
 	}
-	go executor.Run(context.Background(), run, definition.Jobs, stepReporter{s: s, runID: run.ID}, maxParallel)
+	ctx, done := s.startRunExecution(run.ID)
+	go func() {
+		defer done()
+		executor.Run(ctx, run, definition.Jobs, stepReporter{s: s, runID: run.ID}, maxParallel)
+	}()
 	return run
 }

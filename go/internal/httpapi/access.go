@@ -540,7 +540,11 @@ func pipelineQuantity(value, kind string) (int64, error) {
 	return parsed * multiplier, nil
 }
 
-func enforceRunQuota(repository store.Repository, value auth.Principal) error {
+// enforceRunQuota counts queued and running runs, plus cancelled runs whose
+// workloads this process is still stopping, so cancel-and-resubmit cannot
+// exceed the concurrency grant while the old Jobs still hold resources.
+func (s *Server) enforceRunQuota(value auth.Principal) error {
+	repository := s.store
 	if privileged(value) || !slices.Contains(value.Roles, auth.RoleUser) {
 		return nil
 	}
@@ -550,7 +554,7 @@ func enforceRunQuota(repository store.Repository, value auth.Principal) error {
 	}
 	active, allowed := 0, allowedProjectIDs(repository, value)
 	for _, run := range repository.Runs() {
-		if allowed[run.ProjectID] && (run.Status == "queued" || run.Status == "running") {
+		if allowed[run.ProjectID] && (run.Status == "queued" || run.Status == "running" || (run.Status == "cancelled" && s.runExecuting(run.ID))) {
 			active++
 		}
 	}
