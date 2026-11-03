@@ -2,6 +2,10 @@ package operator
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	platformapi "github.com/kiongahq/platform/pkg/api"
@@ -63,6 +67,45 @@ func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
 	if token.Value != "" || token.ValueFrom == nil || token.ValueFrom.SecretKeyRef == nil || token.ValueFrom.SecretKeyRef.Name != "kionga-gateway" || token.ValueFrom.SecretKeyRef.Key != RuntimeTokenKey {
 		t.Fatalf("internal token must come from the platform Secret: %#v", token)
 	}
+	// trace-proxy#40: the agent authenticates to its sidecar with a per-agent
+	// key from a Secret it owns; the sidecar sees only the key's hash and
+	// gets the provider key from the provider Secret.
+	var traceSecret corev1.Secret
+	if err := client.Get(context.Background(), types.NamespacedName{Name: TraceProxySecretName(workloadName), Namespace: "team-a"}, &traceSecret); err != nil {
+		t.Fatal(err)
+	}
+	if len(traceSecret.OwnerReferences) != 1 || traceSecret.OwnerReferences[0].Name != agent.Name || len(traceSecret.Data["key"]) < 32 {
+		t.Fatalf("trace-proxy key Secret must be owned by the agent and hold a generated key: %#v", traceSecret.ObjectMeta)
+	}
+	var keys []map[string]string
+	if err := json.Unmarshal(traceSecret.Data["keys.json"], &keys); err != nil || len(keys) != 1 {
+		t.Fatalf("keys.json: %v %s", err, traceSecret.Data["keys.json"])
+	}
+	sum := sha256.Sum256(traceSecret.Data["key"])
+	if keys[0]["key_sha256"] != hex.EncodeToString(sum[:]) || keys[0]["key_id"] != workloadName || keys[0]["project"] != "team-a" || keys[0]["agent"] != agent.Name || strings.Contains(string(traceSecret.Data["keys.json"]), string(traceSecret.Data["key"])) {
+		t.Fatalf("keys.json must carry only the key hash with its project and agent: %s", traceSecret.Data["keys.json"])
+	}
+	if apiKey := agentEnv["OPENAI_API_KEY"]; apiKey.ValueFrom == nil || apiKey.ValueFrom.SecretKeyRef.Name != traceSecret.Name || apiKey.ValueFrom.SecretKeyRef.Key != "key" {
+		t.Fatalf("agent must use its trace-proxy key as OPENAI_API_KEY: %#v", apiKey)
+	}
+	sidecar := deployment.Spec.Template.Spec.Containers[1]
+	sidecarEnv := map[string]corev1.EnvVar{}
+	for _, variable := range sidecar.Env {
+		sidecarEnv[variable.Name] = variable
+	}
+	provider := sidecarEnv["LLM_UPSTREAM_API_KEY"]
+	if sidecarEnv["TRACE_PROXY_KEYS_FILE"].Value != "/run/secrets/trace-proxy/keys.json" || len(sidecar.VolumeMounts) != 1 || sidecar.VolumeMounts[0].MountPath != "/run/secrets/trace-proxy" || provider.ValueFrom == nil || provider.ValueFrom.SecretKeyRef.Name != "kionga-llm-provider" || provider.ValueFrom.SecretKeyRef.Key != "LLM_UPSTREAM_API_KEY" {
+		t.Fatalf("trace-proxy sidecar wiring: %#v", sidecar)
+	}
+	if _, ok := sidecarEnv["OPENAI_API_KEY"]; ok {
+		t.Fatal("the sidecar must not receive the agent key")
+	}
+	for _, volume := range deployment.Spec.Template.Spec.Volumes {
+		if volume.Secret != nil && (len(volume.Secret.Items) != 1 || volume.Secret.Items[0].Key != "keys.json") {
+			t.Fatalf("only keys.json may be mounted into the sidecar: %#v", volume.Secret)
+		}
+	}
+	firstKey := string(traceSecret.Data["key"])
 	if agentEnv["MLAIOPS_RUNTIME_PORT"].Value != "8080" || deployment.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort != 8080 {
 		t.Fatalf("runtime port and container port disagree: %#v", deployment.Spec.Template.Spec.Containers[0])
 	}
@@ -78,6 +121,9 @@ func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
 	}
 	if err := client.Get(context.Background(), types.NamespacedName{Name: workloadName, Namespace: "team-a"}, &deployment); err != nil {
 		t.Fatal(err)
+	}
+	if err := client.Get(context.Background(), types.NamespacedName{Name: TraceProxySecretName(workloadName), Namespace: "team-a"}, &traceSecret); err != nil || string(traceSecret.Data["key"]) != firstKey {
+		t.Fatalf("trace-proxy key must survive reconcile (err %v)", err)
 	}
 	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != scaled {
 		t.Fatalf("controller reset HPA-owned replicas: %#v", deployment.Spec.Replicas)
@@ -144,7 +190,7 @@ func TestAgentControllerMountsPublishedLangflowSnapshot(t *testing.T) {
 	if err := client.Get(context.Background(), types.NamespacedName{Name: name, Namespace: agent.Namespace}, &deployment); err != nil {
 		t.Fatal(err)
 	}
-	if len(deployment.Spec.Template.Spec.Volumes) != 1 || len(deployment.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 {
+	if len(deployment.Spec.Template.Spec.Volumes) != 2 || deployment.Spec.Template.Spec.Volumes[0].Name != "flow" || len(deployment.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 {
 		t.Fatalf("published flow is not mounted: %#v", deployment.Spec.Template.Spec)
 	}
 	var config corev1.ConfigMap
