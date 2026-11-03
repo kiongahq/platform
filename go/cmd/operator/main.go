@@ -54,7 +54,7 @@ func main() {
 	// by every pod the operator creates.
 	pullSecrets := platformoperator.ParseImagePullSecrets(os.Getenv("KIONGA_IMAGE_PULL_SECRETS"))
 	must((&platformoperator.AgentReconciler{Client: manager.GetClient(), TraceProxyImage: env("TRACE_PROXY_IMAGE", "ghcr.io/kiongahq/trace-proxy:latest"), LangflowSidecarImage: env("LANGFLOW_SIDECAR_IMAGE", "ghcr.io/kiongahq/langflow-sidecar:latest"), GatewayURL: env("MLAIOPS_URL", "http://mlaiops-gateway.mlaiops-system:8080"),
-		ImagePullSecrets: pullSecrets}).SetupWithManager(manager))
+		ImagePullSecrets: pullSecrets, RuntimeTokenSecret: os.Getenv("KIONGA_AGENT_RUNTIME_TOKEN_SECRET")}).SetupWithManager(manager))
 	must((&platformoperator.WorkspaceReconciler{
 		Client: manager.GetClient(), WorkbenchImage: env("WORKBENCH_IMAGE", "ghcr.io/kiongahq/jupyter:latest"),
 		IDEImage: env("IDE_IMAGE", "ghcr.io/kiongahq/ide:latest"), LangflowImage: env("LANGFLOW_IMAGE", "ghcr.io/kiongahq/langflow:latest"), LangflowSidecarImage: env("LANGFLOW_SIDECAR_IMAGE", "ghcr.io/kiongahq/langflow-sidecar:latest"), GatewayURL: env("MLAIOPS_URL", "http://mlaiops-gateway.mlaiops-system:8080"),

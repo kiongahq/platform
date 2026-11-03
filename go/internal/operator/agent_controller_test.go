@@ -50,6 +50,22 @@ func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
 	if deployment.Spec.Template.Spec.Containers[0].ReadinessProbe == nil || deployment.Spec.Template.Spec.Containers[1].LivenessProbe == nil {
 		t.Fatalf("agent and trace proxy must have health probes: %#v", deployment.Spec.Template.Spec.Containers)
 	}
+	// agent-runtime requires the gateway's internal token on /invoke and
+	// /stream; the operator must supply it by Secret reference, never inline.
+	agentEnv := map[string]corev1.EnvVar{}
+	for _, variable := range deployment.Spec.Template.Spec.Containers[0].Env {
+		agentEnv[variable.Name] = variable
+	}
+	if agentEnv["MLAIOPS_RUNTIME_AUTH"].Value != "required" {
+		t.Fatalf("agent runtime auth must be required: %#v", agentEnv["MLAIOPS_RUNTIME_AUTH"])
+	}
+	token := agentEnv[RuntimeTokenKey]
+	if token.Value != "" || token.ValueFrom == nil || token.ValueFrom.SecretKeyRef == nil || token.ValueFrom.SecretKeyRef.Name != "kionga-gateway" || token.ValueFrom.SecretKeyRef.Key != RuntimeTokenKey {
+		t.Fatalf("internal token must come from the platform Secret: %#v", token)
+	}
+	if agentEnv["MLAIOPS_RUNTIME_PORT"].Value != "8080" || deployment.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort != 8080 {
+		t.Fatalf("runtime port and container port disagree: %#v", deployment.Spec.Template.Spec.Containers[0])
+	}
 	// Simulate an HPA scale. An owned Deployment event must not force the
 	// replica count back to the minimum.
 	scaled := int32(4)

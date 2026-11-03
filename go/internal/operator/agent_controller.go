@@ -35,6 +35,31 @@ type AgentReconciler struct {
 	// ImagePullSecrets name registry credentials in the agent namespace for
 	// private agent and trace-proxy images (KIONGA_IMAGE_PULL_SECRETS).
 	ImagePullSecrets []corev1.LocalObjectReference
+	// RuntimeTokenSecret names the Secret in the agent namespace whose
+	// MLAIOPS_INTERNAL_TOKEN key the runtime uses to authenticate the gateway
+	// (KIONGA_AGENT_RUNTIME_TOKEN_SECRET, default the platform secret
+	// kionga-gateway). The value never appears in the pod spec.
+	RuntimeTokenSecret string
+}
+
+// RuntimeTokenKey is the key of the shared internal token in the runtime
+// token Secret.
+const RuntimeTokenKey = "MLAIOPS_INTERNAL_TOKEN"
+
+func (r *AgentReconciler) runtimeTokenSecret() string {
+	if r.RuntimeTokenSecret != "" {
+		return r.RuntimeTokenSecret
+	}
+	return "kionga-gateway"
+}
+
+// runtimeAuthEnv makes the agent runtime require the gateway's internal
+// token on /invoke and /stream, read from a Secret reference.
+func (r *AgentReconciler) runtimeAuthEnv() []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{Name: "MLAIOPS_RUNTIME_AUTH", Value: "required"},
+		{Name: RuntimeTokenKey, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: r.runtimeTokenSecret()}, Key: RuntimeTokenKey}}},
+	}
 }
 
 func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
@@ -137,7 +162,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 		}
 		deployment.Spec.Template.Spec.ImagePullSecrets = r.ImagePullSecrets
 		deployment.Spec.Template.Spec.Containers = []corev1.Container{
-			{Name: "agent", Image: agent.Spec.Image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}, Env: append(envVars(plan.Workload.Containers[0].Env), corev1.EnvVar{Name: "MLAIOPS_AGENT_ID", Value: resourceID}, corev1.EnvVar{Name: "MLAIOPS_RUNTIME_PORT", Value: "8080"}), Resources: resources, ReadinessProbe: httpProbe("/healthz", "http", 2), LivenessProbe: httpProbe("/healthz", "http", 10), SecurityContext: hardenedSecurityContext()},
+			{Name: "agent", Image: agent.Spec.Image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}, Env: append(append(envVars(plan.Workload.Containers[0].Env), corev1.EnvVar{Name: "MLAIOPS_AGENT_ID", Value: resourceID}, corev1.EnvVar{Name: "MLAIOPS_RUNTIME_PORT", Value: "8080"}), r.runtimeAuthEnv()...), Resources: resources, ReadinessProbe: httpProbe("/healthz", "http", 2), LivenessProbe: httpProbe("/healthz", "http", 10), SecurityContext: hardenedSecurityContext()},
 			{Name: "trace-proxy", Image: traceProxyImage, Ports: []corev1.ContainerPort{{Name: "proxy", ContainerPort: 8081}}, Env: envVars(plan.Workload.Containers[1].Env), Resources: traceProxyResources(), ReadinessProbe: httpProbe("/healthz", "proxy", 2), LivenessProbe: httpProbe("/healthz", "proxy", 10), SecurityContext: hardenedSecurityContext()},
 		}
 		if agent.Spec.FlowJSON != "" {
