@@ -111,6 +111,7 @@ class Smoke:
         self.origin = f"http://127.0.0.1:{self.gateway_port}"
         self.api = Api(self.origin, "admin", self.password)
         self.evidence: list[str] = []
+        self.event_recorders: list[Process] = []
         self.runs: list[str] = []
         self.api_documents: list[tuple[str, Any]] = []
         self.counter = 0
@@ -190,7 +191,7 @@ class Smoke:
             self.start_gateway()
 
     def stop_all(self) -> None:
-        for process in (self.gateway, self.manager, self.runner):
+        for process in (*self.event_recorders, self.gateway, self.manager, self.runner):
             process.stop()
 
     def remove_engine_objects(self) -> None:
@@ -372,6 +373,21 @@ class Smoke:
         out = run(["docker", "events", "--since", str(int(since)), "--until", str(int(time.time()) + 1), "--filter", f"container={container}",
                    "--filter", "event=exec_create", "--format", "{{.Action}}"], timeout=30)
         return [line.removeprefix("exec_create: ").strip() for line in out.splitlines()]
+
+    def record_exec_actions(self, container: str, since: float) -> Callable[[], list[str]]:
+        # Docker retains only its last 256 events. Disk metering can evict the first
+        # search while the gateway waits out its lease, so subscribe before the crash.
+        log = self.work / f"exec-events-{container[:12]}.log"
+        recorder = Process("docker exec events", ["docker", "events", "--since", str(int(since)),
+                           "--filter", f"container={container}", "--filter", "event=exec_create",
+                           "--format", "{{.Action}}"], dict(os.environ), log)
+        self.event_recorders.append(recorder)
+        recorder.start()
+        def actions() -> list[str]:
+            check(recorder.alive, f"event recorder exited: {recorder.tail()}")
+            return [line.removeprefix("exec_create: ").strip() for line in log.read_text().splitlines()
+                    if line.startswith("exec_create: ")]
+        return actions
 
     def volumes(self, label: str, value: str) -> list[str]:
         return run(["docker", "volume", "ls", "-q", "--filter", f"label=kionga.dev/sandbox-{label}={value}"]).split()
@@ -699,10 +715,11 @@ def scenario_6a(s: Smoke) -> None:
     search_containers = s.containers("worker", pending["search"]["id"])
     check(len(search_containers) == 1, f"search containers: {search_containers}")
     search_container = search_containers[0]
+    recorded_search_actions = s.record_exec_actions(search_container, search_started)
     def search_invocations() -> list[str]:
-        return [command for command in s.exec_actions(search_container, search_started)
+        return [command for command in recorded_search_actions()
                 if "grep -rnIE" in command and "/workspace/pipe" in command]
-    check(len(search_invocations()) == 1, "the initial search must reach the engine before the crash")
+    wait_for("the initial search in the engine event stream", lambda: len(search_invocations()) == 1, 10)
     search_calls = [c for m in pending["search"]["transcript"] for c in m.get("tool_calls") or [] if c["name"] == "search_files"]
     check(len(search_calls) == 1 and search_calls[0]["status"] == "pending" and search_calls[0].get("started_at"),
           f"search at kill time: {search_calls}")
