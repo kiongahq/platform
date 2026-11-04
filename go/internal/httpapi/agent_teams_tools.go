@@ -221,14 +221,14 @@ func (e *teamEngine) execute(ctx context.Context, run agentteam.Run, worker agen
 		if err != nil {
 			return toolFailure(agentteam.ErrInvalidArguments, "The arguments could not be encoded.")
 		}
-		return internalCall(ctx, starter, e.s.invokeAgentAPIConnection, http.MethodPost, "/api/v1/agent-api-connections/"+tool.Ref+"/invoke", map[string]string{"id": tool.Ref}, nil, raw)
+		return e.s.internalCall(ctx, starter, e.s.invokeAgentAPIConnection, http.MethodPost, "/api/v1/agent-api-connections/"+tool.Ref+"/invoke", map[string]string{"id": tool.Ref}, nil, raw)
 	case "knowledge":
 		return e.searchKnowledgeTool(ctx, starter, tool, arguments)
 	case "dataset":
 		if key := stringArgument(arguments, "key"); key != "" {
-			return internalCall(ctx, starter, e.s.datasetObject, http.MethodGet, "/api/v1/datasets/"+tool.Ref+"/object", map[string]string{"id": tool.Ref}, url.Values{"key": {key}}, nil)
+			return e.s.internalCall(ctx, starter, e.s.datasetObject, http.MethodGet, "/api/v1/datasets/"+tool.Ref+"/object", map[string]string{"id": tool.Ref}, url.Values{"key": {key}}, nil)
 		}
-		return internalCall(ctx, starter, e.s.datasetObjects, http.MethodGet, "/api/v1/datasets/"+tool.Ref+"/objects", map[string]string{"id": tool.Ref}, url.Values{"prefix": {stringArgument(arguments, "prefix")}}, nil)
+		return e.s.internalCall(ctx, starter, e.s.datasetObjects, http.MethodGet, "/api/v1/datasets/"+tool.Ref+"/objects", map[string]string{"id": tool.Ref}, url.Values{"prefix": {stringArgument(arguments, "prefix")}}, nil)
 	case "tool":
 		return e.invokeRegisteredTool(ctx, starter, tool, arguments)
 	}
@@ -251,7 +251,7 @@ func (e *teamEngine) invokeRegisteredTool(ctx context.Context, starter auth.Prin
 	if err != nil {
 		return toolFailure(agentteam.ErrInvalidArguments, "The arguments could not be encoded.")
 	}
-	outcome := internalCall(ctx, starter, e.s.invokeFunction, http.MethodPost, "/api/v1/functions/"+url.PathEscape(tool.Ref)+"/invoke", map[string]string{"name": tool.Ref}, nil, body)
+	outcome := e.s.internalCall(ctx, starter, e.s.invokeFunction, http.MethodPost, "/api/v1/functions/"+url.PathEscape(tool.Ref)+"/invoke", map[string]string{"name": tool.Ref}, nil, body)
 	switch {
 	case outcome.code == "not_found", outcome.code == "invoke_failed" && strings.Contains(outcome.content, "404"):
 		return toolFailure(agentteam.ErrToolNoFunction, "The registered tool "+tool.Ref+" has no deployed function behind it. Deploy a function with this name.")
@@ -266,6 +266,11 @@ func (e *teamEngine) invokeRegisteredTool(ctx context.Context, starter auth.Prin
 // vector means the text had nothing to embed, such as only punctuation, so there is
 // nothing to search for and the result is empty rather than an error.
 func (e *teamEngine) searchKnowledgeTool(ctx context.Context, starter auth.Principal, tool agentteam.Tool, arguments map[string]any) toolOutcome {
+	var allowed bool
+	starter, allowed = e.s.teamCallPrincipal(starter, http.MethodPost, "/api/v1/knowledge-bases/"+tool.Ref+"/search")
+	if !allowed {
+		return toolFailure(agentteam.ErrAccessDenied, "This knowledge base is not available.")
+	}
 	query := strings.TrimSpace(stringArgument(arguments, "query"))
 	if query == "" || utf8.RuneCountInString(query) > 32000 {
 		return toolFailure(agentteam.ErrInvalidArguments, "query is required, at most 32000 characters.")
@@ -293,7 +298,20 @@ func (e *teamEngine) searchKnowledgeTool(ctx context.Context, starter auth.Princ
 	if err != nil {
 		return toolFailure(agentteam.ErrInvalidArguments, "The query could not be encoded.")
 	}
-	return internalCall(ctx, starter, e.s.searchKnowledge, http.MethodPost, "/api/v1/knowledge-bases/"+tool.Ref+"/search", map[string]string{"id": tool.Ref}, nil, raw)
+	return e.s.internalCall(ctx, starter, e.s.searchKnowledge, http.MethodPost, "/api/v1/knowledge-bases/"+tool.Ref+"/search", map[string]string{"id": tool.Ref}, nil, raw)
+}
+
+// teamCallPrincipal resolves current access immediately before dispatch, including
+// service authorization normally supplied by the public route's RBAC middleware.
+func (s *Server) teamCallPrincipal(starter auth.Principal, method, path string) (auth.Principal, bool) {
+	access, err := s.store.AccessFor(starter.Subject)
+	if err == nil {
+		starter.Roles, starter.Services, starter.ProjectIDs = []string{access.Role}, access.Services, access.ProjectIDs
+		starter.Disabled, starter.Provisioned = access.Disabled, true
+	} else if !errors.Is(err, store.ErrNotFound) || starter.Provisioned {
+		return starter, false
+	}
+	return starter, auth.Allowed(starter, method, path)
 }
 
 // bufferedResponse captures an existing handler's reply.
@@ -321,7 +339,12 @@ func (b *bufferedResponse) Write(raw []byte) (int, error) {
 
 // internalCall runs an existing handler as the starter, so authorization, project
 // scope and secret rules are the ones the API already enforces, with no second copy.
-func internalCall(ctx context.Context, starter auth.Principal, handler http.HandlerFunc, method, path string, values map[string]string, query url.Values, body []byte) toolOutcome {
+func (s *Server) internalCall(ctx context.Context, starter auth.Principal, handler http.HandlerFunc, method, path string, values map[string]string, query url.Values, body []byte) toolOutcome {
+	var allowed bool
+	starter, allowed = s.teamCallPrincipal(starter, method, path)
+	if !allowed {
+		return toolFailure(agentteam.ErrAccessDenied, "The person who started this run no longer has access to this resource.")
+	}
 	target := path
 	if len(query) > 0 {
 		target += "?" + query.Encode()
