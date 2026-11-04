@@ -62,6 +62,7 @@ type teamEngine struct {
 	scanEvery  time.Duration
 	watchEvery time.Duration
 	retain     time.Duration
+	compactAt  int
 
 	mu     sync.Mutex
 	active map[string]bool
@@ -94,7 +95,11 @@ func newTeamEngine(s *Server, owner string) *teamEngine {
 	if value, err := strconv.Atoi(os.Getenv("KIONGA_TEAM_SANDBOX_RETENTION_SECONDS")); err == nil && value >= 0 {
 		retain = time.Duration(value) * time.Second
 	}
-	return &teamEngine{s: s, owner: owner, now: func() time.Time { return time.Now().UTC() }, jitter: secureJitter,
+	compactAt := agentteam.DefaultCompactThreshold
+	if value, err := strconv.Atoi(os.Getenv("KIONGA_TEAM_COMPACT_THRESHOLD_TOKENS")); err == nil && value > 0 {
+		compactAt = value
+	}
+	return &teamEngine{s: s, owner: owner, compactAt: compactAt, now: func() time.Time { return time.Now().UTC() }, jitter: secureJitter,
 		leaseTTL: teamLeaseTTL, renewEvery: teamLeaseRenew, scanEvery: teamScanEvery, watchEvery: teamWatchEvery, retain: retain,
 		active: map[string]bool{}, sem: make(chan struct{}, pool)}
 }
@@ -571,6 +576,20 @@ func (e *teamEngine) modelStep(ctx context.Context, run agentteam.Run, worker ag
 		e.cancelLeased(run, lease, worker)
 		return worker, false
 	}
+	if worker.LastInputTokens > e.compactAt && worker.Turns > worker.CompactedAtTurn {
+		exhausted := false
+		saved, err := e.apply(lease, func(current *agentteam.Worker) error {
+			exhausted = agentteam.AdvanceCompaction(current, e.compactAt, agentteam.CompactKeepTurns)
+			return nil
+		})
+		if err != nil {
+			return worker, false
+		}
+		worker = saved
+		if exhausted {
+			return e.failWorker(run, lease, worker, agentteam.ErrContextExhausted, "The context is over its limit even after compacting old tool results.", true), false
+		}
+	}
 	model := run.Snapshot.Team.Coordinator.Model
 	if member, ok := run.Snapshot.Member(worker.Agent); ok {
 		model = member.Model
@@ -641,10 +660,12 @@ func (e *teamEngine) waitOrFail(run agentteam.Run, worker agentteam.Worker, leas
 	return saved, false
 }
 
-// turnMessages sends only what the contract lists, never scheduler state.
+// turnMessages sends only what the contract lists, never scheduler state. Old tool
+// results go as markers; the stored transcript stays complete.
 func turnMessages(worker agentteam.Worker) []turnMessage {
-	messages := make([]turnMessage, 0, len(worker.Transcript))
-	for _, item := range worker.Transcript {
+	transcript := agentteam.CompactedTranscript(worker)
+	messages := make([]turnMessage, 0, len(transcript))
+	for _, item := range transcript {
 		message := turnMessage{Role: item.Role, Content: item.Content, ToolCallID: item.ToolCallID}
 		for _, call := range item.ToolCalls {
 			arguments := call.Arguments

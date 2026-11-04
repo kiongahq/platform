@@ -14,7 +14,6 @@ import (
 
 var (
 	definitionName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
-	modelName      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$`)
 	repository     = regexp.MustCompile(`^https://[A-Za-z0-9][A-Za-z0-9.-]*(:[0-9]{1,5})?(/[A-Za-z0-9_~+-][A-Za-z0-9._~+-]*)+/?$`)
 	connectionRef  = regexp.MustCompile(`^api-[a-f0-9]+$`)
 	knowledgeRef   = regexp.MustCompile(`^kb-[a-f0-9]+$`)
@@ -22,13 +21,16 @@ var (
 	definitionID   = regexp.MustCompile(`^adf-[a-f0-9]{24}$`)
 )
 
+// PlatformModel is the only model the runner accepts.
+const PlatformModel = "llm"
+
 // ReservedName is the coordinator's name in a run, so no member can take it.
 const ReservedName = "coordinator"
 
 // DefaultDefinition fills the contract's defaults for omitted fields.
 func DefaultDefinition(d DefinitionContent) DefinitionContent {
 	if d.Model == "" {
-		d.Model = "llm"
+		d.Model = PlatformModel
 	}
 	if d.Tools == nil {
 		d.Tools = []ToolGrant{}
@@ -51,7 +53,7 @@ func DefaultDefinition(d DefinitionContent) DefinitionContent {
 // DefaultTeam fills the contract's defaults for omitted fields.
 func DefaultTeam(team TeamContent) TeamContent {
 	if team.Coordinator.Model == "" {
-		team.Coordinator.Model = "llm"
+		team.Coordinator.Model = PlatformModel
 	}
 	if team.Limits.MaxWorkersTotal == 0 {
 		team.Limits.MaxWorkersTotal = 20
@@ -84,8 +86,8 @@ func ValidateDefinition(d DefinitionContent) []string {
 	if strings.TrimSpace(d.Instructions) == "" || utf8.RuneCountInString(d.Instructions) > 32000 {
 		add("instructions: required, at most 32000 characters")
 	}
-	if !modelName.MatchString(d.Model) {
-		add("model: required model alias")
+	if d.Model != PlatformModel {
+		add("model: must be %s", PlatformModel)
 	}
 	if d.Workspace != "none" && d.Workspace != "sandbox" {
 		add("workspace: must be none or sandbox")
@@ -175,8 +177,8 @@ func ValidateTeam(team TeamContent) []string {
 	if strings.TrimSpace(team.Coordinator.Instructions) == "" || utf8.RuneCountInString(team.Coordinator.Instructions) > 32000 {
 		add("coordinator.instructions: required, at most 32000 characters")
 	}
-	if !modelName.MatchString(team.Coordinator.Model) {
-		add("coordinator.model: required model alias")
+	if team.Coordinator.Model != PlatformModel {
+		add("coordinator.model: must be %s", PlatformModel)
 	}
 	if len(team.Members) < 1 || len(team.Members) > 16 {
 		add("members: 1-16 agent definitions")

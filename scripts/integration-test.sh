@@ -16,3 +16,5 @@ done
 
 export TEST_DATABASE_URL="postgres://mlaiops:mlaiops-local@localhost:${PORT}/mlaiops?sslmode=disable"
 (cd "$(dirname "$0")/../go" && go test -buildvcs=false -tags=integration -v ./integration)
+# The Agent Teams suite runs on the file store everywhere and on PostgreSQL here.
+(cd "$(dirname "$0")/../go" && go test -buildvcs=false -race ./internal/httpapi -run '^TestTeam' -count=1)

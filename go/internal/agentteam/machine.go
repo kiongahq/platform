@@ -119,6 +119,7 @@ type ModelReply struct {
 func ApplyReply(w *Worker, reply ModelReply) {
 	w.Turns++
 	w.Usage = w.Usage.Add(reply.Usage)
+	w.LastInputTokens = reply.Usage.InputTokens
 	w.RetryAttempts, w.FailingSince, w.NextAttemptAt = 0, nil, nil
 	message := Message{Role: "assistant", Content: reply.Content}
 	for i, call := range reply.ToolCalls {

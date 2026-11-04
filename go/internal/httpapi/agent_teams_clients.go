@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -73,7 +74,15 @@ type teamRunner interface {
 
 type httpTeamRunner struct{}
 
-const teamTurnTimeout = 10 * time.Minute
+// teamTurnTimeout outlasts the runner's own limit, so the runner reports a slow
+// provider as an error body instead of the gateway cutting the call off.
+func teamTurnTimeout() time.Duration {
+	seconds := 600
+	if value, err := strconv.Atoi(strings.TrimSpace(os.Getenv("KIONGA_AGENT_TURN_TIMEOUT_SECONDS"))); err == nil && value > 0 && value <= 86400 {
+		seconds = value
+	}
+	return time.Duration(seconds+30) * time.Second
+}
 
 func (httpTeamRunner) Turn(ctx context.Context, request turnRequest) (turnResponse, error) {
 	base := runnerURL()
@@ -84,7 +93,7 @@ func (httpTeamRunner) Turn(ctx context.Context, request turnRequest) (turnRespon
 	if err != nil {
 		return turnResponse{}, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, teamTurnTimeout)
+	ctx, cancel := context.WithTimeout(ctx, teamTurnTimeout())
 	defer cancel()
 	call, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/agent-turns", bytes.NewReader(body)) // #nosec G704 -- runner URL is operator configuration
 	if err != nil {
@@ -191,6 +200,12 @@ func (c *httpTeamSandbox) do(ctx context.Context, method, path string, query url
 	if base == "" {
 		return &sandboxError{Code: agentteam.ErrSandboxUnavailable, Message: "KIONGA_SANDBOX_URL is not set"}
 	}
+	// Read per call, so it is the value runtimeconfig.Load set from
+	// KIONGA_SANDBOX_TOKEN_FILE. An empty bearer is never sent.
+	token := strings.TrimSpace(os.Getenv("KIONGA_SANDBOX_TOKEN"))
+	if token == "" {
+		return &sandboxError{Code: agentteam.ErrSandboxUnavailable, Message: "KIONGA_SANDBOX_TOKEN is not set"}
+	}
 	target := base + path
 	if len(query) > 0 {
 		target += "?" + query.Encode()
@@ -199,7 +214,7 @@ func (c *httpTeamSandbox) do(ctx context.Context, method, path string, query url
 	if err != nil {
 		return &sandboxError{Code: agentteam.ErrSandboxUnavailable, Message: "invalid sandbox manager request"}
 	}
-	request.Header.Set("Authorization", "Bearer "+os.Getenv("KIONGA_SANDBOX_TOKEN"))
+	request.Header.Set("Authorization", "Bearer "+token)
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
