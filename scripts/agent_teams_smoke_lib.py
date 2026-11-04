@@ -273,11 +273,15 @@ class CountingBackend:
             def log_message(self, *_: Any) -> None:
                 return
 
+            def do_PUT(self) -> None:
+                # OpenFaaS deploy: PUT /system/functions. Counted like any other call.
+                self.do_POST()
+
             def do_POST(self) -> None:
                 body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
                 with outer.lock:
                     outer.counts[self.path] = outer.counts.get(self.path, 0) + 1
-                    outer.bodies.setdefault(self.path, []).append(json.loads(body or b"null"))
+                    outer.bodies.setdefault(self.path, []).append(body)
                     hold = outer.holds.get(self.path)
                 if hold is not None:
                     hold.wait(60)
