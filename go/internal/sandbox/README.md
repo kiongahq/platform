@@ -121,12 +121,12 @@ sandbox is killed and calls return 507 `workspace_quota_exceeded`. An engine fai
 the limit by is roughly: write rate x (check interval + meter time + sweep time), plus
 buffered data up to the memory limit. Sweep time is about (running sandboxes / 4) x meter time.
 
-| Measured in CI, GitHub-hosted runner | Docker | Podman 4.9.3 |
+| Ranges over several CI runs, GitHub-hosted runner | Docker | Podman 4.9.3 |
 | --- | --- | --- |
-| Sustained `fsync` writes | 209 MiB/s | 210 MiB/s |
-| Buffered burst, until the memory limit stopped the sandbox | 2119 MiB/s for 512 MiB | 1959 MiB/s for 512 MiB |
-| One meter | 2.2 s | 0.4 s |
-| Past a 64 MiB limit with a 2 s sweep, one writer | 264 MiB | 376 MiB |
+| Sustained `fsync` writes | 185 to 216 MiB/s | 156 to 210 MiB/s |
+| Buffered burst, until the memory limit stopped the sandbox | up to 4742 MiB/s for about 500 MiB | up to 4721 MiB/s for about 500 MiB |
+| One meter | 1.4 to 2.2 s | 0.4 to 1.3 s |
+| Past a 64 MiB limit with a 2 s sweep, one writer | 157 to 544 MiB | 128 to 376 MiB |
 
 At the defaults of a 5 second check and 2 GiB of memory, one sandbox on such a disk can pass
 its limit by about 1.5 GiB of sustained writes, plus up to about 2 GiB of buffered data. A faster disk
