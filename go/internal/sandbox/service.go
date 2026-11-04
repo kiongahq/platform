@@ -37,7 +37,9 @@ const (
 // Service holds every isolation and git policy. Runtime attestations are local
 // cache entries: a new manager must attest existing instances again.
 type Service struct {
-	attestations sync.Map // container name -> *attestationState
+	gitMu        sync.Mutex
+	gitActive    map[string]bool // sandbox ID -> operation needs a helper
+	attestations sync.Map        // container name -> *attestationState
 	config       Config
 	driver       Driver
 	now          Clock
@@ -628,6 +630,11 @@ func (s *Service) WriteFile(ctx context.Context, id, raw string, content []byte)
 
 // GitDiff shows each repository's changes since it was cloned.
 func (s *Service) GitDiff(ctx context.Context, id string) (client.GitDiffResult, error) {
+	release, err := s.admitGit(ctx, id, false)
+	if err != nil {
+		return client.GitDiffResult{}, err
+	}
+	defer release()
 	name, cleanup, err := s.readable(ctx, id)
 	if err != nil {
 		return client.GitDiffResult{}, err

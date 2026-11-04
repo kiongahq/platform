@@ -167,6 +167,11 @@ func (s *Service) GitClone(ctx context.Context, id string, request client.GitClo
 	if err != nil {
 		return client.GitCloneResult{}, err
 	}
+	release, err := s.admitGit(ctx, id, true)
+	if err != nil {
+		return client.GitCloneResult{}, err
+	}
+	defer release()
 	hosts, err := s.pinRepositoryHost(ctx, repository)
 	if err != nil {
 		return client.GitCloneResult{}, err
@@ -174,6 +179,19 @@ func (s *Service) GitClone(ctx context.Context, id string, request client.GitClo
 	found, err := s.writable(ctx, id)
 	if err != nil {
 		return client.GitCloneResult{}, err
+	}
+	code, err := s.internalExec(ctx, found.Name, scriptArgv(cloneTargetScript, target), nil, io.Discard, io.Discard)
+	if err != nil {
+		return client.GitCloneResult{}, err
+	}
+	switch code {
+	case 0:
+	case exitTargetExists:
+		return client.GitCloneResult{}, &client.Error{Status: http.StatusConflict, Code: client.CodeConflict, Message: target + " already exists in the workspace"}
+	case exitPathEscape, exitResolveFailed:
+		return client.GitCloneResult{}, rejectPath("the clone target resolves outside /workspace")
+	default:
+		return client.GitCloneResult{}, unavailable("the clone target could not be checked")
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.config.GitTimeout)
 	defer cancel()
@@ -184,7 +202,7 @@ func (s *Service) GitClone(ctx context.Context, id string, request client.GitClo
 	defer cleanup()
 
 	stdout, stderr := &headBuffer{limit: 64}, newCapture(stderrLimit)
-	code, err := s.scriptExec(ctx, helper, s.gitArgv(secret, "/bin/sh", "-c", helperCloneScript, "kionga", repository, request.Ref), nil, stdout, stderr)
+	code, err = s.scriptExec(ctx, helper, s.gitArgv(secret, "/bin/sh", "-c", helperCloneScript, "kionga", repository, request.Ref), nil, stdout, stderr)
 	if err != nil {
 		return client.GitCloneResult{}, err
 	}
@@ -243,6 +261,11 @@ func (s *Service) GitPush(ctx context.Context, id string, request client.GitPush
 	if err := checkCredential(secret, true); err != nil {
 		return client.GitPushResult{}, err
 	}
+	release, err := s.admitGit(ctx, id, true)
+	if err != nil {
+		return client.GitPushResult{}, err
+	}
+	defer release()
 	found, err := s.writable(ctx, id)
 	if err != nil {
 		return client.GitPushResult{}, err

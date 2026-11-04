@@ -30,6 +30,8 @@ const (
 	defaultBundleBytes, maxBundleBytes   = int64(1 << 30), int64(8 << 30)
 	defaultMaxSandboxes, maxMaxSandboxes = 256, 4096
 
+	defaultMaxGitHelpers, maxMaxGitHelpers = 8, 64
+
 	// The exec limits in the contract are not configurable.
 	defaultExecTimeout = 120 * time.Second
 	maxExecTimeout     = 1800 * time.Second
@@ -78,6 +80,7 @@ type Config struct {
 	MinFreeDiskBytes int64
 	BundleBytes      int64
 	MaxSandboxes     int64
+	MaxGitHelpers    int64
 	TTL              time.Duration
 	GitTimeout       time.Duration
 	// HelperMaxAge removes a helper left behind by a crashed manager, because it
@@ -212,6 +215,9 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	if config.MaxSandboxes, err = limit(getenv, "KIONGA_SANDBOX_MAX_SANDBOXES", int64(defaultMaxSandboxes), int64(maxMaxSandboxes)); err != nil {
+		return Config{}, err
+	}
+	if config.MaxGitHelpers, err = limit(getenv, "KIONGA_SANDBOX_MAX_GIT_HELPERS", defaultMaxGitHelpers, maxMaxGitHelpers); err != nil {
 		return Config{}, err
 	}
 	ttl, err := limit(getenv, "KIONGA_SANDBOX_TTL_SECONDS", int64(defaultTTLSeconds), int64(maxTTLSeconds))

@@ -47,6 +47,7 @@ Treat every command, file, repository and byte of output as hostile.
 | `KIONGA_SANDBOX_DISK_CHECK_SECONDS` | 5 | 300. Sweep interval, `docker` only |
 | `KIONGA_SANDBOX_MIN_FREE_DISK_MB` | 5120 | Refuse new sandboxes under this, `docker` only |
 | `KIONGA_SANDBOX_TTL_SECONDS` | 86400 | 7 days |
+| `KIONGA_SANDBOX_MAX_GIT_HELPERS` | 8 | 64 |
 | `KIONGA_SANDBOX_MAX_SANDBOXES` | 256 | 4096 |
 | `KIONGA_SANDBOX_NAME_PREFIX` | `kionga-sandbox-` | scopes everything this manager sees |
 | `KIONGA_SANDBOX_DOCKER_SOCKET` | `/var/run/docker.sock` | `docker` only |
@@ -173,3 +174,13 @@ Kubernetes claims are bounded by the storage class, so none of this runs there.
 - A sandbox restart keeps `/workspace` and loses `/tmp` and running processes.
 - `KIONGA_SANDBOX_MAX_SANDBOXES` is checked then created, so concurrent creates can pass
   it by a few.
+
+Git clone and push reserve helper capacity before starting work. At most one git
+operation (including diff) runs per sandbox; contention returns HTTP 503
+`sandbox_unavailable` immediately. `KIONGA_SANDBOX_MAX_GIT_HELPERS` defaults to 8
+and refuses values above 64. Admission counts labelled helpers, including stopped
+helpers left by a previous manager, plus local operations awaiting helper creation.
+Capacity is released after cleanup; failed cleanup continues to consume capacity
+until the labelled helper is removed. Run one active manager per name prefix:
+reservations are process-local and do not coordinate multiple active managers.
+Clone rejects an existing target before fetching and checks it again on ingestion.
