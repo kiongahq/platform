@@ -43,6 +43,7 @@ One directory per binary; `make build` writes `bin/mlaiops-<name>`.
 | `storage-proxy` | SigV4 presigned URLs and bucket browsing; port `8084` |
 | `metrics-collector` | Prometheus metrics for component health and platform usage; port `9090` |
 | `log-exporter` | Ships one tenant's logs to Elasticsearch or OpenSearch |
+| `sandbox-manager` | Runs agent sandboxes under gVisor through the container engine or Kubernetes; internal only, port `8088` |
 | `cli` | The `mlaiops` CLI |
 
 `frontend/` contains the Next.js App Router frontend. The `app/` directory defines
@@ -88,6 +89,8 @@ a separate Node.js server.
   media.
 - `platform`: the component health grid and discovery catalog, derived from live
   state.
+- `sandbox`: isolated workspaces for model-chosen commands, with Docker and Kubernetes
+  drivers; `sandbox/client` is the typed client and fake for the gateway. See its README.
 - `redact`: removes secrets from text before it is stored or exported.
 - `runtimeconfig`: loads `KIONGA_CONFIG_FILE` and `<NAME>_FILE` secrets, and the
   production start-up checks.
@@ -121,6 +124,9 @@ a separate Node.js server.
 - **Secrets stay out of plain config.** `KIONGA_CONFIG_FILE` rejects secret names;
   secrets come from the environment or `<NAME>_FILE`.
 - **Banned technologies.** CI fails on any reference to excluded products.
+- **Sandboxes fail closed.** With the runtime missing or not proven to be gVisor from
+  inside a real container, creates return 503 and nothing is left running. Model output
+  never executes outside a sandbox, and git credentials never enter one.
 - **One schedule slot fires once.** The scheduler holds a lease and claims each
   slot before submitting.
 

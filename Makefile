@@ -1,8 +1,8 @@
 # Kionga platform: control-plane Go services and the embedded console.
 # Running the whole stack lives in kiongahq/deploy (make -C ../deploy local-up).
-.PHONY: run test test-go test-integration test-security lint fmt-check format build verify test-ui test-browser frontend
+.PHONY: run test test-go test-integration test-sandbox-attack test-security lint fmt-check format build verify test-ui test-browser frontend
 
-GO_SERVICES := gateway operator integration-worker feature-gateway storage-proxy metrics-collector log-exporter cli
+GO_SERVICES := gateway operator integration-worker feature-gateway storage-proxy metrics-collector log-exporter cli sandbox-manager
 
 frontend:
 	npm ci --prefix frontend --ignore-scripts
@@ -18,6 +18,9 @@ test-go:
 
 test-integration:            ## PostgreSQL integration tests in a throwaway container
 	bash scripts/integration-test.sh
+
+test-sandbox-attack:         ## hostile commands in real sandboxes; see scripts/sandbox-attack-test.sh
+	bash scripts/sandbox-attack-test.sh
 
 test-security:               ## the same scanners CI runs
 	cd go && go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
