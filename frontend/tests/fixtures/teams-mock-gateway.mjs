@@ -17,7 +17,7 @@ const resources = {
   "/api/v1/knowledge-bases": [{ id: `kb-${hex()}`, name: "Runbooks", project_id: "fraud" }],
   "/api/v1/datasets": [{ id: `ds-${hex()}`, name: "Claims 2026", project_id: "fraud" }],
 };
-const limits = { max_turns: 100, max_tokens: 200000, max_seconds: 3600 };
+const limits = { max_turns: 100, max_tokens: 1000000, max_seconds: 3600 };
 const definitions = new Map(), teams = new Map(), runs = new Map(), approvals = new Map(), history = new Map();
 const save = (store, doc) => {
   store.set(doc.id, doc);
@@ -27,7 +27,7 @@ const save = (store, doc) => {
 };
 const fixer = save(definitions, { id: `adf-${hex()}`, project_id: "fraud", revision: 2, name: "bug-fixer", owner_subject: "admin", description: "Use for one defect: reproduces it, fixes the cause and adds a test.", instructions: "Reproduce the problem, then fix it.", model: "llm", tools: [{ kind: "sandbox" }, { kind: "tool", ref: "lookup-customer" }], workspace: "sandbox", limits, updated_at: now() });
 const reviewer = save(definitions, { id: `adf-${hex()}`, project_id: "fraud", revision: 1, name: "reviewer", description: "Use after a change exists: reviews a diff independently.", instructions: "Review the diff.", model: "llm", tools: [{ kind: "sandbox" }], workspace: "sandbox", limits, updated_at: now() });
-const seeded = save(teams, { id: `atm-${hex()}`, project_id: "fraud", revision: 1, name: "code-change", description: "Makes a code change and reviews it.", coordinator: { instructions: "Split the work and check each report.", model: "llm" }, members: [fixer.id, reviewer.id], brief: "State what you did not verify.", limits: { max_workers_total: 20, max_concurrent_workers: 5, max_tokens: 2000000, max_seconds: 14400 }, updated_at: now() });
+const seeded = save(teams, { id: `atm-${hex()}`, project_id: "fraud", revision: 1, name: "code-change", description: "Makes a code change and reviews it.", coordinator: { instructions: "Split the work and check each report.", model: "llm" }, members: [fixer.id, reviewer.id], brief: "State what you did not verify.", limits: { max_workers_total: 20, max_concurrent_workers: 5, max_tokens: 5000000, max_seconds: 14400 }, updated_at: now() });
 
 const ATTACK = '<img src=x onerror="window.__owned=1"><script>window.__owned=1</script>';
 function emit(run, event) {

@@ -154,7 +154,7 @@ test("a valid agent posts exactly the documented body", async () => {
   await view.findByText(/Saved bug-fixer, revision 1/);
   assert.deepEqual(sent("POST", "/api/v1/agent-definitions")[0].body, {
     project_id: "p1", name: "bug-fixer", description: "Fixes bugs", instructions: "Fix it", model: "llm", tools: [], workspace: "none",
-    limits: { max_turns: 100, max_tokens: 200000, max_seconds: 3600 },
+    limits: { max_turns: 100, max_tokens: 1000000, max_seconds: 3600 },
   });
   assert.equal(window.location.search, "?resource=adf-1");
   ok(view.getByRole("button", { name: "Save revision" }));
@@ -281,6 +281,33 @@ test("the picker lists nothing until a project is chosen, and respects missing c
   fill(view, "Project", "p1");
   await view.findByText(/does not have access to the catalog/);
   assert.equal(calls.some((call) => call.path === "/api/v1/tools"), false);
+});
+test("budget defaults match the gateway and the editors say budgets count re-sent context", async () => {
+  assert.equal(blankDefinition().limits.max_tokens, 1_000_000);
+  assert.equal(blankTeam().limits.max_tokens, 5_000_000);
+  gateway(...resources, on("GET", "/api/v1/agent-definitions", { items: [] }));
+  const agent = render(<AgentDefinitionsView identity={writer} view="agent-definitions" project="p1" resource="new" onNavigate={() => {}} />);
+  assert.equal((agent.getByLabelText("Maximum tokens") as HTMLInputElement).value, "1000000");
+  agent.getByText(/Default 1,000,000/);
+  agent.getByText(/count re-sent context/);
+  agent.unmount();
+  const team = render(<TeamsView identity={writer} view="agent-teams" project="p1" resource="new" onNavigate={() => {}} />);
+  assert.equal((team.getByLabelText("Maximum tokens") as HTMLInputElement).value, "5000000");
+  team.getByText(/Default 5,000,000/);
+  team.getByText(/count re-sent context/);
+});
+test("the picker describes what registered tools and knowledge bases do now", async () => {
+  gateway(...resources);
+  const view = render(<AgentDefinitionsView identity={writer} view="agent-definitions" project="p1" resource="new" onNavigate={() => {}} />);
+  view.getByText(/tool_no_function/);
+  view.getByText(/search with a text query/);
+  assert.doesNotMatch(view.container.textContent || "", /tool_not_executable|vector/i);
+});
+test("a tool registered in several versions is one choice", async () => {
+  gateway(on("GET", "/api/v1/tools", { items: [{ name: "lookup", version: "1" }, { name: "lookup", version: "2" }] }), ...resources);
+  const view = render(<AgentDefinitionsView identity={writer} view="agent-definitions" project="p1" resource="new" onNavigate={() => {}} />);
+  await view.findByRole("checkbox", { name: "lookup" });
+  assert.equal(view.getAllByRole("checkbox", { name: "lookup" }).length, 1);
 });
 test("duplicate grants are removed from the request", () => {
   const payload = definitionPayload({ ...validDefinition(), workspace: "sandbox", tools: [{ kind: "sandbox" }, { kind: "sandbox" }, { kind: "tool", ref: "a" }, { kind: "tool", ref: "a" }] });

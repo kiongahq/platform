@@ -21,7 +21,7 @@ import {
 } from "./shared";
 import { applyTemplate, TEAM_TEMPLATES } from "./templates";
 import type { AgentDefinition, List, Team } from "./types";
-import { blankTeam, MODEL_OPTIONS, TEAM_LIMITS, teamPayload, TEXT_LIMITS, validateTeam, type FieldErrors } from "./validation";
+import { blankTeam, BUDGET_NOTE, MODEL_OPTIONS, TEAM_LIMITS, teamPayload, TEXT_LIMITS, validateTeam, type FieldErrors } from "./validation";
 
 const VIEW = "agent-teams";
 const fieldId = (key: string) => `team-${key.replaceAll(".", "-")}`;
@@ -444,6 +444,7 @@ export function TeamForm({
         <TextField id="team-brief" label="Shared brief" multiline rows={5} value={draft.brief} error={errors.brief} disabled={disabled} help={`Rules appended to every agent's system prompt. At most ${TEXT_LIMITS.brief.toLocaleString("en")} characters.`} onChange={(value) => change({ brief: value })} />
         <fieldset className="field-wide team-limits">
           <legend>Limits for the whole run</legend>
+          <small id="team-budget-note">{BUDGET_NOTE}</small>
           <div className="form-grid">
             {(Object.keys(TEAM_LIMITS) as Array<keyof typeof TEAM_LIMITS>).map((key) => {
               const rule = TEAM_LIMITS[key];
@@ -458,7 +459,7 @@ export function TeamForm({
                   value={Number.isNaN(draft.limits[key]) ? "" : draft.limits[key]}
                   error={errors[`limits.${key}`]}
                   disabled={disabled}
-                  help={`${rule.min.toLocaleString("en")} to ${rule.max.toLocaleString("en")}`}
+                  help={`${rule.min.toLocaleString("en")} to ${rule.max.toLocaleString("en")}${key === "max_tokens" ? ". Default 5,000,000." : ""}`}
                   onChange={(value) => change({ limits: { ...draft.limits, [key]: value === "" ? Number.NaN : Number(value) } })}
                 />
               );

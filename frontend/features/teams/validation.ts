@@ -17,6 +17,8 @@ export const TEAM_LIMITS = {
   max_tokens: { label: "Maximum tokens", min: 1, max: 20_000_000 },
   max_seconds: { label: "Maximum seconds", min: 60, max: 86_400 },
 } as const;
+export const BUDGET_NOTE =
+  "Token budgets count re-sent context: each turn counts the conversation sent to the model again, so a long run uses far more than its visible text.";
 export const TEXT_LIMITS = {
   description: 1000,
   instructions: 32_000,
@@ -161,7 +163,7 @@ export const blankDefinition = (project = ""): AgentDefinition => ({
   model: "llm",
   tools: [],
   workspace: "none",
-  limits: { max_turns: 100, max_tokens: 200_000, max_seconds: 3600 },
+  limits: { max_turns: 100, max_tokens: 1_000_000, max_seconds: 3600 },
 });
 export const blankTeam = (project = ""): Team => ({
   project_id: project,
@@ -173,7 +175,7 @@ export const blankTeam = (project = ""): Team => ({
   limits: {
     max_workers_total: 20,
     max_concurrent_workers: 5,
-    max_tokens: 2_000_000,
+    max_tokens: 5_000_000,
     max_seconds: 14_400,
   },
 });

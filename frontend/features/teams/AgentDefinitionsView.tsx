@@ -21,6 +21,7 @@ import { ToolPicker } from "./ToolPicker";
 import type { AgentDefinition, List } from "./types";
 import {
   blankDefinition,
+  BUDGET_NOTE,
   DEFINITION_LIMITS,
   definitionPayload,
   MODEL_OPTIONS,
@@ -243,11 +244,12 @@ export function DefinitionForm({
         <ToolPicker project={draft.project_id || ""} identity={identity} tools={draft.tools} errors={errors} disabled={disabled} onChange={(tools) => change({ tools })} />
         <fieldset className="field-wide team-limits">
           <legend>Limits for each worker</legend>
+          <small id="definition-budget-note">{BUDGET_NOTE}</small>
           <div className="form-grid">
             {(Object.keys(DEFINITION_LIMITS) as Array<keyof typeof DEFINITION_LIMITS>).map((key) => {
               const rule = DEFINITION_LIMITS[key];
               return (
-                <TextField key={key} id={`definition-limits-${key}`} type="number" label={rule.label} min={rule.min} max={rule.max} value={Number.isNaN(draft.limits[key]) ? "" : draft.limits[key]} error={errors[`limits.${key}`]} disabled={disabled} help={`${rule.min.toLocaleString("en")} to ${rule.max.toLocaleString("en")}`} onChange={(value) => limit(key, value)} />
+                <TextField key={key} id={`definition-limits-${key}`} type="number" label={rule.label} min={rule.min} max={rule.max} value={Number.isNaN(draft.limits[key]) ? "" : draft.limits[key]} error={errors[`limits.${key}`]} disabled={disabled} help={`${rule.min.toLocaleString("en")} to ${rule.max.toLocaleString("en")}${key === "max_tokens" ? ". Default 1,000,000." : ""}`} onChange={(value) => limit(key, value)} />
               );
             })}
           </div>
