@@ -173,7 +173,7 @@ class GitServer:
                         outer.requests.append((self.command, self.path, 401))
                     self._reply(401, {"WWW-Authenticate": 'Basic realm="smoke"'}, b"")
                     return
-                repository = parsed.path.strip("/").split("/")[0]
+                repository = parsed.path.strip("/").split("/")[0].removesuffix(".git")
                 is_push = self.command == "POST" and parsed.path.endswith("/git-receive-pack")
                 encoded = self.headers.get("Content-Encoding", "")
                 plain = gzip.decompress(body) if encoded == "gzip" else body
