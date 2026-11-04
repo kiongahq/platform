@@ -42,6 +42,8 @@ concurrency:
 
 jobs:
   smoke:
+    # The integration branch is proved by its push, so its pull request adds no second run.
+    if: github.event_name != 'pull_request' || github.head_ref != 'test/agent-teams-smoke'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
