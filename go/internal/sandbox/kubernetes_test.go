@@ -325,3 +325,15 @@ func TestFallbackOnlyBeforeCommandStarts(t *testing.T) {
 		})
 	}
 }
+
+func TestPodIdentityChangesOnRestartAndReplacement(t *testing.T) {
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-one"}, Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{Name: containerName, ContainerID: "container-one", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: metav1.NewTime(time.Unix(1, 0))}}}}}}
+	first := instanceOf(pod).Identity
+	pod.Status.ContainerStatuses[0].State.Running.StartedAt = metav1.NewTime(time.Unix(2, 0))
+	second := instanceOf(pod).Identity
+	pod.UID = "pod-two"
+	third := instanceOf(pod).Identity
+	if first == "" || first == second || second == third {
+		t.Fatalf("identities: %q %q %q", first, second, third)
+	}
+}

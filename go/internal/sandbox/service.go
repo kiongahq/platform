@@ -34,13 +34,14 @@ const (
 	floodBytes = 256 << 20
 )
 
-// Service holds every isolation and git policy. It keeps no state that matters:
-// sandboxes are found through labels, and the only cached fact is the last probe.
+// Service holds every isolation and git policy. Runtime attestations are local
+// cache entries: a new manager must attest existing instances again.
 type Service struct {
-	config Config
-	driver Driver
-	now    Clock
-	logger *log.Logger
+	attestations sync.Map // container name -> *attestationState
+	config       Config
+	driver       Driver
+	now          Clock
+	logger       *log.Logger
 
 	verifyMu   sync.Mutex
 	verifiedOK bool
@@ -192,7 +193,7 @@ func (s *Service) attest(ctx context.Context, name string) error {
 	attestCtx, cancel := context.WithTimeout(ctx, attestTimeout)
 	defer cancel()
 	stdout := &headBuffer{limit: 256}
-	code, err := s.driver.Exec(attestCtx, name, ExecRequest{Argv: []string{"/usr/bin/env", "-i", safePath, "/bin/sh", "-c", "uname -r"}, Stdout: stdout, Stderr: io.Discard})
+	code, err := s.driver.Exec(attestCtx, name, ExecRequest{Argv: []string{"/bin/uname", "-r"}, Stdout: stdout, Stderr: io.Discard})
 	if err != nil {
 		return err
 	}
@@ -275,14 +276,14 @@ func (s *Service) Create(ctx context.Context, request client.CreateRequest) (cli
 	spec.Volume = &VolumeMount{Name: s.volumeName(id), Path: WorkspacePath, SizeBytes: s.config.DiskBytes}
 	err = s.driver.Create(ctx, spec)
 	if errors.Is(err, ErrExists) {
-		// A concurrent create won. Its creator attests; this one only checks labels.
+		// A concurrent create won. instance waits for runtime attestation.
 		if _, inspectErr := s.instance(ctx, id); inspectErr != nil {
 			return client.Sandbox{}, inspectErr
 		}
 		return client.Sandbox{ID: id, Status: "running"}, nil
 	}
 	if err == nil {
-		err = s.attest(ctx, name)
+		_, err = s.instance(ctx, id)
 	}
 	if err != nil {
 		s.logger.Printf("sandbox: create %s failed: %v", id, err)
@@ -324,6 +325,9 @@ func (s *Service) instance(ctx context.Context, id string) (Instance, error) {
 		s.logger.Printf("sandbox: %s runs on %s, expected %s", id, found.Runtime, s.config.Runtime)
 		return Instance{}, unavailable("the sandbox is not on the configured runtime")
 	}
+	if found.Running {
+		return s.ensureAttested(ctx, found.Name)
+	}
 	return found, nil
 }
 
@@ -337,7 +341,7 @@ func (s *Service) running(ctx context.Context, id string) (Instance, error) {
 	if found.Running {
 		return found, nil
 	}
-	if err := s.driver.Restart(ctx, found.Name); err != nil {
+	if err := s.restartInstance(ctx, found.Name); err != nil {
 		s.logger.Printf("sandbox: restart %s failed: %v", id, err)
 		return Instance{}, unavailable("the sandbox could not be restarted")
 	}
@@ -423,7 +427,7 @@ func (s *Service) runUser(ctx context.Context, name string, argv []string, timeo
 	stdout, stderr := newCapture(outputCap), newCapture(outputCap)
 	stdout.flood, stdout.onFlood = floodBytes, cancel
 	stderr.flood, stderr.onFlood = floodBytes, cancel
-	code, err := s.driver.Exec(execCtx, name, ExecRequest{Argv: argv, Stdout: stdout, Stderr: stderr})
+	code, err := s.execAttested(execCtx, name, ExecRequest{Argv: argv, Stdout: stdout, Stderr: stderr})
 	result := client.ExecResult{
 		ExitCode:   code,
 		Stdout:     stdout.String(),
@@ -475,7 +479,7 @@ func (s *Service) killAll(name string) {
 	ctx, cancel := context.WithTimeout(context.Background(), sweepTimeout)
 	defer cancel()
 	stdout := &headBuffer{limit: 64}
-	code, err := s.driver.Exec(ctx, name, ExecRequest{Argv: []string{"/bin/sh", "-c", sweepScript}, Stdout: stdout, Stderr: io.Discard})
+	code, err := s.execAttested(ctx, name, ExecRequest{Argv: []string{"/bin/sh", "-c", sweepScript}, Stdout: stdout, Stderr: io.Discard})
 	survivors, parseErr := strconv.Atoi(strings.TrimSpace(string(stdout.data)))
 	if err == nil && code == 0 && parseErr == nil && survivors <= maxSweepSurvivors {
 		return
@@ -489,7 +493,7 @@ func (s *Service) restartQuietly(name string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()
-	if err := s.driver.Restart(ctx, name); err != nil {
+	if err := s.restartInstance(ctx, name); err != nil {
 		s.logger.Printf("sandbox: restart %s failed: %v", name, err)
 	}
 }
@@ -503,7 +507,7 @@ func (s *Service) internalExec(ctx context.Context, name string, argv []string, 
 }
 
 func (s *Service) scriptExec(ctx context.Context, name string, argv []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
-	code, err := s.driver.Exec(ctx, name, ExecRequest{Argv: argv, Stdin: stdin, Stdout: stdout, Stderr: stderr})
+	code, err := s.execAttested(ctx, name, ExecRequest{Argv: argv, Stdin: stdin, Stdout: stdout, Stderr: stderr})
 	if err != nil {
 		if ctx.Err() != nil {
 			return code, unavailable("the sandbox operation timed out")

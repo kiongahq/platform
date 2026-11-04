@@ -227,7 +227,13 @@ func instanceOf(pod *corev1.Pod) Instance {
 	if pod.Spec.RuntimeClassName != nil {
 		runtime = *pod.Spec.RuntimeClassName
 	}
-	return Instance{Name: pod.Name, Labels: pod.Labels, Running: pod.Status.Phase == corev1.PodRunning, Runtime: runtime}
+	identity := ""
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name == containerName && status.State.Running != nil && pod.UID != "" && status.ContainerID != "" {
+			identity = string(pod.UID) + "/" + status.ContainerID + "/" + status.State.Running.StartedAt.String()
+		}
+	}
+	return Instance{Identity: identity, Name: pod.Name, Labels: pod.Labels, Running: pod.Status.Phase == corev1.PodRunning, Runtime: runtime}
 }
 
 // List finds pods carrying all the labels.

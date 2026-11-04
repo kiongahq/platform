@@ -112,12 +112,12 @@ func (s *Service) stream(ctx context.Context, fromName string, fromArgv []string
 	}
 	sender := make(chan outcome, 1)
 	go func() {
-		code, sendErr := s.driver.Exec(streamCtx, fromName, ExecRequest{Argv: fromArgv, Stdout: &sizeLimitWriter{w: writer, remaining: size}, Stderr: io.Discard})
+		code, sendErr := s.execAttested(streamCtx, fromName, ExecRequest{Argv: fromArgv, Stdout: &sizeLimitWriter{w: writer, remaining: size}, Stderr: io.Discard})
 		_ = writer.Close()
 		sender <- outcome{code, sendErr}
 	}()
 	toStderr = newCapture(stderrLimit)
-	toCode, err = s.driver.Exec(streamCtx, toName, ExecRequest{Argv: toArgv, Stdin: reader, Stdout: stdout, Stderr: toStderr})
+	toCode, err = s.execAttested(streamCtx, toName, ExecRequest{Argv: toArgv, Stdin: reader, Stdout: stdout, Stderr: toStderr})
 	_ = reader.Close()
 	if err != nil {
 		cancel()
@@ -329,5 +329,5 @@ func (s *Service) GitPush(ctx context.Context, id string, request client.GitPush
 func (s *Service) removeSandboxFile(name, file string) {
 	ctx, cancel := context.WithTimeout(context.Background(), internalTimeout)
 	defer cancel()
-	_, _ = s.driver.Exec(ctx, name, ExecRequest{Argv: userArgv(WorkspacePath, nil, "/bin/rm", "-f", "--", file), Stdout: io.Discard, Stderr: io.Discard})
+	_, _ = s.execAttested(ctx, name, ExecRequest{Argv: userArgv(WorkspacePath, nil, "/bin/rm", "-f", "--", file), Stdout: io.Discard, Stderr: io.Discard})
 }
