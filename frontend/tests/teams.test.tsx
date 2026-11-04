@@ -358,10 +358,10 @@ test("both documented templates exist with their members", async () => {
   for (const template of TEAM_TEMPLATES)
     for (const agent of template.agents)
       assert.deepEqual(validateDefinition({ ...blankDefinition("p1"), ...agent } as any), {}, agent.name);
-  // The embedded copies must stay identical to the contract once the submodule carries them.
+  // The pinned contract must be present and its embedded copies must stay identical.
   for (const id of ["code-change", "research"]) {
     const upstream = join(import.meta.dirname, `../../contracts/agent-team/templates/${id}.json`);
-    if (existsSync(upstream)) assert.equal(readFileSync(join(import.meta.dirname, `../features/teams/templates/${id}.json`), "utf8"), readFileSync(upstream, "utf8"), id);
+    assert.equal(readFileSync(join(import.meta.dirname, `../features/teams/templates/${id}.json`), "utf8"), readFileSync(upstream, "utf8"), id);
   }
 });
 test("starting a run posts the documented body, side effects default off, and a retry reuses the idempotency key", async () => {

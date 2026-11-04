@@ -142,3 +142,13 @@ pin container digests in deployments. Development builds use `edge` and SHA
 references; existing `latest` aliases stop updating. The
 [release handbook](https://kiongahq.github.io/docs/engineering/contributing/releases/)
 covers publication, dependency updates and rollback.
+
+### Agent Teams console acceptance
+
+After installing the root and frontend npm dependencies, run
+`npx playwright test --config playwright.teams.config.cjs`. The config starts and
+stops its own mock gateway and Next development server. Set
+`PLAYWRIGHT_CHANNEL=chromium` after `npx playwright install chromium` to use the
+bundled browser. CI runs both desktop and narrow layouts, including approvals,
+outages and untrusted markup. This lane verifies console behavior against canned
+responses; the Agent Teams smoke workflow verifies the real services separately.

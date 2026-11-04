@@ -38,7 +38,8 @@ test.describe('agent teams', () => {
   test.beforeEach(async ({page}) => {
     await signIn(page, ADMIN, '/console/agent-definitions');
     const probe = await page.request.get('/api/v1/agent-definitions');
-    test.skip(probe.status() === 404, 'this gateway does not have the agent team routes yet');
+    if (MOCK) expect(probe.ok(), 'mock lane must expose the team routes').toBeTruthy();
+    else test.skip(probe.status() === 404, 'this gateway does not have the agent team routes yet');
   });
 
   for (const view of VIEWS) {
