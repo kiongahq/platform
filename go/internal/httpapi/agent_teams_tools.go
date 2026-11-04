@@ -238,10 +238,35 @@ func (e *teamEngine) execute(ctx context.Context, run agentteam.Run, worker agen
 		}
 		return internalCall(ctx, starter, e.s.datasetObjects, http.MethodGet, "/api/v1/datasets/"+tool.Ref+"/objects", map[string]string{"id": tool.Ref}, url.Values{"prefix": {stringArgument(arguments, "prefix")}}, nil)
 	case "tool":
-		// The tool catalog stores metadata and has no execution endpoint yet.
-		return toolFailure("tool_not_executable", "This registered tool has no execution endpoint on the gateway.")
+		return e.invokeRegisteredTool(ctx, starter, tool, arguments)
 	}
 	return toolFailure(agentteam.ErrUnknownTool, "You do not have this tool.")
+}
+
+// invokeRegisteredTool runs a catalog tool the way a designer tool node does:
+// POST /functions/{name}/invoke with {"input": text}, through the same handler and
+// so the same authorization. Approval was already required by the tool's class.
+func (e *teamEngine) invokeRegisteredTool(ctx context.Context, starter auth.Principal, tool agentteam.Tool, arguments map[string]any) toolOutcome {
+	input, single := arguments["input"].(string)
+	if !single || len(arguments) != 1 {
+		raw, err := json.Marshal(arguments)
+		if err != nil {
+			return toolFailure(agentteam.ErrInvalidArguments, "The arguments could not be encoded.")
+		}
+		input = string(raw)
+	}
+	body, err := json.Marshal(map[string]string{"input": input})
+	if err != nil {
+		return toolFailure(agentteam.ErrInvalidArguments, "The arguments could not be encoded.")
+	}
+	outcome := internalCall(ctx, starter, e.s.invokeFunction, http.MethodPost, "/api/v1/functions/"+url.PathEscape(tool.Ref)+"/invoke", map[string]string{"name": tool.Ref}, nil, body)
+	switch {
+	case outcome.code == "not_found", outcome.code == "invoke_failed" && strings.Contains(outcome.content, "404"):
+		return toolFailure(agentteam.ErrToolNoFunction, "The registered tool "+tool.Ref+" has no deployed function behind it. Deploy a function with this name.")
+	case outcome.code == "not_configured":
+		return toolFailure(agentteam.ErrToolNoFunction, "Registered tools run as functions, and no function runtime is configured on this platform.")
+	}
+	return outcome
 }
 
 // bufferedResponse captures an existing handler's reply.

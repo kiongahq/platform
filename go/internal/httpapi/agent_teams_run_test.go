@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -2320,31 +2321,129 @@ func TestTeamControlRoutesRefuseFormPosts(t *testing.T) {
 	}
 }
 
-func TestTeamRegisteredToolIsGatedThenNotExecutable(t *testing.T) {
-	h := newTeamHarness(t, store.New())
-	if _, err := h.repository.RegisterTool(api.RegisterToolRequest{Name: "lookup", Version: "1.0.0", Description: "d", InputSchema: map[string]any{"type": "object"}}, "admin"); err != nil {
-		t.Fatal(err)
+// functionBackend is a fake OpenFaaS gateway recording what it was sent.
+func functionBackend(t *testing.T, name string) (*atomic.Int64, *atomic.Value) {
+	t.Helper()
+	var hits atomic.Int64
+	var body atomic.Value
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/function/"+name {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("function not found"))
+			return
+		}
+		hits.Add(1)
+		raw, _ := io.ReadAll(r.Body)
+		body.Store(string(raw))
+		_, _ = w.Write([]byte(`{"answer":"from the function"}`))
+	}))
+	t.Cleanup(backend.Close)
+	t.Setenv("OPENFAAS_URL", backend.URL)
+	return &hits, &body
+}
+
+func (h *teamHarness) registeredToolRun(name string, arguments any, allowSideEffects bool) string {
+	h.t.Helper()
+	if _, err := h.repository.RegisterTool(api.RegisterToolRequest{Name: name, Version: "1.0.0", Description: "d", InputSchema: map[string]any{"type": "object"}}, "admin"); err != nil {
+		h.t.Fatal(err)
 	}
 	team := h.team([]string{h.definition("one", func(body map[string]any) {
-		body["tools"] = []map[string]any{{"kind": "tool", "ref": "lookup"}}
+		body["tools"] = []map[string]any{{"kind": "tool", "ref": name}}
 	})}, nil)
 	h.runner.set(workerScript("one", func(_ context.Context, request turnRequest) (turnResponse, error) {
 		if request.Turn == 1 {
-			return reply("", toolCall("tool_lookup", map[string]any{"q": "x"})), nil
+			return reply("", toolCall("tool_"+name, arguments)), nil
 		}
 		return reply("", finishCall(lastMessage(request))), nil
 	}))
-	runID := h.start(team, true)
+	runID := h.start(team, allowSideEffects)
 	h.step(h.engine)
 	h.step(h.engine)
-	if worker := h.workerNamed(runID, "one"); worker.Status != agentteam.WorkerWaitingApproval {
-		t.Fatalf("a registered tool skipped approval: %s", worker.Status)
+	return runID
+}
+
+func (h *teamHarness) approveAll(runID string) {
+	h.t.Helper()
+	for _, approval := range decodeTeam[approvalPage](h.t, h.api("GET", "/api/v1/agent-approvals?status=pending&run_id="+runID, "", 200)).Items {
+		h.api("POST", "/api/v1/agent-approvals/"+approval.ID+"/decision", `{"decision":"approve"}`, 200)
 	}
-	approval := decodeTeam[approvalPage](t, h.api("GET", "/api/v1/agent-approvals?status=pending&run_id="+runID, "", 200)).Items[0]
-	h.api("POST", "/api/v1/agent-approvals/"+approval.ID+"/decision", `{"decision":"approve"}`, 200)
+}
+
+func TestTeamRegisteredToolRunsItsFunctionAfterApproval(t *testing.T) {
+	forEachTeamStore(t, func(t *testing.T, repository store.Repository) {
+		hits, body := functionBackend(t, "lookup")
+		h := newTeamHarness(t, repository)
+		h.starter = localAdmin
+		runID := h.registeredToolRun("lookup", map[string]any{"input": "find this"}, true)
+		if worker := h.workerNamed(runID, "one"); worker.Status != agentteam.WorkerWaitingApproval || hits.Load() != 0 {
+			t.Fatalf("ran before approval: %s hits=%d", worker.Status, hits.Load())
+		}
+		h.approveAll(runID)
+		h.drive(runID)
+		if hits.Load() != 1 {
+			t.Fatalf("function called %d times", hits.Load())
+		}
+		if got := body.Load(); got != `{"input":"find this"}` {
+			t.Fatalf("function body: %v", got)
+		}
+		if report := h.workerNamed(runID, "one").Report; !strings.Contains(report, "from the function") {
+			t.Fatalf("report: %s", report)
+		}
+	})
+}
+
+func TestTeamRegisteredToolPassesStructuredArgumentsAsText(t *testing.T) {
+	_, body := functionBackend(t, "lookup")
+	h := newTeamHarness(t, store.New())
+	h.starter = localAdmin
+	runID := h.registeredToolRun("lookup", map[string]any{"city": "Nairobi", "days": 3}, true)
+	h.approveAll(runID)
 	h.drive(runID)
-	if report := h.workerNamed(runID, "one").Report; !strings.Contains(report, "tool_not_executable") {
-		t.Fatalf("report: %s", report)
+	var sent map[string]string
+	if err := json.Unmarshal([]byte(body.Load().(string)), &sent); err != nil || !strings.Contains(sent["input"], "Nairobi") {
+		t.Fatalf("%v %v", sent, err)
+	}
+}
+
+func TestTeamRegisteredToolSideEffectsOffNeverReachesFunction(t *testing.T) {
+	hits, _ := functionBackend(t, "lookup")
+	h := newTeamHarness(t, store.New())
+	h.starter = localAdmin
+	runID := h.registeredToolRun("lookup", map[string]any{"input": "x"}, false)
+	h.drive(runID)
+	if hits.Load() != 0 || !strings.Contains(h.workerNamed(runID, "one").Report, agentteam.ErrSideEffectsNotApproved) {
+		t.Fatalf("hits=%d report=%s", hits.Load(), h.workerNamed(runID, "one").Report)
+	}
+}
+
+func TestTeamRegisteredToolWithoutAFunctionSaysSo(t *testing.T) {
+	cases := []struct {
+		name    string
+		backend bool
+		starter auth.Principal
+		want    string
+	}{
+		{"not deployed, administrator", true, localAdmin, "no deployed function"},
+		{"not deployed, project member", true, teamStarter, "no deployed function"},
+		{"no runtime", false, localAdmin, "no function runtime"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.backend {
+				functionBackend(t, "something-else")
+			} else {
+				t.Setenv("OPENFAAS_URL", "")
+			}
+			h := newTeamHarness(t, store.New())
+			h.starter = tc.starter
+			runID := h.registeredToolRun("lookup", map[string]any{"input": "x"}, true)
+			h.approveAll(runID)
+			h.drive(runID)
+			report := h.workerNamed(runID, "one").Report
+			if !strings.Contains(report, agentteam.ErrToolNoFunction) || !strings.Contains(report, tc.want) {
+				t.Fatalf("report: %s", report)
+			}
+		})
 	}
 }
 

@@ -147,7 +147,7 @@ func ToolsFor(snapshot Snapshot, role, agent string) []Tool {
 			}
 			git = true
 		case "tool":
-			tools = append(tools, grantTool("tool", "tool", grant.Ref, "Platform tool "+grant.Ref+". Needs a person's approval.", ClassSideEffect, anyInput))
+			tools = append(tools, grantTool("tool", "tool", grant.Ref, "Platform tool "+grant.Ref+". Pass its input as {\"input\": \"...\"}. Needs a person's approval.", ClassSideEffect, anyInput))
 		case "connection":
 			tools = append(tools, grantTool("connection", "connection", grant.Ref, "Call API connection "+grant.Ref+" with a JSON body. Needs a person's approval.", ClassSideEffect, anyInput))
 		case "knowledge":
