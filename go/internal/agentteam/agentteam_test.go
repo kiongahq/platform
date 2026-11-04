@@ -560,3 +560,23 @@ func TestValidRepository(t *testing.T) {
 		}
 	}
 }
+
+func TestRepositoryDir(t *testing.T) {
+	for raw, want := range map[string]string{"https://github.com/o/r": "/workspace/r", "https://github.com/o/r.git": "/workspace/r", "https://github.com/o/r/": "/workspace/r", "https://host:8443/a/b/my.repo": "/workspace/my.repo"} {
+		if got := RepositoryDir(raw); got != want {
+			t.Errorf("%s: %s", raw, got)
+		}
+	}
+}
+
+func TestExecDescriptionStatesWhatSurvivesARestart(t *testing.T) {
+	tool, ok := FindTool(ToolsFor(testSnapshot(), RoleWorker, "bug-fixer"), ToolExec)
+	if !ok {
+		t.Fatal("no exec")
+	}
+	for _, want := range []string{"times out", "every process", "memory limit", "/tmp", "/workspace survives", "restarts"} {
+		if !strings.Contains(tool.Description, want) {
+			t.Errorf("exec description lacks %q", want)
+		}
+	}
+}

@@ -371,3 +371,19 @@ func TestTeamTurnIsAJSONNumber(t *testing.T) {
 		t.Fatalf("%v", fields)
 	}
 }
+
+// git_failed arrives as a 502 and must keep its code; only a 503 means unavailable.
+func TestTeamHTTPSandboxKeepsGitFailedCode(t *testing.T) {
+	t.Setenv("KIONGA_SANDBOX_TOKEN", "sandbox-"+"test-value")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, `{"error":"git_failed","message":"non-fast-forward"}`)
+	}))
+	defer server.Close()
+	t.Setenv("KIONGA_SANDBOX_URL", server.URL)
+	_, err := defaultTeamSandbox.Push(context.Background(), "sbx", "https://github.com/o/r", "kionga/r/x", "c")
+	var failure *sandboxError
+	if !errors.As(err, &failure) || failure.Code != sandboxGitFailed || failure.Message != "non-fast-forward" {
+		t.Fatalf("%v", err)
+	}
+}

@@ -136,6 +136,9 @@ a separate Node.js server.
   compare-and-set through `store.UpdateDoc`, and every later write checks the lease
   token, on every replica. A tool call commits `started_at` before it runs, so a
   resume never repeats a call that may have happened (see `contracts/agent-team`).
+- **Team token budgets count provider usage.** That includes context re-sent on every
+  turn, which is real cost, so `max_tokens` spends faster than a transcript grows. The
+  defaults are 1,000,000 per worker and 5,000,000 per team.
 - **One schedule slot fires once.** The scheduler holds a lease and claims each
   slot before submitting.
 

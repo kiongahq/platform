@@ -161,6 +161,10 @@ type fakeSandbox struct {
 	healthErr   error
 	healthCalls int
 	execHook    func(context.Context) (sandboxExecResponse, error)
+	cloneErr    error
+	pushErr     error
+	gitExit     int
+	ops         []string
 }
 
 func (f *fakeSandbox) failure() error {
@@ -190,8 +194,13 @@ func (f *fakeSandbox) Create(_ context.Context, _, workerID, _ string) (string, 
 func (f *fakeSandbox) Exec(ctx context.Context, _ string, request sandboxExecRequest) (sandboxExecResponse, error) {
 	f.mu.Lock()
 	f.execs = append(f.execs, request)
+	f.ops = append(f.ops, "exec: "+request.Command)
 	hook := f.execHook
+	gitExit := f.gitExit
 	f.mu.Unlock()
+	if gitExit != 0 && strings.Contains(request.Command, "update-ref") {
+		return sandboxExecResponse{ExitCode: gitExit, Stderr: "fatal: not a git repository"}, nil
+	}
 	if hook != nil {
 		return hook(ctx)
 	}
@@ -226,6 +235,9 @@ func (f *fakeSandbox) Clone(_ context.Context, _, repository, _, credential stri
 	defer f.mu.Unlock()
 	f.clones = append(f.clones, repository)
 	f.credentials = append(f.credentials, credential)
+	if f.cloneErr != nil {
+		return "", f.cloneErr
+	}
 	return strings.Repeat("a", 40), nil
 }
 
@@ -233,7 +245,11 @@ func (f *fakeSandbox) Push(_ context.Context, _, repository, branch, credential 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.pushes = append(f.pushes, repository+"#"+branch)
+	f.ops = append(f.ops, "push: "+branch)
 	f.credentials = append(f.credentials, credential)
+	if f.pushErr != nil {
+		return sandboxPushResult{}, f.pushErr
+	}
 	return sandboxPushResult{Branch: branch, Commit: strings.Repeat("b", 40)}, nil
 }
 

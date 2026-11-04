@@ -1800,6 +1800,14 @@ func TestTeamGitUsesScopedCredentialsAndBranchRule(t *testing.T) {
 		if run.Status != agentteam.RunSucceeded {
 			t.Fatalf("%+v %s", run, h.describeWorkers(runID))
 		}
+		if !strings.Contains(results[0], `"path":"/workspace/r"`) {
+			t.Errorf("clone did not report its path: %s", results[0])
+		}
+		// The branch exists before the push, and only the validated name reaches a shell.
+		wantBranch := "kionga/" + runID + "/fix-1"
+		if len(h.sandbox.ops) != 2 || !strings.Contains(h.sandbox.ops[0], "git -C '/workspace/r' ") || !strings.Contains(h.sandbox.ops[0], "update-ref 'refs/heads/"+wantBranch+"' HEAD") || h.sandbox.ops[1] != "push: "+wantBranch {
+			t.Errorf("push steps: %q", h.sandbox.ops)
+		}
 		want := map[int]string{0: strings.Repeat("a", 40), 1: agentteam.ErrNotPermitted, 2: agentteam.ErrInvalidArguments, 3: "kionga/" + runID + "/fix-1", 4: "branch_rejected", 5: "branch_rejected", 6: "diff --git"}
 		for i, text := range want {
 			if !strings.Contains(results[i], text) {
@@ -2514,5 +2522,111 @@ func TestTeamKnowledgeToolRunsAsTheStarter(t *testing.T) {
 	}
 	if got := strings.Join(h.runner.embeds, ","); !strings.HasPrefix(got, "what do we know/2,") {
 		t.Fatalf("embeds: %s", got)
+	}
+}
+
+// gitRun runs one worker through a list of git calls, approving what comes up, and
+// returns each tool result.
+func (h *teamHarness) gitRun(calls ...agentteam.ModelCall) (string, map[int]string) {
+	h.t.Helper()
+	h.t.Setenv("KIONGA_CONNECTION_SECRET_GIT", "git-"+"credential-value")
+	id := "api-" + strings.Repeat("d", 32)
+	if _, err := store.UpdateDoc(h.repository, agentConnectionKind, id, func(agentAPIConnection, bool) (agentAPIConnection, error) {
+		return agentAPIConnection{ID: id, ProjectID: h.project, Name: "git-conn", Endpoint: "https://example.test", SecretRef: "env:KIONGA_CONNECTION_SECRET_GIT"}, nil
+	}, "agent_api_connection.created", "admin"); err != nil {
+		h.t.Fatal(err)
+	}
+	team := h.team([]string{h.definition("one", sandboxMember(map[string]any{"kind": "git", "repository": "https://github.com/o/r", "connection": id}))}, nil)
+	results := map[int]string{}
+	h.runner.set(workerScript("one", func(_ context.Context, request turnRequest) (turnResponse, error) {
+		if request.Turn > 1 {
+			results[request.Turn-2] = lastMessage(request)
+		}
+		if request.Turn-1 < len(calls) {
+			return reply("", calls[request.Turn-1]), nil
+		}
+		return reply("", finishCall("done")), nil
+	}))
+	runID := h.start(team, true)
+	for i := 0; i < 40 && h.run(runID).SettledAt == nil; i++ {
+		h.step(h.engine)
+		h.approveAll(runID)
+	}
+	return runID, results
+}
+
+func TestTeamGitFailuresReachTheModelClearly(t *testing.T) {
+	clone := toolCall(agentteam.ToolGitClone, map[string]any{"repository": "https://github.com/o/r"})
+	push := toolCall(agentteam.ToolGitPush, map[string]any{"branch": "fix"})
+	cases := []struct {
+		name  string
+		setup func(*fakeSandbox)
+		call  agentteam.ModelCall
+		want  []string
+	}{
+		{"clone failed", func(f *fakeSandbox) {
+			f.cloneErr = &sandboxError{Code: sandboxGitFailed, Message: "repository not found"}
+		}, clone, []string{`"error":"git_failed"`, "repository not found"}},
+		{"not a fast-forward", func(f *fakeSandbox) {
+			f.pushErr = &sandboxError{Code: sandboxGitFailed, Message: "the remote refused a non-fast-forward push"}
+		}, push, []string{`"error":"git_failed"`, "non-fast-forward"}},
+		{"redirect refused", func(f *fakeSandbox) {
+			f.pushErr = &sandboxError{Code: sandboxGitFailed, Message: "the host answered with a redirect, which is refused"}
+		}, push, []string{`"error":"git_failed"`, "redirect"}},
+		{"branch rule", func(f *fakeSandbox) {
+			f.pushErr = &sandboxError{Code: "branch_rejected", Message: "pushes go only to kionga/ branches"}
+		}, push, []string{`"error":"branch_rejected"`, "kionga/ branches"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newTeamHarness(t, store.New())
+			tc.setup(h.sandbox)
+			runID, results := h.gitRun(tc.call)
+			for _, want := range tc.want {
+				if !strings.Contains(results[0], want) {
+					t.Errorf("want %q in %s", want, results[0])
+				}
+			}
+			if run := h.run(runID); run.Status != agentteam.RunSucceeded {
+				t.Errorf("a git error should not end the run: %+v", run.Status)
+			}
+			// The console sees the reason too.
+			shown := false
+			for _, event := range h.allEvents(runID) {
+				if event.Type == "worker.tool_result" && event.Error != nil && strings.Contains(event.Error.Message, tc.want[1]) {
+					shown = true
+					validateContract(t, "event", event)
+				}
+			}
+			if !shown {
+				t.Error("no event carries the reason")
+			}
+		})
+	}
+}
+
+func TestTeamPushStopsWhenTheBranchCannotBeCreated(t *testing.T) {
+	h := newTeamHarness(t, store.New())
+	h.sandbox.gitExit = 128
+	_, results := h.gitRun(toolCall(agentteam.ToolGitPush, map[string]any{"branch": "fix"}))
+	if !strings.Contains(results[0], `"error":"git_failed"`) || !strings.Contains(results[0], "not a git repository") {
+		t.Fatalf("result: %s", results[0])
+	}
+	if len(h.sandbox.pushes) != 0 {
+		t.Fatalf("pushed anyway: %v", h.sandbox.pushes)
+	}
+}
+
+// A hostile name is refused before anything reaches a shell or the manager.
+func TestTeamHostileBranchNameNeverReachesTheSandbox(t *testing.T) {
+	for _, name := range []string{"x'; rm -rf /workspace; '", "$(id)", "`id`", "a b", "a/b", "a..b", "-delete", "x\ny", "--force"} {
+		h := newTeamHarness(t, store.New())
+		_, results := h.gitRun(toolCall(agentteam.ToolGitPush, map[string]any{"branch": name}))
+		if !strings.Contains(results[0], "branch_rejected") {
+			t.Errorf("%q: %s", name, results[0])
+		}
+		if len(h.sandbox.execs) != 0 || len(h.sandbox.pushes) != 0 {
+			t.Errorf("%q reached the sandbox: %q", name, h.sandbox.ops)
+		}
 	}
 }

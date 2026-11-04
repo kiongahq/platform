@@ -85,7 +85,7 @@ var coordinatorTools = []Tool{
 }
 
 var sandboxTools = []Tool{
-	{Name: ToolExec, Kind: "sandbox", Class: ClassSandbox, Description: "Run a shell command in your sandbox.",
+	{Name: ToolExec, Kind: "sandbox", Class: ClassSandbox, Description: "Run a shell command in your sandbox. If it times out, every process in the sandbox is killed. Reaching the process or memory limit stops the sandbox. In both cases running processes and /tmp are lost, /workspace survives, and the next exec restarts the sandbox, so a later exec failing to find a background process does not mean your files are gone.",
 		InputSchema: object([]string{"command"}, map[string]any{"command": text(), "cwd": text(), "timeout_seconds": integer()})},
 	{Name: ToolReadFile, Kind: "sandbox", Class: ClassReadOnly, Description: "Read a file under /workspace.",
 		InputSchema: object([]string{"path"}, map[string]any{"path": text()})},
@@ -100,11 +100,11 @@ var sandboxTools = []Tool{
 }
 
 var gitTools = []Tool{
-	{Name: ToolGitClone, Kind: "git", Class: ClassSandbox, Description: "Clone a granted repository into your sandbox.",
+	{Name: ToolGitClone, Kind: "git", Class: ClassSandbox, Description: "Clone a granted repository into your sandbox. It lands in /workspace/<repository name>; the result gives the path.",
 		InputSchema: object([]string{"repository"}, map[string]any{"repository": text(), "ref": text()})},
 	{Name: ToolGitDiff, Kind: "git", Class: ClassReadOnly, Description: "Show the git diff of your sandbox.",
 		InputSchema: object([]string{}, map[string]any{})},
-	{Name: ToolGitPush, Kind: "git", Class: ClassSideEffect, Description: "Push your work to a branch. Give the short name only; the platform places it under kionga/<run-id>/. Needs a person's approval.",
+	{Name: ToolGitPush, Kind: "git", Class: ClassSideEffect, Description: "Push the commit at HEAD of your clone to a new branch. Commit first. Give a short name without / or ..; the platform creates the branch under kionga/<run-id>/. A push that is not a fast-forward is refused, never forced. Needs a person's approval.",
 		InputSchema: object([]string{"branch"}, map[string]any{"branch": text(), "repository": text()})},
 }
 

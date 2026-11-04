@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -259,6 +260,12 @@ func BranchName(runID, name string) (string, bool) {
 		return "", false
 	}
 	return "kionga/" + runID + "/" + name, true
+}
+
+// RepositoryDir is where a clone of a validated repository lands in the sandbox, the
+// same rule the sandbox manager uses.
+func RepositoryDir(repository string) string {
+	return "/workspace/" + strings.TrimSuffix(path.Base(strings.TrimRight(repository, "/")), ".git")
 }
 
 // Fail ends a worker. The coordinator hears about it through NotifyPending.

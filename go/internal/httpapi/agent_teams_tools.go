@@ -23,6 +23,9 @@ import (
 // a person approved it. started_at is committed under the lease before anything
 // executes, which is what makes the crash rule hold.
 
+// sandboxGitFailed is the sandbox manager's code for a git failure.
+const sandboxGitFailed = "git_failed"
+
 var gitRef = regexp.MustCompile(`^[A-Za-z0-9_]+([./-][A-Za-z0-9_]+)*$`)
 
 // toolOutcome is one call's result. failed marks it for the model and the console.
@@ -30,10 +33,11 @@ type toolOutcome struct {
 	content string
 	failed  bool
 	code    string
+	message string
 }
 
 func toolFailure(code, message string) toolOutcome {
-	return toolOutcome{content: agentteam.ErrorResult(code, message), failed: true, code: code}
+	return toolOutcome{content: agentteam.ErrorResult(code, message), failed: true, code: code, message: message}
 }
 
 func toolJSON(value any) toolOutcome {
@@ -56,7 +60,7 @@ func (e *teamEngine) settleCall(run agentteam.Run, worker agentteam.Worker, leas
 	}
 	event := teamEvent{Type: "worker.tool_result", RunID: run.ID, WorkerID: saved.ID, Agent: saved.Agent, Tool: eventToolName(call.Name), ToolCallID: call.ID, OutputPreview: preview(content)}
 	if outcome.failed {
-		event.Error = eventError(outcome.code, outcome.code)
+		event.Error = eventError(outcome.code, outcome.message)
 	}
 	appendTeamEvent(e.docs(), event)
 	return saved, true
@@ -137,7 +141,7 @@ func (e *teamEngine) toolStep(ctx context.Context, run agentteam.Run, worker age
 	}
 	event := teamEvent{Type: "worker.tool_result", RunID: run.ID, WorkerID: saved.ID, Agent: saved.Agent, Tool: call.Name, ToolCallID: call.ID, DurationMS: &duration, OutputPreview: preview(content)}
 	if outcome.failed {
-		event.Error = eventError(outcome.code, outcome.code)
+		event.Error = eventError(outcome.code, outcome.message)
 	}
 	appendTeamEvent(e.docs(), event)
 	return saved, true
@@ -698,6 +702,26 @@ func (e *teamEngine) gitCredential(starter auth.Principal, run agentteam.Run, gr
 	return secret, nil
 }
 
+// createPushBranch points the local kionga/<run-id>/<name> branch at HEAD, because
+// the manager pushes a local branch of that name and a model never knows the run ID.
+// branch comes from agentteam.BranchName, whose rule allows only letters, digits and
+// . _ - in the name, and is quoted as well. It runs with no credential in the sandbox.
+func (e *teamEngine) createPushBranch(ctx context.Context, sandboxID, repository, branch string) *toolOutcome {
+	out, err := e.s.teamSandbox().Exec(ctx, sandboxID, sandboxExecRequest{
+		Command:        "git -C " + shellQuote(agentteam.RepositoryDir(repository)) + " -c core.fsmonitor=false -c core.hooksPath=/dev/null update-ref " + shellQuote("refs/heads/"+branch) + " HEAD",
+		TimeoutSeconds: 60,
+	})
+	if err != nil {
+		failure := sandboxFailure(err)
+		return &failure
+	}
+	if out.ExitCode != 0 {
+		failure := toolFailure(sandboxGitFailed, "The branch could not be created from HEAD. Clone the repository and commit first. "+strings.TrimSpace(out.Stderr))
+		return &failure
+	}
+	return nil
+}
+
 func (e *teamEngine) executeGit(ctx context.Context, run agentteam.Run, worker agentteam.Worker, lease *teamLease, starter auth.Principal, call agentteam.ToolCall, arguments map[string]any) toolOutcome {
 	member, _ := run.Snapshot.Member(worker.Agent)
 	grants := []agentteam.ToolGrant{}
@@ -746,7 +770,7 @@ func (e *teamEngine) executeGit(ctx context.Context, run agentteam.Run, worker a
 		if err != nil {
 			return sandboxFailure(err)
 		}
-		return toolJSON(map[string]string{"repository": grant.Repository, "commit": commit})
+		return toolJSON(map[string]string{"repository": grant.Repository, "path": agentteam.RepositoryDir(grant.Repository), "commit": commit})
 	case agentteam.ToolGitPush:
 		grant, ok := findGrant(stringArgument(arguments, "repository"))
 		if !ok {
@@ -762,6 +786,9 @@ func (e *teamEngine) executeGit(ctx context.Context, run agentteam.Run, worker a
 		}
 		if credential == "" {
 			return toolFailure("credential_unavailable", "This repository grant has no connection, so it cannot push.")
+		}
+		if failure := e.createPushBranch(ctx, id, grant.Repository, branch); failure != nil {
+			return *failure
 		}
 		pushed, err := sandbox.Push(ctx, id, grant.Repository, branch, credential)
 		if err != nil {
