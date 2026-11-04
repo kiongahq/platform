@@ -107,6 +107,10 @@ program, so it is in no argv, environment or engine inspect output.
 - Push bundles whole history, so a repository over the bundle limit cannot be pushed.
 - A manager crash can leave a helper holding a credential until the reaper removes it,
   at the git timeout plus five minutes, after restart.
+- Under gVisor the pid limit counts the sentry's host threads, not guest processes, and
+  reaching it stops the sandbox rather than failing one fork. CI measured about 130 guest
+  processes at the default of 512. The next call restarts it, so a build with very high
+  process counts should raise `KIONGA_SANDBOX_PIDS`. The memory limit behaves the same.
 - A sandbox restart keeps `/workspace` and loses `/tmp` and running processes.
 - `KIONGA_SANDBOX_MAX_SANDBOXES` is checked then created, so concurrent creates can pass
   it by a few.

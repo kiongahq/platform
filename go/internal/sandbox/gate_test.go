@@ -62,30 +62,36 @@ func TestConfigDefaultsMatchTheSpec(t *testing.T) {
 
 func TestConfigRefusals(t *testing.T) {
 	cases := map[string]map[string]string{
-		"no token":                {"KIONGA_SANDBOX_TOKEN": ""},
-		"short token":             {"KIONGA_SANDBOX_TOKEN": "short"},
-		"short production token":  {"KIONGA_SANDBOX_TOKEN": strings.Repeat("x", 20), "KIONGA_ENVIRONMENT": "production"},
-		"unsafe in production":    {"KIONGA_SANDBOX_ALLOW_UNSAFE_RUNTIME": "1", "KIONGA_ENVIRONMENT": "production"},
-		"unsafe not exactly 1":    {"KIONGA_SANDBOX_ALLOW_UNSAFE_RUNTIME": "true"},
-		"tag image":               {"KIONGA_SANDBOX_IMAGES": "ghcr.io/kiongahq/sandbox-base:latest"},
-		"bare name image":         {"KIONGA_SANDBOX_IMAGES": "debian"},
-		"one bad image of two":    {"KIONGA_SANDBOX_IMAGES": testImage + ",debian"},
-		"bad helper image":        {"KIONGA_SANDBOX_HELPER_IMAGE": "debian:latest"},
-		"pids over ceiling":       {"KIONGA_SANDBOX_PIDS": "4097"},
-		"memory over ceiling":     {"KIONGA_SANDBOX_MEMORY_BYTES": strconv.FormatInt(maxMemoryBytes+1, 10)},
-		"cpus over ceiling":       {"KIONGA_SANDBOX_CPUS": "17"},
-		"tmp over ceiling":        {"KIONGA_SANDBOX_TMP_BYTES": strconv.FormatInt(maxTmpBytes+1, 10)},
-		"ttl over ceiling":        {"KIONGA_SANDBOX_TTL_SECONDS": strconv.Itoa(maxTTLSeconds + 1)},
-		"negative pids":           {"KIONGA_SANDBOX_PIDS": "-1"},
-		"driver":                  {"KIONGA_SANDBOX_DRIVER": "lxc"},
-		"kubernetes no namespace": {"KIONGA_SANDBOX_DRIVER": "kubernetes"},
-		"kubernetes local digest": {"KIONGA_SANDBOX_DRIVER": "kubernetes", "KIONGA_SANDBOX_NAMESPACE": "x", "KIONGA_SANDBOX_IMAGES": "sha256:" + strings.Repeat("a", 64)},
-		"git host with path":      {"KIONGA_SANDBOX_GIT_HOSTS": "github.com/org"},
-		"git host with scheme":    {"KIONGA_SANDBOX_GIT_HOSTS": "https://github.com"},
-		"git network none":        {"KIONGA_SANDBOX_GIT_NETWORK": "none"},
-		"bad prefix":              {"KIONGA_SANDBOX_NAME_PREFIX": "Bad Prefix"},
-		"bad runtime name":        {"KIONGA_SANDBOX_RUNTIME": "run sc;"},
-		"missing git CA":          {"KIONGA_SANDBOX_GIT_CA_FILE": "/nonexistent/ca.pem"},
+		"no token":                        {"KIONGA_SANDBOX_TOKEN": ""},
+		"short token":                     {"KIONGA_SANDBOX_TOKEN": "short"},
+		"short production token":          {"KIONGA_SANDBOX_TOKEN": strings.Repeat("x", 20), "KIONGA_ENVIRONMENT": "production"},
+		"unsafe in production":            {"KIONGA_SANDBOX_ALLOW_UNSAFE_RUNTIME": "1", "KIONGA_ENVIRONMENT": "production"},
+		"unsafe not exactly 1":            {"KIONGA_SANDBOX_ALLOW_UNSAFE_RUNTIME": "true"},
+		"tag image":                       {"KIONGA_SANDBOX_IMAGES": "ghcr.io/kiongahq/sandbox-base:latest"},
+		"bare name image":                 {"KIONGA_SANDBOX_IMAGES": "debian"},
+		"one bad image of two":            {"KIONGA_SANDBOX_IMAGES": testImage + ",debian"},
+		"bad helper image":                {"KIONGA_SANDBOX_HELPER_IMAGE": "debian:latest"},
+		"pids over ceiling":               {"KIONGA_SANDBOX_PIDS": "4097"},
+		"memory over ceiling":             {"KIONGA_SANDBOX_MEMORY_BYTES": strconv.FormatInt(maxMemoryBytes+1, 10)},
+		"cpus over ceiling":               {"KIONGA_SANDBOX_CPUS": "17"},
+		"tmp over ceiling":                {"KIONGA_SANDBOX_TMP_BYTES": strconv.FormatInt(maxTmpBytes+1, 10)},
+		"ttl over ceiling":                {"KIONGA_SANDBOX_TTL_SECONDS": strconv.Itoa(maxTTLSeconds + 1)},
+		"negative pids":                   {"KIONGA_SANDBOX_PIDS": "-1"},
+		"driver":                          {"KIONGA_SANDBOX_DRIVER": "lxc"},
+		"kubernetes no namespace":         {"KIONGA_SANDBOX_DRIVER": "kubernetes"},
+		"kubernetes local digest":         {"KIONGA_SANDBOX_DRIVER": "kubernetes", "KIONGA_SANDBOX_NAMESPACE": "x", "KIONGA_SANDBOX_IMAGES": "sha256:" + strings.Repeat("a", 64)},
+		"git host with path":              {"KIONGA_SANDBOX_GIT_HOSTS": "github.com/org"},
+		"git host with scheme":            {"KIONGA_SANDBOX_GIT_HOSTS": "https://github.com"},
+		"git network none":                {"KIONGA_SANDBOX_GIT_NETWORK": "none"},
+		"git network bridge":              {"KIONGA_SANDBOX_GIT_NETWORK": "bridge"},
+		"git network host":                {"KIONGA_SANDBOX_GIT_NETWORK": "host"},
+		"git network podman":              {"KIONGA_SANDBOX_GIT_NETWORK": "podman"},
+		"git network container":           {"KIONGA_SANDBOX_GIT_NETWORK": "container:gateway"},
+		"private for tests in production": {"KIONGA_SANDBOX_GIT_ALLOW_PRIVATE_FOR_TESTS": "1", "KIONGA_ENVIRONMENT": "production"},
+		"private for tests not exactly 1": {"KIONGA_SANDBOX_GIT_ALLOW_PRIVATE_FOR_TESTS": "true"},
+		"bad prefix":                      {"KIONGA_SANDBOX_NAME_PREFIX": "Bad Prefix"},
+		"bad runtime name":                {"KIONGA_SANDBOX_RUNTIME": "run sc;"},
+		"missing git CA":                  {"KIONGA_SANDBOX_GIT_CA_FILE": "/nonexistent/ca.pem"},
 	}
 	for name, extra := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -137,6 +143,7 @@ type fakeDriver struct {
 	removedVols []string
 	networks    []string
 	networkErr  error
+	inspected   []string
 }
 
 type execCall struct {
@@ -177,6 +184,7 @@ func (f *fakeDriver) Create(_ context.Context, spec ContainerSpec) error {
 func (f *fakeDriver) Inspect(_ context.Context, name string) (Instance, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.inspected = append(f.inspected, name)
 	found, ok := f.instances[name]
 	if !ok {
 		return Instance{}, ErrNotFound
@@ -600,6 +608,9 @@ func TestLookupsRefuseForeignIDsAndContainers(t *testing.T) {
 		if err := service.Delete(context.Background(), id); client.Code(err) != client.CodeNotFound {
 			t.Errorf("delete %q: %v", id, err)
 		}
+	}
+	if len(driver.inspected) != 0 {
+		t.Fatalf("a malformed id reached the engine: %q", driver.inspected)
 	}
 	// A container with the right name but no labels of ours is not a sandbox.
 	id := "sbx-" + strings.Repeat("a", 24)
