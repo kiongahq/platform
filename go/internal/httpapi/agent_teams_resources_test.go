@@ -23,7 +23,7 @@ func TestTeamDefinitionLifecycle(t *testing.T) {
 		}
 		// The contract's defaults are stored.
 		content := created.Content
-		if content.Model != "llm" || content.Workspace != "none" || content.Limits.MaxTurns != 100 || content.Limits.MaxTokens != 200000 || content.Limits.MaxSeconds != 3600 || content.Tools == nil {
+		if content.Model != "llm" || content.Workspace != "none" || content.Limits.MaxTurns != 100 || content.Limits.MaxTokens != 1000000 || content.Limits.MaxSeconds != 3600 || content.Tools == nil {
 			t.Fatalf("defaults: %+v", content)
 		}
 		validateContract(t, "definition", created)
@@ -102,6 +102,9 @@ func TestTeamValidationAtSave(t *testing.T) {
 	}
 	team := decodeTeam[agentTeamDoc](t, h.api("GET", "/api/v1/agent-teams/"+h.team([]string{member}, nil), "", 200))
 	validateContract(t, "team", team)
+	if team.Content.Limits.MaxTokens != 5000000 {
+		t.Fatalf("team default: %d", team.Content.Limits.MaxTokens)
+	}
 }
 
 func TestTeamBodiesAreClosedAndGrantsChecked(t *testing.T) {

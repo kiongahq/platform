@@ -27,7 +27,9 @@ const PlatformModel = "llm"
 // ReservedName is the coordinator's name in a run, so no member can take it.
 const ReservedName = "coordinator"
 
-// DefaultDefinition fills the contract's defaults for omitted fields.
+// DefaultDefinition fills defaults for omitted fields. max_tokens counts provider
+// usage, including context re-sent each turn, so its default is well above one
+// context window. It is inside the contract's limits but above its stated default.
 func DefaultDefinition(d DefinitionContent) DefinitionContent {
 	if d.Model == "" {
 		d.Model = PlatformModel
@@ -42,7 +44,7 @@ func DefaultDefinition(d DefinitionContent) DefinitionContent {
 		d.Limits.MaxTurns = 100
 	}
 	if d.Limits.MaxTokens == 0 {
-		d.Limits.MaxTokens = 200000
+		d.Limits.MaxTokens = 1000000
 	}
 	if d.Limits.MaxSeconds == 0 {
 		d.Limits.MaxSeconds = 3600
@@ -50,7 +52,7 @@ func DefaultDefinition(d DefinitionContent) DefinitionContent {
 	return d
 }
 
-// DefaultTeam fills the contract's defaults for omitted fields.
+// DefaultTeam fills defaults for omitted fields. See DefaultDefinition on max_tokens.
 func DefaultTeam(team TeamContent) TeamContent {
 	if team.Coordinator.Model == "" {
 		team.Coordinator.Model = PlatformModel
@@ -62,7 +64,7 @@ func DefaultTeam(team TeamContent) TeamContent {
 		team.Limits.MaxConcurrentWorkers = 5
 	}
 	if team.Limits.MaxTokens == 0 {
-		team.Limits.MaxTokens = 2000000
+		team.Limits.MaxTokens = 5000000
 	}
 	if team.Limits.MaxSeconds == 0 {
 		team.Limits.MaxSeconds = 14400

@@ -153,7 +153,9 @@ func (s Snapshot) UsesSandbox() bool {
 	return false
 }
 
-// Usage counts model tokens.
+// Usage counts model tokens as the provider reports them. Input tokens include the
+// context re-sent on every turn, because that is real cost, so budgets spend faster
+// than the length of a transcript suggests.
 type Usage struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
