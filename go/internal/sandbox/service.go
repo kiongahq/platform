@@ -420,8 +420,11 @@ func (s *Service) runUser(ctx context.Context, name string, argv []string, timeo
 		Truncated:  stdout.truncated() || stderr.truncated(),
 		DurationMS: s.now().Sub(started).Milliseconds(),
 	}
-	if err == nil {
+	if err == nil && !execDidNotStart(code, result.Stdout, result.Stderr) {
 		return result, nil
+	}
+	if err == nil {
+		err = errors.New("the runtime refused the exec")
 	}
 	if execCtx.Err() != nil {
 		s.killAll(name)
@@ -438,6 +441,15 @@ func (s *Service) runUser(ctx context.Context, name string, argv []string, timeo
 		return s.runUser(ctx, name, argv, timeout, false)
 	}
 	return result, unavailable("the command could not be started in the sandbox")
+}
+
+// execDidNotStart recognises the engine's report that the exec never ran. gVisor stops
+// the whole sandbox when it hits a memory or pid limit, and an exec arriving before the
+// engine notices gets this as ordinary output with an exit code. A command can print the
+// same text, which only earns it a restart of its own sandbox.
+func execDidNotStart(code int, stdout, stderr string) bool {
+	const marker = "OCI runtime exec failed"
+	return code >= 125 && code <= 128 && (strings.HasPrefix(stdout, marker) || strings.HasPrefix(stderr, marker))
 }
 
 // killAll stops everything a timed-out command started. Killing the process group

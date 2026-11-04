@@ -139,6 +139,18 @@ func testSpec() ContainerSpec {
 	return ContainerSpec{Name: "kionga-sandbox-x", Image: testImage, Runtime: "runsc", Labels: map[string]string{"a": "b"}, Command: []string{"/bin/sh", "-c", "x"}, Network: NetworkNone, MemoryBytes: 1, NanoCPUs: 1, Pids: 1, Volume: &VolumeMount{Name: "v", Path: WorkspacePath}}
 }
 
+func TestTmpfsAllowsExecExplicitly(t *testing.T) {
+	spec := testSpec()
+	spec.Tmpfs = []TmpfsMount{{Path: "/run/kionga", SizeBytes: 1024}}
+	options := createBody(spec)["HostConfig"].(map[string]any)["Tmpfs"].(map[string]string)["/run/kionga"]
+	if !strings.Contains(options, "exec") || strings.Contains(options, "noexec") {
+		t.Fatalf("Docker defaults tmpfs to noexec, which stops askpass: %q", options)
+	}
+	if !strings.Contains(options, "nosuid") || !strings.Contains(options, "nodev") {
+		t.Fatalf("%q", options)
+	}
+}
+
 func TestDockerCreatePullsOnlyWhenMissingAndReportsConflict(t *testing.T) {
 	fake := &fakeEngine{createSt: []int{http.StatusNotFound, http.StatusCreated}}
 	driver := engine(t, fake)

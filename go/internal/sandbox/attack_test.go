@@ -225,23 +225,46 @@ func TestAttackKernelIdentityIsGVisor(t *testing.T) {
 	ref := env.sandbox(t)
 	uname := strings.TrimSpace(env.ok(t, ref, "uname -r"))
 	version := env.ok(t, ref, "cat /proc/version")
-	dmesg := env.run(t, ref, "dmesg", 30)
-	t.Logf("uname -r: %s\n/proc/version: %s\ndmesg (exit %d): %s", uname, version, dmesg.ExitCode, firstLines(dmesg.Stdout, 6))
+	t.Logf("uname -r: %s\n/proc/version: %s", uname, version)
 	if os.Getenv("KIONGA_ATTACK_REQUIRE_GVISOR") != "1" {
 		t.Skipf("NOT gVisor: this run uses %s, kernel %s", os.Getenv("KIONGA_ATTACK_RUNTIME"), uname)
 	}
 	if !strings.Contains(uname, defaultExpectKernel) {
 		t.Fatalf("kernel release %q does not identify gVisor", uname)
 	}
-	// The sentry's boot log is the strongest identity available from inside. A host
-	// kernel would not print it, and a hostile process cannot change what this exec reads.
-	if !strings.Contains(strings.ToLower(dmesg.Stdout), "gvisor") {
-		t.Fatalf("dmesg does not identify gVisor: %s", dmesg.Stdout)
+	// From outside as well: the host kernel differs, the engine records the runtime, and
+	// a sentry process is running on the host. dmesg is no use here, because the sandbox
+	// user, with no capabilities, gets an empty log.
+	host, err := exec.Command("uname", "-r").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(host)) == uname {
+		t.Fatalf("the sandbox reports the host kernel %s", uname)
+	}
+	found, err := attackDriver.Inspect(context.Background(), attackPrefix+ref.id)
+	if err != nil || found.Runtime != "runsc" {
+		t.Fatalf("the engine says %+v, %v", found, err)
+	}
+	processes, err := exec.Command("ps", "-eo", "args").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(processes), "runsc-sandbox") {
+		t.Fatalf("no gVisor sentry process on the host:\n%s", processes)
 	}
 	health, err := env.api.Health(context.Background())
 	if err != nil || !health.RuntimeVerified || health.UnsafeRuntime {
 		t.Fatalf("health %+v, err %v", health, err)
 	}
+}
+
+func lastLines(text string, count int) string {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) > count {
+		lines = lines[len(lines)-count:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func firstLines(text string, count int) string {
@@ -412,20 +435,32 @@ try:
             time.sleep(30)
             os._exit(0)
         count += 1
+        if count % 10 == 0:
+            print("forked", count, flush=True)
 except OSError as error:
-    print("fork failed", error)
-print("forked", count, flush=True)
+    print("fork failed", error, flush=True)
+print("finished", count, flush=True)
 os._exit(0)
 PY`, 60)
-	t.Logf("%+v", counted)
+	t.Logf("exit %d, timed_out %v, stderr %q, tail %q", counted.ExitCode, counted.TimedOut, firstLines(counted.Stderr, 2), lastLines(counted.Stdout, 3))
+	// Two bounded outcomes are correct. The kernel refuses the fork with EAGAIN, or, under
+	// gVisor, the limit stops the sentry and with it the whole sandbox. Running past the
+	// limit is the failure.
 	var forked int
 	for _, line := range strings.Split(counted.Stdout, "\n") {
-		if value, ok := strings.CutPrefix(line, "forked "); ok {
-			forked, _ = strconv.Atoi(strings.TrimSpace(value))
+		fields := strings.Fields(line)
+		if len(fields) == 2 && (fields[0] == "forked" || fields[0] == "finished") {
+			forked, _ = strconv.Atoi(fields[1])
 		}
 	}
-	if forked == 0 || forked > int(defaultPids) {
-		t.Fatalf("forked %d processes, the limit is %d: %+v", forked, defaultPids, counted)
+	if forked > int(defaultPids) {
+		t.Fatalf("forked %d processes, the limit is %d", forked, defaultPids)
+	}
+	if strings.Contains(counted.Stdout, "finished 3000") {
+		t.Fatalf("all 3000 forks succeeded: %+v", counted)
+	}
+	if again := env.run(t, ref, "echo alive", 60); !strings.Contains(again.Stdout, "alive") {
+		t.Fatalf("the sandbox did not recover after the fork loop: %+v", again)
 	}
 	// A real bomb. It may hold the limit until the timeout, and the sandbox must come back.
 	bomb := env.run(t, ref, `bomb() { bomb | bomb & }; bomb; sleep 60`, 8)
@@ -1232,7 +1267,7 @@ func TestAttackHelperUsesPinnedAddressOnItsOwnNetwork(t *testing.T) {
 	if _, ok := helper.NetworkSettings.Networks[attackPrefix+"git"]; !ok || len(helper.NetworkSettings.Networks) != 1 {
 		t.Fatalf("the helper must be on its dedicated network and no other: %v", helper.NetworkSettings.Networks)
 	}
-	if strings.Contains(inspected[0], `"bridge"`) && helper.HostConfig.NetworkMode == "bridge" {
+	if _, ok := helper.NetworkSettings.Networks["bridge"]; ok {
 		t.Fatal("the helper is on the default bridge")
 	}
 	assertNoHelpers(t, ctx)

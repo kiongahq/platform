@@ -1346,6 +1346,28 @@ func TestExecThatCannotStartRestartsOnceThenFails(t *testing.T) {
 	}
 }
 
+func TestStoppedRuntimeReportedAsOutputRestartsAndRetries(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := createTest(t, service)
+	attempts := 0
+	driver.onExec = func(_ execCall, request ExecRequest) (int, error) {
+		attempts++
+		if attempts == 1 {
+			_, _ = io.WriteString(request.Stdout, "OCI runtime exec failed: cannot execute in container in state stopped\n")
+			return 128, nil
+		}
+		_, _ = io.WriteString(request.Stdout, "alive")
+		return 0, nil
+	}
+	result, err := service.Exec(context.Background(), id, client.ExecRequest{Command: "echo alive"})
+	if err != nil || result.Stdout != "alive" || len(driver.restarted) != 1 {
+		t.Fatalf("%+v, %v, restarts %v", result, err, driver.restarted)
+	}
+	if execDidNotStart(0, "OCI runtime exec failed", "") || execDidNotStart(128, "a command's own output", "") {
+		t.Fatal("ordinary results must not read as a failed start")
+	}
+}
+
 func TestDeleteRemovesHelpersContainerAndVolume(t *testing.T) {
 	service, driver, _ := newTestService(t, nil)
 	id := createTest(t, service)

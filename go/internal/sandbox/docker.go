@@ -133,8 +133,10 @@ func createBody(spec ContainerSpec) map[string]any {
 	tmpfs := map[string]string{}
 	for _, mount := range spec.Tmpfs {
 		// No uid= option: Podman's compatibility API refuses it. Mode 1777 lets the fixed
-		// non-root user write, and scripts create anything private with umask 077.
-		tmpfs[mount.Path] = fmt.Sprintf("rw,nosuid,nodev,size=%d,mode=1777", mount.SizeBytes)
+		// non-root user write, and scripts create anything private with umask 077. exec is
+		// explicit because Docker's default is noexec, and Podman's is not: the askpass
+		// program runs from here, and agents build and run programs in /tmp.
+		tmpfs[mount.Path] = fmt.Sprintf("rw,exec,nosuid,nodev,size=%d,mode=1777", mount.SizeBytes)
 	}
 	mounts := []map[string]any{}
 	if spec.Volume != nil {
