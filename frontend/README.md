@@ -34,6 +34,11 @@ remain available:
 KIONGA_GATEWAY_URL=http://127.0.0.1:8080 npm run dev --prefix frontend -- --port 3001
 ```
 
+To see the agent teams console with canned data and no stack, run
+`node frontend/tests/fixtures/teams-mock-gateway.mjs 18917`, set
+`KIONGA_GATEWAY_URL=http://127.0.0.1:18917` for the dev server and open it through
+`http://localhost`; Next.js refuses development assets on `127.0.0.1`.
+
 Use the stack's published gateway port if it differs from `8080`. `make run`
 starts a separate gateway with its own configuration; it does not start or
 discover Compose services automatically. Langflow requires the local Compose

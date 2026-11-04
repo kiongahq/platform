@@ -813,6 +813,7 @@ test("the unavailable banner appears from any of the gateway's three signals, an
   assert.equal(sandboxNotice(run, [], [{ seq: 1, type: "worker.message", message_preview: "the word sandbox_unavailable in chat" }]), null, "an agent's own words cannot raise the banner");
   assert.equal(sandboxNotice(run, [], [{ seq: 1, type: "worker.tool_result", output_preview: "grep found sandbox_unavailable in a log" }]), null, "command output cannot raise the banner");
 
+  assert.doesNotMatch(sandboxNotice({ ...run, sandbox: { available: false, reason: "sandbox_unavailable" } }, [], [])?.detail || "", /sandbox_unavailable/, "a bare code is not shown as prose");
   const outage = { seq: 1, type: "worker.tool_result", error: { code: "sandbox_unavailable", message: "down" } };
   assert.equal(sandboxNotice(run, [], [outage, { seq: 2, type: "run.resumed", resume_count: 1 }]), null, "a resume clears an old outage");
   assert.equal(sandboxNotice(run, [], [outage, { seq: 2, type: "run.resumed", resume_count: 1 }, { ...outage, seq: 3 }])?.kind, "unavailable", "a new outage after the resume counts");

@@ -107,7 +107,7 @@ export function sandboxNotice(
     return {
       kind: "unavailable",
       title: "Sandbox unavailable",
-      detail: `${state?.reason ? `${state.reason} ` : ""}Workers that need a code workspace cannot run code. Agents without a sandbox are not affected. Ask an operator to check the sandbox manager and its runtime, then resume the run.`,
+      detail: `${state?.reason && state.reason !== SANDBOX_UNAVAILABLE ? `${state.reason} ` : ""}Workers that need a code workspace cannot run code. Agents without a sandbox are not affected. Ask an operator to check the sandbox manager and its runtime, then resume the run.`,
     };
   if (state?.unsafe_runtime || state?.runtime_verified === false)
     return {

@@ -43,7 +43,14 @@ function ResourceGroup({
 }) {
   const permitted = !source.service || hasService(identity, source.service);
   const query = useQuery<unknown>(permitted && project ? source.path : null);
-  const available = items<ProjectResource>(query.data).filter((item) => inProject(item, project));
+  // A tool registered in several versions is one grant, because grants go by name.
+  const available = [
+    ...new Map(
+      items<ProjectResource>(query.data)
+        .filter((item) => inProject(item, project))
+        .map((item) => [refOf(source.kind, item), item]),
+    ).values(),
+  ];
   const refs = new Set(available.map((item) => refOf(source.kind, item)));
   const selected = tools.flatMap((tool) => (tool.kind === source.kind ? [tool.ref] : []));
   const toggle = (ref: string, checked: boolean) =>

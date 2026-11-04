@@ -177,7 +177,7 @@ function runRoutes(request, response, path, query, body) {
   }
   if (section === "events" && child === "stream") {
     response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store" });
-    response.flushHeaders();
+    response.write(": connected\n\n");
     const after = Number(query.get("after") ?? -1);
     for (const event of run.log) if (event.seq > after) response.write(`id: ${event.seq}\nevent: run\ndata: ${JSON.stringify(event)}\n\n`);
     if (done) {
