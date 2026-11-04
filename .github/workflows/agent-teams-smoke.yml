@@ -1,0 +1,102 @@
+name: Agent Teams smoke
+
+# The real gateway, designer runner and sandbox manager together, under real gVisor,
+# driven only through the HTTP API. It is the only place these parts meet with no fakes.
+# Docker is on the runner, not a developer's machine, because a Podman machine has no
+# gVisor. The result names the one test allowance it needs: helpers may reach a private
+# git server, which production refuses.
+on:
+  push:
+    branches: [main, test/agent-teams-smoke]
+    paths: &paths
+      - go/internal/agentteam/**
+      - go/internal/httpapi/agent_teams*
+      - go/internal/sandbox/**
+      - go/cmd/sandbox-manager/**
+      - go/cmd/gateway/**
+      - deploy/sandbox/**
+      - contracts
+      - scripts/ci-install-runsc.sh
+      - scripts/agent-teams-smoke.sh
+      - scripts/agent_teams_smoke*.py
+      - .github/workflows/agent-teams-smoke.yml
+  pull_request:
+    paths: *paths
+  workflow_dispatch:
+    inputs:
+      runtime_ref:
+        description: kiongahq/agent-runtime ref. Fall back to main once feat/agent-turns merges.
+        default: feat/agent-turns
+        type: string
+      scenarios:
+        description: Comma-separated scenario numbers. Empty runs them all; a subset reports INCOMPLETE.
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-teams-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      RUNTIME_REF: ${{ inputs.runtime_ref || 'feat/agent-turns' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          submodules: true
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: kiongahq/agent-runtime
+          ref: ${{ env.RUNTIME_REF }}
+          path: .smoke/agent-runtime
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Install the designer runner as its repository documents
+        working-directory: .smoke/agent-runtime
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --quiet -r requirements-dev.txt
+          .venv/bin/pip list 2>/dev/null | grep -i -E '^(mlaiops-sdk|jsonschema|langchain-core) '
+          git rev-parse HEAD
+      - name: Install pinned, checksum-verified gVisor
+        run: sudo scripts/ci-install-runsc.sh
+      - name: Register runsc with Docker
+        run: |
+          sudo /opt/gvisor/runsc install -- --oci-seccomp
+          sudo systemctl restart docker
+          docker info --format '{{json .Runtimes}}'
+      - name: Start PostgreSQL, the gateway's production store
+        run: |
+          sudo systemctl start postgresql
+          sudo -u postgres psql -c "CREATE USER kionga_smoke PASSWORD 'kionga-smoke-local' CREATEDB"
+          sudo -u postgres psql -c "CREATE DATABASE kionga_smoke OWNER kionga_smoke"
+      - name: Agent Teams smoke
+        env:
+          AGENT_RUNTIME_DIR: .smoke/agent-runtime
+          DATABASE_URL: postgres://kionga_smoke:kionga-smoke-local@127.0.0.1:5432/kionga_smoke?sslmode=disable
+          KIONGA_SMOKE_WORK: ${{ runner.temp }}/agent-teams-smoke
+          KIONGA_SMOKE_CAN_SUDO: "1"
+          KIONGA_SMOKE_SCENARIOS: ${{ inputs.scenarios }}
+        run: scripts/agent-teams-smoke.sh
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: agent-teams-smoke
+          path: |
+            ${{ runner.temp }}/agent-teams-smoke/*.log
+            ${{ runner.temp }}/agent-teams-smoke/results.json
+          if-no-files-found: warn
