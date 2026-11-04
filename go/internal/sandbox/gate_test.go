@@ -114,8 +114,7 @@ func TestConfigAcceptsCommaSeparatedListsAndEmptyImages(t *testing.T) {
 	}
 }
 
-func TestProductionTokenSecretNameIsRegistered(t *testing.T) {
-	// runtimeconfig has to know the name for KIONGA_SANDBOX_TOKEN_FILE to work.
+func TestManagerRefusesToStartWithoutAToken(t *testing.T) {
 	if _, err := LoadConfig(env(map[string]string{"KIONGA_SANDBOX_IMAGES": testImage})); err == nil {
 		t.Fatal("the manager must refuse to start without a token")
 	}
