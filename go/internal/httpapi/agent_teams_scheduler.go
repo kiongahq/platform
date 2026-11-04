@@ -784,7 +784,7 @@ func (e *teamEngine) notifyCoordinator(run agentteam.Run, worker agentteam.Worke
 	if worker.Status == agentteam.WorkerFailed {
 		body = fmt.Sprintf("Worker %s (%s) failed: %s: %s", worker.ID, worker.Agent, worker.LastError, worker.LastErrorMessage)
 	}
-	id := worker.ID + ":notify:" + worker.UpdatedAt.Format(time.RFC3339Nano)
+	id := fmt.Sprintf("%s:notify:%d", worker.ID, worker.CompletionGeneration)
 	_, err := store.UpdateDoc(e.docs(), teamWorkerKind, run.CoordinatorID, func(current agentteam.Worker, exists bool) (agentteam.Worker, error) {
 		if !exists {
 			return current, store.ErrNotFound
@@ -799,7 +799,7 @@ func (e *teamEngine) notifyCoordinator(run agentteam.Run, worker agentteam.Worke
 		return
 	}
 	_, err = store.UpdateDoc(e.docs(), teamWorkerKind, worker.ID, func(current agentteam.Worker, exists bool) (agentteam.Worker, error) {
-		if !exists || !current.NotifyPending {
+		if !exists || !current.NotifyPending || current.CompletionGeneration != worker.CompletionGeneration {
 			return current, store.ErrSkipWrite
 		}
 		current.NotifyPending = false

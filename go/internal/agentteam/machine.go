@@ -272,6 +272,7 @@ func RepositoryDir(repository string) string {
 func Fail(w *Worker, code, message string, resumable bool) {
 	w.Status, w.LastError, w.LastErrorMessage, w.LastErrorResumable = WorkerFailed, code, message, resumable
 	w.NextAttemptAt = nil
+	w.CompletionGeneration++
 	w.NotifyPending = w.Role != RoleCoordinator
 }
 
@@ -280,6 +281,7 @@ func Complete(w *Worker, report string) {
 	w.Status, w.Report = WorkerCompleted, report
 	w.LastError, w.LastErrorMessage, w.LastErrorResumable = "", "", false
 	w.NextAttemptAt = nil
+	w.CompletionGeneration++
 	w.NotifyPending = w.Role != RoleCoordinator
 }
 
