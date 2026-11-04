@@ -138,6 +138,16 @@ export function approvalOrigin(approval: Approval, events: RunEvent[]) {
 }
 export const messageFeed = (events: RunEvent[]) =>
   events.filter((event) => event.type === "worker.message");
+const FRAME = /^\s*<kionga-data source="([^"]*)" kind="([^"]*)" nonce="[^"]*">([\s\S]*)<\/kionga-data>\s*$/;
+/**
+ * Reads the gateway's provenance wrapper so a transcript can name the sender. Only the outermost
+ * wrapper counts. A second real closing tag means this is not one frame, so the text stays as received.
+ */
+export function unframe(text: string): { source?: string; kind?: string; body: string } {
+  const match = FRAME.exec(text);
+  if (!match || match[3].includes("</kionga-data>")) return { body: text };
+  return { source: match[1], kind: match[2], body: match[3] };
+}
 export type TranscriptEntry =
   | { type: "message"; role: string; content: string }
   | { type: "tool"; call: ToolCall; result?: string };
@@ -148,12 +158,13 @@ export function transcriptEntries(transcript: TranscriptMessage[] = []): Transcr
   for (const message of transcript) {
     if (message.role === "tool") {
       const call = message.tool_call_id ? open.get(message.tool_call_id) : undefined;
-      if (call) call.result = message.content || "";
+      const result = unframe(message.content || "").body;
+      if (call) call.result = result;
       else
         entries.push({
           type: "tool",
           call: { id: message.tool_call_id || "", name: "Tool result" },
-          result: message.content || "",
+          result,
         });
       continue;
     }

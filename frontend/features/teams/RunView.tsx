@@ -22,6 +22,7 @@ import {
   sandboxNotice,
   tokens,
   transcriptEntries,
+  unframe,
   workerIssue,
 } from "./runState";
 import { ConfirmDialog, NOT_REPORTED, PlainText, formatTime, searchParam, setSearchParam } from "./shared";
@@ -256,6 +257,15 @@ function ApprovalCard({ approval, origin, worker, writable, onDecided }: { appro
     </article>
   );
 }
+/** The sender comes from the gateway's wrapper, which a model cannot set. */
+const deliveredFrom = (source?: string) =>
+  source === "person"
+    ? "From a person"
+    : source === "coordinator"
+      ? "From the coordinator"
+      : source?.startsWith("worker:")
+        ? `From ${source.slice("worker:".length)}`
+        : "Delivered to worker";
 function Transcript({ runId, worker, events }: { runId: string; worker: TeamWorker; events: RunEvent[] }) {
   const [detail, setDetail] = useState<TeamWorker | null>(null),
     [error, setError] = useState(""),
@@ -298,8 +308,8 @@ function Transcript({ runId, worker, events }: { runId: string; worker: TeamWork
         {entries.map((entry, index) =>
           entry.type === "message" ? (
             <li key={index} data-role={entry.role}>
-              <b>{entry.role === "assistant" ? worker.agent : entry.role === "user" ? "Delivered to worker" : entry.role}</b>
-              <PlainText>{entry.content}</PlainText>
+              <b>{entry.role === "assistant" ? worker.agent : entry.role === "user" ? deliveredFrom(unframe(entry.content).source) : entry.role}</b>
+              <PlainText>{entry.role === "user" ? unframe(entry.content).body : entry.content}</PlainText>
             </li>
           ) : (
             <li key={index} data-role="tool" data-tool-call={entry.call.id}>
