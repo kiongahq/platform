@@ -642,8 +642,8 @@ func (e *teamEngine) gitCredential(starter auth.Principal, run agentteam.Run, gr
 	if connection.SecretRef == "none" {
 		return "", nil
 	}
-	secret, err := connectionSecrets.resolve(connection.SecretRef)
-	if err != nil || secret == "" {
+	secret := connectionSecrets.Value(connection.SecretRef)
+	if secret == "" {
 		unavailable := toolFailure("credential_unavailable", "The connection's credential is not available.")
 		return "", &unavailable
 	}
