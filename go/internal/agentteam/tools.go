@@ -151,8 +151,8 @@ func ToolsFor(snapshot Snapshot, role, agent string) []Tool {
 		case "connection":
 			tools = append(tools, grantTool("connection", "connection", grant.Ref, "Call API connection "+grant.Ref+" with a JSON body. Needs a person's approval.", ClassSideEffect, anyInput))
 		case "knowledge":
-			tools = append(tools, grantTool("knowledge", "knowledge", grant.Ref, "Search knowledge base "+grant.Ref+" with an embedding vector.", ClassReadOnly,
-				object([]string{"vector"}, map[string]any{"vector": map[string]any{"type": "array", "items": map[string]any{"type": "number"}}, "limit": integer()})))
+			tools = append(tools, grantTool("knowledge", "knowledge", grant.Ref, "Search knowledge base "+grant.Ref+" for text matching your query.", ClassReadOnly,
+				object([]string{"query"}, map[string]any{"query": text(), "limit": integer()})))
 		case "dataset":
 			tools = append(tools, grantTool("dataset", "dataset", grant.Ref, "List objects, or read one by key, in dataset "+grant.Ref+".", ClassReadOnly,
 				object([]string{}, map[string]any{"prefix": text(), "key": text()})))

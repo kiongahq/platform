@@ -2448,8 +2448,10 @@ func TestTeamRegisteredToolWithoutAFunctionSaysSo(t *testing.T) {
 }
 
 func TestTeamKnowledgeToolRunsAsTheStarter(t *testing.T) {
+	var queries atomic.Int64
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/points/query") {
+			queries.Add(1)
 			_, _ = w.Write([]byte(`{"result":{"points":[{"id":"p","score":0.9,"payload":{"text":"a known fact"}}]}}`))
 			return
 		}
@@ -2466,20 +2468,51 @@ func TestTeamKnowledgeToolRunsAsTheStarter(t *testing.T) {
 	team := h.team([]string{h.definition("one", func(body map[string]any) {
 		body["tools"] = []map[string]any{{"kind": "knowledge", "ref": id}}
 	})}, nil)
-	var noVector, found string
+	var noQuery, found, punctuation, skewed, failed string
 	h.runner.set(workerScript("one", func(_ context.Context, request turnRequest) (turnResponse, error) {
+		ask := func(query string) (turnResponse, error) {
+			return reply("", toolCall("knowledge_"+id, map[string]any{"query": query})), nil
+		}
 		switch request.Turn {
 		case 1:
 			return reply("", toolCall("knowledge_"+id, map[string]any{})), nil
 		case 2:
-			noVector = lastMessage(request)
-			return reply("", toolCall("knowledge_"+id, map[string]any{"vector": []float64{1, 0}})), nil
+			noQuery = lastMessage(request)
+			return ask("what do we know")
+		case 3:
+			found = lastMessage(request)
+			return ask("?!")
+		case 4:
+			punctuation = lastMessage(request)
+			h.runner.mu.Lock()
+			h.runner.embedSkew = 1
+			h.runner.mu.Unlock()
+			return ask("wrong size")
+		case 5:
+			skewed = lastMessage(request)
+			h.runner.mu.Lock()
+			h.runner.embedSkew = 0
+			h.runner.embedErr = errors.New("runner down")
+			h.runner.mu.Unlock()
+			return ask("again")
 		}
-		found = lastMessage(request)
+		failed = lastMessage(request)
 		return reply("", finishCall("done")), nil
 	}))
 	h.drive(h.start(team, false))
-	if !strings.Contains(noVector, "embedding_required") || !strings.Contains(found, "a known fact") {
-		t.Fatalf("noVector=%s found=%s", noVector, found)
+	if !strings.Contains(noQuery, agentteam.ErrInvalidArguments) || !strings.Contains(found, "a known fact") {
+		t.Fatalf("noQuery=%s found=%s", noQuery, found)
+	}
+	if !strings.Contains(punctuation, `{"items":[]}`) {
+		t.Fatalf("all-zero vector: %s", punctuation)
+	}
+	if !strings.Contains(skewed, agentteam.ErrEmbeddingUnavailable) || !strings.Contains(failed, agentteam.ErrEmbeddingUnavailable) {
+		t.Fatalf("skewed=%s failed=%s", skewed, failed)
+	}
+	if got := queries.Load(); got != 1 {
+		t.Fatalf("searched %d times; only the real query should reach the backend", got)
+	}
+	if got := strings.Join(h.runner.embeds, ","); !strings.HasPrefix(got, "what do we know/2,") {
+		t.Fatalf("embeds: %s", got)
 	}
 }

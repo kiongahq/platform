@@ -71,6 +71,10 @@ type fakeRunner struct {
 	seen     map[string]int
 	current  int
 	peak     map[string]int
+	embeds   []string
+	embedErr error
+	// embedSkew makes Embed return the wrong number of dimensions.
+	embedSkew int
 }
 
 func (f *fakeRunner) Turn(ctx context.Context, request turnRequest) (turnResponse, error) {
@@ -92,6 +96,21 @@ func (f *fakeRunner) Turn(ctx context.Context, request turnRequest) (turnRespons
 		f.mu.Unlock()
 	}()
 	return script(ctx, request)
+}
+
+// Embed is deterministic, so a test can check dimensions and the search it drove.
+func (f *fakeRunner) Embed(_ context.Context, text string, dimensions int) ([]float64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.embeds = append(f.embeds, fmt.Sprintf("%s/%d", text, dimensions))
+	if f.embedErr != nil {
+		return nil, f.embedErr
+	}
+	vector := make([]float64, dimensions+f.embedSkew)
+	if text != "?!" {
+		vector[0] = 1
+	}
+	return vector, nil
 }
 
 func (f *fakeRunner) requests() []turnRequest {
@@ -474,6 +493,7 @@ func contractSchema(t *testing.T, name string) *jsonschema.Schema {
 		base := "../../../contracts/agent-team/"
 		ids := map[string]string{
 			"event": "team-run-event.v1.schema.json", "turn-request": "runner-turn-request.v1.schema.json", "turn-response": "runner-turn-response.v1.schema.json",
+			"embed-request": "runner-embedding-request.v1.schema.json", "embed-response": "runner-embedding-response.v1.schema.json",
 			"definition": "agent-definition.v1.schema.json", "team": "team.v1.schema.json", "sandbox-api": "sandbox-api.v1.schema.json",
 		}
 		for key, file := range ids {

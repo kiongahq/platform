@@ -247,7 +247,7 @@ func TestTeamEndToEndOverHTTPClients(t *testing.T) {
 }
 
 func TestTeamTurnTimeoutOutlastsTheRunner(t *testing.T) {
-	cases := map[string]time.Duration{"": 630 * time.Second, "900": 930 * time.Second, "junk": 630 * time.Second, "-5": 630 * time.Second}
+	cases := map[string]time.Duration{"": 630 * time.Second, "600": 630 * time.Second, "900": 930 * time.Second, "junk": 630 * time.Second, "-5": 630 * time.Second}
 	for value, want := range cases {
 		t.Setenv("KIONGA_AGENT_TURN_TIMEOUT_SECONDS", value)
 		if got := teamTurnTimeout(); got != want {
@@ -319,5 +319,55 @@ func TestTeamSandboxTokenFromFileAndNeverEmpty(t *testing.T) {
 	}
 	if len(seen) != 1 || seen[0] != "Bearer "+token {
 		t.Fatalf("authorization: %v", seen)
+	}
+}
+
+func TestTeamHTTPRunnerEmbed(t *testing.T) {
+	token := "runner-" + "test-value"
+	t.Setenv("KIONGA_AGENT_DESIGNER_RUNNER_TOKEN", token)
+	reply := `{"vector":[0.5,0.5]}`
+	status := 200
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/embeddings" || r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer "+token {
+			t.Errorf("%s %s", r.Method, r.URL.Path)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		validateContract(t, "embed-request", json.RawMessage(raw))
+		_ = json.Unmarshal(raw, &body)
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, reply)
+	}))
+	defer server.Close()
+	t.Setenv("KIONGA_AGENT_DESIGNER_RUNNER_URL", server.URL)
+	validateContract(t, "embed-response", json.RawMessage(reply))
+	vector, err := (httpTeamRunner{}).Embed(context.Background(), "query text", 2)
+	if err != nil || len(vector) != 2 || body["text"] != "query text" || body["dimensions"] != float64(2) {
+		t.Fatalf("%v %v %v", vector, err, body)
+	}
+	if _, err := (httpTeamRunner{}).Embed(context.Background(), "x", 3); err == nil {
+		t.Fatal("wrong dimensions accepted")
+	}
+	status = 500
+	if _, err := (httpTeamRunner{}).Embed(context.Background(), "x", 2); err == nil {
+		t.Fatal("500 accepted")
+	}
+	t.Setenv("KIONGA_AGENT_DESIGNER_RUNNER_URL", "")
+	if _, err := (httpTeamRunner{}).Embed(context.Background(), "x", 2); err == nil {
+		t.Fatal("unconfigured runner accepted")
+	}
+}
+
+// The runner is strictly typed, so turn must be a JSON number.
+func TestTeamTurnIsAJSONNumber(t *testing.T) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(mustRaw(t, turnRequest{Turn: 3}), &fields); err != nil {
+		t.Fatal(err)
+	}
+	if string(fields["turn"]) != "3" {
+		t.Fatalf("turn: %s", fields["turn"])
+	}
+	if string(fields["tools"]) == "" || string(fields["max_output_tokens"]) != "0" {
+		t.Fatalf("%v", fields)
 	}
 }

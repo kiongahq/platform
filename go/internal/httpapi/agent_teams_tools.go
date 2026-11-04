@@ -219,19 +219,7 @@ func (e *teamEngine) execute(ctx context.Context, run agentteam.Run, worker agen
 		}
 		return internalCall(ctx, starter, e.s.invokeAgentAPIConnection, http.MethodPost, "/api/v1/agent-api-connections/"+tool.Ref+"/invoke", map[string]string{"id": tool.Ref}, nil, raw)
 	case "knowledge":
-		limit := 5
-		if value, ok := arguments["limit"].(float64); ok {
-			limit = int(value)
-		}
-		vector, ok := arguments["vector"].([]any)
-		if !ok {
-			return toolFailure("embedding_required", "This tool searches by embedding vector, and the gateway does not embed text.")
-		}
-		raw, err := json.Marshal(map[string]any{"vector": vector, "limit": limit})
-		if err != nil {
-			return toolFailure(agentteam.ErrInvalidArguments, "The vector could not be encoded.")
-		}
-		return internalCall(ctx, starter, e.s.searchKnowledge, http.MethodPost, "/api/v1/knowledge-bases/"+tool.Ref+"/search", map[string]string{"id": tool.Ref}, nil, raw)
+		return e.searchKnowledgeTool(ctx, starter, tool, arguments)
 	case "dataset":
 		if key := stringArgument(arguments, "key"); key != "" {
 			return internalCall(ctx, starter, e.s.datasetObject, http.MethodGet, "/api/v1/datasets/"+tool.Ref+"/object", map[string]string{"id": tool.Ref}, url.Values{"key": {key}}, nil)
@@ -267,6 +255,41 @@ func (e *teamEngine) invokeRegisteredTool(ctx context.Context, starter auth.Prin
 		return toolFailure(agentteam.ErrToolNoFunction, "Registered tools run as functions, and no function runtime is configured on this platform.")
 	}
 	return outcome
+}
+
+// searchKnowledgeTool embeds the model's query with the runner, at the base's own
+// dimensions, then searches through the existing handler as the starter. An all-zero
+// vector means the text had nothing to embed, such as only punctuation, so there is
+// nothing to search for and the result is empty rather than an error.
+func (e *teamEngine) searchKnowledgeTool(ctx context.Context, starter auth.Principal, tool agentteam.Tool, arguments map[string]any) toolOutcome {
+	query := strings.TrimSpace(stringArgument(arguments, "query"))
+	if query == "" || utf8.RuneCountInString(query) > 32000 {
+		return toolFailure(agentteam.ErrInvalidArguments, "query is required, at most 32000 characters.")
+	}
+	limit := 5
+	if value, ok := arguments["limit"].(float64); ok {
+		limit = int(value)
+	}
+	base, err := store.GetDoc[knowledgeBase](e.docs(), knowledgeKind, tool.Ref)
+	if err != nil {
+		return toolFailure(agentteam.ErrAccessDenied, "This knowledge base is not available.")
+	}
+	vector, err := e.s.teamRunnerFor().Embed(ctx, query, base.Dimensions)
+	if err != nil || len(vector) != base.Dimensions {
+		return toolFailure(agentteam.ErrEmbeddingUnavailable, "The query could not be embedded; try again.")
+	}
+	zero := true
+	for _, value := range vector {
+		zero = zero && value == 0
+	}
+	if zero {
+		return toolJSON(map[string]any{"items": []any{}})
+	}
+	raw, err := json.Marshal(map[string]any{"vector": vector, "limit": limit})
+	if err != nil {
+		return toolFailure(agentteam.ErrInvalidArguments, "The query could not be encoded.")
+	}
+	return internalCall(ctx, starter, e.s.searchKnowledge, http.MethodPost, "/api/v1/knowledge-bases/"+tool.Ref+"/search", map[string]string{"id": tool.Ref}, nil, raw)
 }
 
 // bufferedResponse captures an existing handler's reply.

@@ -70,12 +70,15 @@ type turnResponse struct {
 // failure is a 200 with Error set, as the contract defines.
 type teamRunner interface {
 	Turn(ctx context.Context, request turnRequest) (turnResponse, error)
+	// Embed returns a query vector from the embedder designer knowledge nodes use.
+	Embed(ctx context.Context, text string, dimensions int) ([]float64, error)
 }
 
 type httpTeamRunner struct{}
 
-// teamTurnTimeout outlasts the runner's own limit, so the runner reports a slow
-// provider as an error body instead of the gateway cutting the call off.
+// teamTurnTimeout derives from the runner's own limit plus a 30 s margin, so the
+// runner reports a slow provider as an error body instead of the gateway cutting the
+// call off. The order is runner 600 s, gateway 630 s, trace-proxy 660 s.
 func teamTurnTimeout() time.Duration {
 	seconds := 600
 	if value, err := strconv.Atoi(strings.TrimSpace(os.Getenv("KIONGA_AGENT_TURN_TIMEOUT_SECONDS"))); err == nil && value > 0 && value <= 86400 {
@@ -118,6 +121,48 @@ func (httpTeamRunner) Turn(ctx context.Context, request turnRequest) (turnRespon
 		return turnResponse{}, errors.New("runner returned an invalid response")
 	}
 	return parsed, nil
+}
+
+func (httpTeamRunner) Embed(ctx context.Context, text string, dimensions int) ([]float64, error) {
+	base := runnerURL()
+	if base == "" {
+		return nil, errors.New("KIONGA_AGENT_DESIGNER_RUNNER_URL is not set")
+	}
+	body, err := json.Marshal(map[string]any{"text": text, "dimensions": dimensions})
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	call, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/embeddings", bytes.NewReader(body)) // #nosec G704 -- runner URL is operator configuration
+	if err != nil {
+		return nil, err
+	}
+	call.Header.Set("Content-Type", "application/json")
+	call.Header.Set("Authorization", "Bearer "+os.Getenv("KIONGA_AGENT_DESIGNER_RUNNER_TOKEN"))
+	response, err := runner.client.Do(call) // #nosec G704 -- fixed operator-configured runner, redirects disabled
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("runner returned %d", response.StatusCode)
+	}
+	var parsed struct {
+		Vector []float64 `json:"vector"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil, errors.New("runner returned an invalid response")
+	}
+	// The contract's schema cannot compare the two.
+	if len(parsed.Vector) != dimensions {
+		return nil, fmt.Errorf("runner returned %d dimensions, want %d", len(parsed.Vector), dimensions)
+	}
+	return parsed.Vector, nil
 }
 
 // --- Sandbox manager: contracts agent-team/sandbox-api.v1 ---
