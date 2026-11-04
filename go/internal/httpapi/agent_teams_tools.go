@@ -821,3 +821,16 @@ func (e *teamEngine) executeGit(ctx context.Context, run agentteam.Run, worker a
 	}
 	return toolFailure(agentteam.ErrUnknownTool, "You do not have this tool.")
 }
+
+// Pending arguments retain executable values until a result (including crash
+// recovery's unknown outcome) is recorded. Scrub settled calls in that same write.
+func redactSettledArguments(worker *agentteam.Worker) {
+	for i := range worker.Transcript {
+		for j := range worker.Transcript[i].ToolCalls {
+			call := &worker.Transcript[i].ToolCalls[j]
+			if call.Status == agentteam.CallDone || call.Status == agentteam.CallError {
+				call.Arguments = redactArguments(call.Arguments)
+			}
+		}
+	}
+}

@@ -182,7 +182,7 @@ func (s *Server) createTeamRun(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	_, profileErr := s.store.AccessFor(caller.Subject)
 	run := agentteam.Run{
-		ID: runID, ProjectID: team.ProjectID, TeamID: team.ID, Input: req.Input, AllowSideEffects: req.AllowSideEffects,
+		ID: runID, ProjectID: team.ProjectID, TeamID: team.ID, Input: redact.String(req.Input), AllowSideEffects: req.AllowSideEffects,
 		IdempotencyKey: req.IdempotencyKey, Subject: caller.Subject, Roles: caller.Roles, HadProfile: profileErr == nil,
 		Status: agentteam.RunRunning, Snapshot: snapshot, ContentSHA256: digest, CoordinatorID: coordinatorID,
 		WorkerIDs: []string{coordinatorID}, CreatedAt: now, UpdatedAt: now,
@@ -239,6 +239,7 @@ func (s *Server) createTeamRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) teamRunDetail(r *http.Request, run agentteam.Run) teamRunView {
+	run.Input = redact.String(run.Input)
 	if !run.Terminal() {
 		run.Usage = sumUsage(teamWorkers(s.store, run))
 	}
@@ -257,6 +258,7 @@ func (s *Server) teamRuns(w http.ResponseWriter, r *http.Request) {
 		if !projectAllowed(s.store, principal(r), run.ProjectID) || (teamID != "" && run.TeamID != teamID) || (projectID != "" && run.ProjectID != projectID) {
 			continue
 		}
+		run.Input = redact.String(run.Input)
 		items = append(items, run)
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })

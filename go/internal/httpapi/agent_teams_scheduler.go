@@ -337,6 +337,7 @@ func (e *teamEngine) acquireLease(run agentteam.Run, workerID string, decided bo
 			tool, ok := agentteam.FindTool(tools, name)
 			return tool.Class, ok
 		}, randomToken)
+		redactSettledArguments(&current)
 		expires := now.Add(e.leaseTTL)
 		started := now
 		current.LeaseOwner, current.LeaseToken, current.LeaseExpiresAt = e.owner, token, &expires
@@ -364,6 +365,7 @@ func (e *teamEngine) apply(lease *teamLease, change func(*agentteam.Worker) erro
 		if err := change(&current); err != nil {
 			return current, err
 		}
+		redactSettledArguments(&current)
 		now := e.now()
 		if current.ActiveSince != nil {
 			current.ActiveMillis += now.Sub(*current.ActiveSince).Milliseconds()
@@ -635,7 +637,7 @@ func (e *teamEngine) modelStep(ctx context.Context, run agentteam.Run, worker ag
 		return e.failWorker(run, lease, worker, response.Error.Code, response.Error.Message, true), false
 	}
 	saved, err := e.apply(lease, func(current *agentteam.Worker) error {
-		agentteam.ApplyReply(current, agentteam.ModelReply{Content: response.Content, ToolCalls: response.ToolCalls, Usage: response.Usage})
+		agentteam.ApplyReply(current, agentteam.ModelReply{Content: redact.String(response.Content), ToolCalls: response.ToolCalls, Usage: response.Usage})
 		return nil
 	})
 	if err != nil {
