@@ -25,13 +25,8 @@ function resource<T extends { id?: string; revision?: number }>(base: string) {
     get: (id: string, signal?: AbortSignal) =>
       request<T>(`${base}/${part(id)}`, { signal }),
     create: (body: T) => request<T>(base, { method: "POST", body }),
-    // The update body is closed and holds no revision, so the base revision travels in If-Match.
-    update: (id: string, body: T, revision?: number) =>
-      request<T>(`${base}/${part(id)}`, {
-        method: "PUT",
-        body,
-        headers: revision ? { "If-Match": `"${revision}"` } : undefined,
-      }),
+    update: (id: string, body: T) =>
+      request<T>(`${base}/${part(id)}`, { method: "PUT", body }),
     remove: (id: string) =>
       request<null>(`${base}/${part(id)}`, { method: "DELETE" }),
     revisions: async (id: string, signal?: AbortSignal) =>

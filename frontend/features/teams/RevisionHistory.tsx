@@ -51,8 +51,7 @@ export function RevisionHistory<T>({
             rows={rows.map((row) => ({ ...row, id: `revision-${row.revision}` }))}
             columns={[
               { key: "revision", label: "Revision" },
-              { key: "saved", label: "Saved", render: (row) => formatTime(row.saved_at || row.updated_at) },
-              { key: "actor", label: "Saved by", render: (row) => row.actor || "Not reported" },
+              { key: "saved", label: "Saved", render: (row) => formatTime(row.saved_at) },
             ]}
             actions={(row) =>
               row.revision === revision ? (

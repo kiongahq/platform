@@ -3,6 +3,8 @@
 import type { AgentDefinition, Team, ToolGrant } from "./types";
 
 export type FieldErrors = Record<string, string>;
+/** The gateway accepts only the platform chat model, so the editors offer it and nothing else. */
+export const MODEL_OPTIONS = [{ value: "llm", label: "Platform chat model (llm)" }];
 export const NAME_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 export const DEFINITION_LIMITS = {
   max_turns: { label: "Maximum turns", min: 1, max: 500 },
@@ -94,6 +96,8 @@ export function validateTeam(draft: Team): FieldErrors {
     errors.members = `Select from 1 to ${MAX_MEMBERS} members.`;
   checkText(errors, "brief", draft.brief, "the shared brief", TEXT_LIMITS.brief, false);
   checkLimits(errors, draft.limits, TEAM_LIMITS);
+  if (!errors["limits.max_concurrent_workers"] && draft.limits.max_concurrent_workers > draft.limits.max_workers_total)
+    errors["limits.max_concurrent_workers"] = "Concurrent workers cannot be more than total workers.";
   return errors;
 }
 const grantKey = (tool: ToolGrant) =>
@@ -103,13 +107,14 @@ const grantKey = (tool: ToolGrant) =>
       ? `git:${tool.repository.trim()}`
       : `${tool.kind}:${tool.ref}`;
 /**
- * The request body. The contract is closed and its update body omits every server-assigned
- * field, including project_id, so a stored document is never echoed back. Repeated grants are removed.
+ * The request body. The gateway decodes it strictly, so a stored document is never echoed back.
+ * A create names the project; an update names the revision it was based on, and the gateway
+ * answers 409 with `latest` when that is no longer current. Repeated grants are removed.
  */
-export function definitionPayload(draft: AgentDefinition, update = false): AgentDefinition {
+export function definitionPayload(draft: AgentDefinition, revision?: number): AgentDefinition {
   const seen = new Set<string>();
   return {
-    ...(update ? {} : { project_id: draft.project_id }),
+    ...(revision ? { revision } : { project_id: draft.project_id }),
     name: draft.name.trim(),
     description: draft.description.trim(),
     instructions: draft.instructions,
@@ -134,9 +139,9 @@ export function definitionPayload(draft: AgentDefinition, update = false): Agent
     limits: { ...draft.limits },
   };
 }
-export function teamPayload(draft: Team, update = false): Team {
+export function teamPayload(draft: Team, revision?: number): Team {
   return {
-    ...(update ? {} : { project_id: draft.project_id }),
+    ...(revision ? { revision } : { project_id: draft.project_id }),
     name: draft.name.trim(),
     description: draft.description.trim(),
     coordinator: {

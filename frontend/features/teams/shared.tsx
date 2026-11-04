@@ -247,5 +247,8 @@ export function conflictFrom(failure: unknown): SaveConflict {
     ? { latest: failure.latest }
     : null;
 }
-export const serverFieldErrors = (failure: unknown): FieldErrors =>
-  failure instanceof APIError ? failure.body.fields || failure.body.details || {} : {};
+/** A 422 lists every problem the gateway found, not only the first. */
+export const failureText = (failure: unknown) =>
+  failure instanceof APIError && Array.isArray(failure.body.issues) && failure.body.issues.length
+    ? failure.body.issues.join(" ")
+    : errorMessage(failure);

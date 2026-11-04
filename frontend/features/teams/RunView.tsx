@@ -8,23 +8,21 @@ import { DataState, Feedback, ResourceTable, Status } from "@/features/shared/Vi
 import { approvalsApi, runsApi } from "./api";
 import { useTeamRun } from "./useTeamRun";
 import {
+  activeTime,
   approvalOrigin,
   canCancel,
   canMessage,
   canResume,
   codeView,
-  errorCode,
-  errorText,
   eventPreview,
   finalReport,
-  formatDuration,
-  isTerminalRun,
+  issueText,
   messageFeed,
   messageTargets,
   sandboxNotice,
   tokens,
   transcriptEntries,
-  workerElapsed,
+  workerIssue,
 } from "./runState";
 import { ConfirmDialog, NOT_REPORTED, PlainText, formatTime, searchParam, setSearchParam } from "./shared";
 import type { Approval, RunEvent, TeamRun, TeamWorker } from "./types";
@@ -43,14 +41,7 @@ export function RunView({ id, identity, onBack, pollMs }: { id: string; identity
   const writable = identity.permissions.agents_write === true;
   const [dialog, setDialog] = useState<"cancel" | "resume" | null>(null),
     [notice, setNotice] = useState(""),
-    [selected, setSelected] = useState(() => searchParam("worker")),
-    [now, setNow] = useState(() => Date.now());
-  const terminal = isTerminalRun(run);
-  useEffect(() => {
-    if (terminal) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [terminal]);
+    [selected, setSelected] = useState(() => searchParam("worker"));
   const chosen = workers.find((worker) => worker.id === selected) || workers.find((worker) => worker.role === "coordinator") || workers[0];
   const banner = sandboxNotice(run, workers, events);
   const report = finalReport(run, workers);
@@ -94,7 +85,6 @@ export function RunView({ id, identity, onBack, pollMs }: { id: string; identity
             <WorkerTable
               workers={workers}
               selected={chosen?.id}
-              now={now}
               onSelect={(value) => {
                 setSelected(value);
                 setSearchParam("worker", value);
@@ -150,7 +140,7 @@ export function RunView({ id, identity, onBack, pollMs }: { id: string; identity
             await live.refresh();
           }}
         >
-          <p>Use this after the cause is fixed, for example a restored provider or sandbox. A tool with side effects whose outcome is unknown is not run again; the worker is told the outcome is unknown.</p>
+          <p>Use this after the cause is fixed, for example a restored provider or sandbox. Spent budgets stay spent. A call that may already have happened is not run again; the worker is told its outcome is unknown.</p>
         </ConfirmDialog>
       )}
     </section>
@@ -167,22 +157,32 @@ function RunSummary({ run, workers }: { run: TeamRun; workers: TeamWorker[] }) {
       <div><dt>Resumes</dt><dd>{run.resume_count ?? 0}</dd></div>
       <div><dt>Side effects</dt><dd>{run.allow_side_effects ? "Allowed with approval" : "Not allowed"}</dd></div>
       <div><dt>Started by</dt><dd>{run.subject || NOT_REPORTED}</dd></div>
-      {run.last_error && <div className="team-run-error"><dt>Last error</dt><dd className="team-text">{errorText(run.last_error)}</dd></div>}
+      {run.error && <div className="team-run-error"><dt>Error</dt><dd className="team-text">{issueText(run.error, run.error_message)}</dd></div>}
     </dl>
   );
 }
-function WorkerTable({ workers, selected, now, onSelect }: { workers: TeamWorker[]; selected?: string; now: number; onSelect: (id: string) => void }) {
+/** At phone width the metric columns collapse into this line, so nothing needs sideways scrolling. */
+function WorkerCompact({ worker }: { worker: TeamWorker }) {
+  const issue = workerIssue(worker);
+  return (
+    <small className="team-worker-compact">
+      Turns {worker.turns ?? NOT_REPORTED}, tokens {tokens(worker.usage)?.toLocaleString("en") ?? NOT_REPORTED}, time {activeTime(worker) ?? NOT_REPORTED}
+      {issue && <span className="team-text">{issue}</span>}
+    </small>
+  );
+}
+function WorkerTable({ workers, selected, onSelect }: { workers: TeamWorker[]; selected?: string; onSelect: (id: string) => void }) {
   return (
     <div id="team-workers">
       <ResourceTable
         rows={workers}
         columns={[
           { key: "agent", label: "Worker", render: (row) => <><span className="team-mono">{row.agent}</span>{row.role === "coordinator" && <small>Coordinator</small>}</> },
-          { key: "status", label: "Status", render: (row) => <><Status value={row.status} />{row.status === "waiting_retry" && row.next_attempt_at && <small>Next attempt {formatTime(row.next_attempt_at)}</small>}</> },
+          { key: "status", label: "Status", render: (row) => <><Status value={row.status} />{row.status === "waiting_retry" && row.next_attempt_at && <small>Next attempt {formatTime(row.next_attempt_at)}</small>}<WorkerCompact worker={row as TeamWorker} /></> },
           { key: "turns", label: "Turns", render: (row) => row.turns ?? NOT_REPORTED },
           { key: "tokens", label: "Tokens", render: (row) => tokens(row.usage)?.toLocaleString("en") ?? NOT_REPORTED },
-          { key: "time", label: "Time", render: (row) => { const value = workerElapsed(row as TeamWorker, now); return value === null ? NOT_REPORTED : formatDuration(value); } },
-          { key: "last_error", label: "Last error", render: (row) => <span className="team-text">{errorText(row.last_error) || "—"}</span> },
+          { key: "time", label: "Time", render: (row) => activeTime(row as TeamWorker) ?? NOT_REPORTED },
+          { key: "last_error", label: "Last error", render: (row) => <span className="team-text">{workerIssue(row as TeamWorker) || "—"}</span> },
         ]}
         actions={(row) => (
           <button type="button" aria-pressed={row.id === selected} aria-label={`Show transcript of ${row.agent}`} onClick={() => onSelect(row.id)}>
@@ -323,7 +323,7 @@ function Transcript({ runId, worker, events }: { runId: string; worker: TeamWork
           <PlainText>{current.report}</PlainText>
         </>
       )}
-      {errorCode(current?.last_error) && <p className="team-muted">Stopped with <span className="team-mono">{errorCode(current?.last_error)}</span>.</p>}
+      {current?.last_error && <p className="team-muted">Stopped with <span className="team-mono">{current.last_error}</span>.</p>}
     </section>
   );
 }

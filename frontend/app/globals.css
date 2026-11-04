@@ -648,7 +648,7 @@ button, .button, .button-link { white-space: nowrap; }
 #team-workers td small { color: var(--color-muted); }
 .status[data-state="running"], .status[data-state="queued"] { color: var(--color-accent); }
 .status[data-state="waiting_retry"], .status[data-state="waiting_approval"], .status[data-state="cancelling"] { color: var(--color-warning); }
-.status[data-state="completed"] { color: var(--color-success); }
+.status[data-state="completed"], .status[data-state="done"] { color: var(--color-success); }
 .team-run-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-6); margin-top: var(--space-5); align-items: start; }
 .team-run-side { display: grid; gap: var(--space-5); min-width: 0; }
 .team-transcript { display: grid; gap: var(--space-3); min-width: 0; }
@@ -661,6 +661,12 @@ button, .button, .button-link { white-space: nowrap; }
 .team-send .button-row { margin-top: 0; }
 .team-event-log { margin-top: var(--space-5); }
 @media (max-width: 960px) { .team-run-grid { grid-template-columns: minmax(0, 1fr); } }
+.team-worker-compact { display: none; }
+#team-workers td:nth-child(6) .team-text { display: block; min-width: 200px; }
+@media (max-width: 640px) {
+  #team-workers th:nth-child(n+3):nth-child(-n+6), #team-workers td:nth-child(n+3):nth-child(-n+6) { display: none; }
+  #team-workers .team-worker-compact { display: grid; gap: var(--space-1); margin-top: var(--space-1); }
+}
 @media (max-width: 640px) { .team-git-row { grid-template-columns: minmax(0, 1fr); } .team-git-row > button { margin-top: 0; justify-self: start; } }
 .team-setup-notes h3 { margin: 0 0 var(--space-1); font-size: 14px; font-weight: 500; }
 .team-setup-notes ul { margin: 0; padding-left: var(--space-5); color: var(--color-muted); font-size: 14px; }

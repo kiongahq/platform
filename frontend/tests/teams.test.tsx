@@ -8,7 +8,7 @@ import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-libra
 import { Icon } from "../components/ui/Icon";
 import { AgentDefinitionsView } from "../features/teams/AgentDefinitionsView";
 import { RunView } from "../features/teams/RunView";
-import { mergeEvents, sandboxNotice, tokens, workerElapsed } from "../features/teams/runState";
+import { activeTime, canResume, mergeEvents, sandboxNotice, tokens } from "../features/teams/runState";
 import { TeamsView } from "../features/teams/TeamsView";
 import { TeamRunsView } from "../features/teams/TeamRunsView";
 import { blankDefinition, blankTeam, definitionPayload, validateDefinition, validateTeam } from "../features/teams/validation";
@@ -126,6 +126,8 @@ test("team rules cover members, brief and every limit", () => {
   ok(limits({ max_concurrent_workers: 17 })["limits.max_concurrent_workers"]);
   ok(limits({ max_tokens: 20_000_001 })["limits.max_tokens"]);
   ok(limits({ max_seconds: 86_401 })["limits.max_seconds"]);
+  ok(limits({ max_workers_total: 3, max_concurrent_workers: 5 })["limits.max_concurrent_workers"], "concurrent above total is refused");
+  assert.equal(limits({ max_workers_total: 5, max_concurrent_workers: 5 })["limits.max_concurrent_workers"], undefined);
   assert.equal(limits({ max_seconds: 86_400 })["limits.max_seconds"], undefined);
 });
 test("the agent editor refuses invalid input without calling the gateway, focuses the summary and names each field", async () => {
@@ -170,8 +172,8 @@ test("saving sends the base revision, and a conflict keeps the draft until the p
   fireEvent.click(view.getByRole("button", { name: "Save revision" }));
   await view.findByText(/Someone else saved/);
   const put = sent("PUT", "/api/v1/agent-definitions/adf-1")[0];
-  assert.equal(put.headers["If-Match"], '"3"');
-  assert.deepEqual(Object.keys(put.body).sort(), ["description", "instructions", "limits", "model", "name", "tools", "workspace"], "the update body holds no server-assigned field");
+  assert.deepEqual(Object.keys(put.body).sort(), ["description", "instructions", "limits", "model", "name", "revision", "tools", "workspace"], "the only server field an update sends is its base revision");
+  assert.equal(put.body.revision, 3);
   assert.equal((view.getByLabelText("Name") as HTMLInputElement).value, "mine");
   fireEvent.click(view.getByRole("button", { name: /load the latest revision/ }));
   assert.equal((view.getByLabelText("Name") as HTMLInputElement).value, "theirs");
@@ -179,7 +181,7 @@ test("saving sends the base revision, and a conflict keeps the draft until the p
 });
 test("loading a revision fills the editor against the current base and writes nothing", async () => {
   const doc = { ...validDefinition(), id: "adf-1", revision: 2, instructions: "new" };
-  gateway(...resources, on("GET", "/api/v1/agent-definitions/adf-1", doc), on("GET", "/api/v1/agent-definitions/adf-1/revisions", { items: [doc, { ...doc, revision: 1, instructions: "old" }] }), on("PUT", "/api/v1/agent-definitions/adf-1", (call: Call) => json({ ...call.body, id: "adf-1", revision: 3 })));
+  gateway(...resources, on("GET", "/api/v1/agent-definitions/adf-1", doc), on("GET", "/api/v1/agent-definitions/adf-1/revisions", { items: [{ revision: 2, saved_at: "2026-11-04T10:00:00Z", content: { ...validDefinition(), instructions: "new" } }, { revision: 1, saved_at: "2026-11-03T10:00:00Z", content: { ...validDefinition(), instructions: "old" } }] }), on("PUT", "/api/v1/agent-definitions/adf-1", (call: Call) => json({ ...call.body, id: "adf-1", revision: 3 })));
   const view = render(<AgentDefinitionsView identity={writer} view="agent-definitions" project="p1" resource="adf-1" onNavigate={() => {}} />);
   await view.findByText("Revision 2");
   const details = view.getByText("Revision history").closest("details")!;
@@ -190,8 +192,18 @@ test("loading a revision fills the editor against the current base and writes no
   assert.equal(calls.filter((call) => call.method !== "GET").length, 0);
   fireEvent.click(view.getByRole("button", { name: "Save revision" }));
   await view.findByText(/revision 3/);
-  assert.equal(sent("PUT", "/api/v1/agent-definitions/adf-1")[0].headers["If-Match"], '"2"');
+  assert.equal(sent("PUT", "/api/v1/agent-definitions/adf-1")[0].body.revision, 2);
   assert.equal(sent("PUT", "/api/v1/agent-definitions/adf-1")[0].body.instructions, "old");
+});
+test("every problem in a 422 is shown, not only the first", async () => {
+  gateway(...resources, on("POST", "/api/v1/agent-definitions", () => json({ error: "validation_error", message: "first", issues: ["first problem.", "tools[0]: tool x is not available in this project"] }, 422)));
+  const view = render(<AgentDefinitionsView identity={writer} view="agent-definitions" project="p1" resource="new" onNavigate={() => {}} />);
+  await view.findByRole("option", { name: "Fraud" });
+  fill(view, "Name", "bug-fixer");
+  fill(view, "When to use", "Fixes bugs");
+  fill(view, "Instructions", "Fix it");
+  fireEvent.click(view.getByRole("button", { name: "Create agent" }));
+  await view.findByText(/first problem\. tools\[0\]: tool x is not available/);
 });
 test("viewers get a read-only agent editor with no create, save or delete", async () => {
   const doc = { ...validDefinition(), id: "adf-1", revision: 1 };
@@ -363,7 +375,7 @@ test("the run list filters by team through the documented query", async () => {
 // ---------- Live run
 
 const RUN = "/api/v1/team-runs/atr-1";
-const coordinator = { id: "atw-c", role: "coordinator", agent: "coordinator", status: "running", turns: 2, usage: { input_tokens: 100, output_tokens: 20 }, created_at: "2026-11-04T10:00:00Z" };
+const coordinator = { id: "atw-c", role: "coordinator", agent: "coordinator", status: "running", turns: 2, usage: { input_tokens: 100, output_tokens: 20 }, active_millis: 65000, created_at: "2026-11-04T10:00:00Z" };
 const fixer = { id: "atw-f", role: "worker", agent: "bug-fixer", status: "queued", turns: 0 };
 function liveRun(initial: { run?: any; workers?: any[]; approvals?: any[]; events?: any[]; details?: Record<string, any> } = {}) {
   const state = {
@@ -371,7 +383,7 @@ function liveRun(initial: { run?: any; workers?: any[]; approvals?: any[]; event
     workers: initial.workers || [coordinator, fixer],
     approvals: initial.approvals || [],
     events: initial.events || [],
-    done: false,
+    done: undefined as boolean | undefined,
     details: initial.details || {},
   };
   gateway(
@@ -383,7 +395,7 @@ function liveRun(initial: { run?: any; workers?: any[]; approvals?: any[]; event
     }),
     on("GET", /team-runs\/atr-1\/events\?after=/, (call: Call) => {
       const after = Number(call.path.split("after=")[1]);
-      return json({ events: state.events.filter((event) => event.seq > after), done: state.done });
+      return json({ events: state.events.filter((event) => event.seq > after), done: state.done ?? ["succeeded", "failed", "cancelled"].includes(state.run.status) });
     }),
     on("GET", /agent-approvals\?run_id=atr-1&status=pending/, () => json({ items: state.approvals })),
   );
@@ -410,7 +422,7 @@ test("the worker table follows stream events through retry, approval and complet
   const source = await stream();
   assert.match(source.url, /\/api\/v1\/team-runs\/atr-1\/events\/stream\?after=-1$/);
   assert.match(row(view, "bug-fixer").textContent || "", /queued/);
-  assert.match(row(view, "coordinator").textContent || "", /120/);
+  assert.match(row(view, "coordinator").textContent || "", /120.*1m 5s/);
 
   const step = async (seq: number, type: string, worker: any, pattern: RegExp) => {
     state.workers = [coordinator, { ...fixer, ...worker }];
@@ -457,8 +469,56 @@ test("a stream failure falls back to polling from the last sequence seen", async
   state.events = [...state.events, { seq: 5, type: "worker.message", message_preview: "polled message", from: "atw-f", to: "atw-c" }];
   await view.findByText("polled message", { selector: ".team-feed .team-text" });
   state.run = { ...state.run, status: "failed" };
-  state.done = true;
   await waitFor(() => assert.match(statusOf(view) || "", /failed/));
+  await waitFor(() => assert.match(view.container.querySelector("#team-run-connection")?.textContent || "", /finished/));
+});
+test("a stream the gateway closes after its time limit reconnects from the last sequence", async () => {
+  liveRun();
+  const view = openRun();
+  await rowLoaded(view, "bug-fixer");
+  const source = await stream();
+  act(() => source.onopen!());
+  act(() => source.emit("run", { seq: 3, type: "worker.turn" }));
+  const realNow = Date.now;
+  Date.now = () => realNow() + 5 * 60_000;
+  try {
+    act(() => source.onerror!());
+  } finally {
+    Date.now = realNow;
+  }
+  assert.equal(source.closed, true);
+  assert.equal(FakeEventSource.opened.length, 2);
+  assert.match(FakeEventSource.opened[1], /after=3$/);
+});
+test("a run that just finished keeps reading until the log is complete, so run.finished is not lost", async () => {
+  const state = liveRun();
+  const view = openRun();
+  await rowLoaded(view, "bug-fixer");
+  const source = await stream();
+  state.done = false;
+  state.run = { ...state.run, status: "cancelled" };
+  act(() => source.emit("run", { seq: 1, type: "worker.finished", worker_id: "atw-f", status: "cancelled" }));
+  await waitFor(() => assert.match(statusOf(view) || "", /cancelled/));
+  assert.equal(source.closed, false, "the stream stays open until the gateway sends end");
+  act(() => source.emit("run", { seq: 2, type: "run.finished", status: "cancelled" }));
+  await view.findByText("Event log (2)");
+  act(() => source.emit("end", { status: "cancelled" }));
+  assert.equal(source.closed, true);
+});
+test("catching up reads every page of a long log", async () => {
+  const events = Array.from({ length: 1200 }, (_, seq) => ({ seq: seq + 1, type: "worker.turn" }));
+  const state = liveRun({ run: { status: "succeeded" } });
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: any, init: any) => {
+    const match = String(input).match(/\/events\?after=(-?\d+)/);
+    if (!match) return original(input, init);
+    const page = events.filter((event) => event.seq > Number(match[1])).slice(0, 500);
+    return json({ events: page, done: page.length < 500 });
+  }) as any;
+  const view = openRun();
+  await view.findByText("Event log (1200)");
+  assert.equal(FakeEventSource.opened.length, 0);
+  assert.ok(state);
 });
 test("polling is used when the browser has no EventSource", async () => {
   delete (globalThis as any).EventSource;
@@ -499,8 +559,8 @@ test("metrics the gateway did not report read as not reported, never as an estim
   assert.equal(tokens({}), null);
   assert.equal(tokens({ input_tokens: 3 }), 3);
   assert.equal(tokens({ total_tokens: 9, input_tokens: 1 }), 9);
-  assert.equal(workerElapsed({ id: "w", agent: "a", status: "running" } as any, 10), null);
-  assert.equal(workerElapsed({ id: "w", agent: "a", status: "completed", created_at: "2026-11-04T10:00:00Z", finished_at: "2026-11-04T10:00:05Z" } as any, 99e12), 5000);
+  assert.equal(activeTime({ id: "w", agent: "a", status: "running" } as any), null);
+  assert.equal(activeTime({ id: "w", agent: "a", status: "running", active_millis: 5000 } as any), "5s");
 });
 test("the transcript shows tool calls with their paired results as code views, and reloads on new activity", async () => {
   const state = liveRun({
@@ -592,6 +652,23 @@ test("without agents write an approval is read-only with an explanation, even fo
 
 // ---------- Messages, cancel, resume
 
+test("after sending, the feed shows the message at once even if the stream delivers nothing", async () => {
+  const state = liveRun();
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: any, init: any) => {
+    if (String(input) === `${RUN}/messages`) {
+      const body = JSON.parse(init.body);
+      state.events = [...state.events, { seq: 1, type: "worker.message", from: "person", to: body.to, message_preview: body.text }];
+      return json({ to: body.to, id: "msg-1" }, 202);
+    }
+    return original(input, init);
+  }) as any;
+  const view = openRun();
+  await view.findByRole("option", { name: /bug-fixer/ });
+  fireEvent.change(view.getByLabelText("Message"), { target: { value: "Check logout" } });
+  fireEvent.click(view.getByRole("button", { name: "Send message" }));
+  await view.findByText("Check logout", { selector: ".team-feed .team-text" });
+});
 test("sending a message posts {to, text} with the worker id, and clears the box only after success", async () => {
   liveRun();
   const original = globalThis.fetch;
@@ -627,6 +704,8 @@ test("a person cannot message failed or cancelled workers, or any worker of a fi
   await running.findByRole("option", { name: /writer \(completed, resumes it\)/ });
   const to = running.getByLabelText("To") as HTMLSelectElement;
   assert.deepEqual([...to.options].map((option) => option.value), ["atw-c", "atw-d"]);
+  const { messageTargets } = await import("../features/teams/runState");
+  assert.deepEqual(messageTargets([{ ...coordinator, status: "completed" } as any]), [], "a finished coordinator cannot be reopened");
   running.unmount();
   liveRun({ run: { status: "succeeded" } });
   const finished = openRun();
@@ -670,21 +749,21 @@ test("a refused cancel stays in the dialog with the gateway's reason", async () 
   await within(view.getByRole("dialog", { hidden: true })).findByText("already finished");
 });
 test("resume appears only with failed workers, and reconnects the live stream when the run comes back", async () => {
-  const state = liveRun({ run: { status: "failed", last_error: { code: "budget_exceeded", message: "Team limit" } }, workers: [coordinator, { ...fixer, status: "failed", last_error: { code: "provider_unavailable", message: "30 minutes of failure" } }] });
+  const state = liveRun({ run: { status: "failed", error: "owner_access_lost", error_message: "Access was restored" }, workers: [coordinator, { ...fixer, status: "failed", last_error: "provider_unavailable", last_error_message: "30 minutes of failure", last_error_resumable: true }] });
   const original = globalThis.fetch;
   let resumes = 0;
   globalThis.fetch = (async (input: any, init: any) => {
     if (String(input) === `${RUN}/resume`) {
       resumes++;
-      state.run = { ...state.run, status: "running", resume_count: 1, last_error: undefined };
-      state.workers = [coordinator, { ...fixer, status: "queued", last_error: undefined }];
+      state.run = { ...state.run, status: "running", resume_count: 1, error: undefined, error_message: undefined };
+      state.workers = [coordinator, { ...fixer, status: "queued", last_error: undefined, last_error_message: undefined }];
       return json(state.run);
     }
     return original(input, init);
   }) as any;
   const view = openRun();
-  await view.findByText(/provider_unavailable: 30 minutes of failure/);
-  view.getByText(/budget_exceeded: Team limit/);
+  await view.findAllByText(/provider_unavailable: 30 minutes of failure/);
+  view.getByText(/owner_access_lost: Access was restored/);
   assert.equal(FakeEventSource.opened.length, 0, "a finished run opens no stream");
   assert.equal(view.queryByRole("button", { name: "Cancel run" }), null);
   fireEvent.click(view.getByRole("button", { name: "Resume failed workers" }));
@@ -695,6 +774,15 @@ test("resume appears only with failed workers, and reconnects the live stream wh
   assert.equal(view.queryByRole("button", { name: "Resume failed workers" }), null);
   view.getByRole("button", { name: "Cancel run" });
 });
+test("resume follows the gateway's rule: budgets stay spent and only resumable workers come back", () => {
+  const run: any = { id: "a", team_id: "t", status: "running" };
+  const failed: any = { id: "w", agent: "a", status: "failed" };
+  assert.equal(canResume({ ...run, status: "failed" }, []), true);
+  assert.equal(canResume({ ...run, status: "failed", error: "budget_exceeded" }, []), false);
+  assert.equal(canResume(run, [failed]), false, "a worker stopped by its own budget is not resumable");
+  assert.equal(canResume(run, [{ ...failed, last_error_resumable: true }]), true);
+  assert.equal(canResume({ ...run, status: "cancelling" }, [{ ...failed, last_error_resumable: true }]), false);
+});
 test("cancelled and succeeded runs offer neither cancel nor resume, and viewers get no actions at all", async () => {
   for (const status of ["cancelled", "succeeded"]) {
     liveRun({ run: { status }, workers: [{ ...fixer, status: "failed" }] });
@@ -704,7 +792,7 @@ test("cancelled and succeeded runs offer neither cancel nor resume, and viewers 
     assert.equal(view.queryByRole("button", { name: "Cancel run" }), null, status);
     view.unmount();
   }
-  liveRun({ workers: [{ ...fixer, status: "failed" }] });
+  liveRun({ workers: [{ ...fixer, status: "failed", last_error_resumable: true }] });
   const read = openRun(viewer);
   await rowLoaded(read, "bug-fixer");
   assert.equal(read.queryByRole("button", { name: "Cancel run" }), null);
@@ -719,13 +807,15 @@ test("the unavailable banner appears from any of the gateway's three signals, an
   assert.equal(sandboxNotice(run, [coordinator as any], []), null);
   assert.equal(sandboxNotice({ ...run, sandbox: { available: true, runtime: "runsc", runtime_verified: true } }, [], []), null);
   assert.equal(sandboxNotice({ ...run, sandbox: { available: false } }, [], [])?.kind, "unavailable");
-  assert.equal(sandboxNotice(run, [{ ...fixer, last_error: { code: "sandbox_unavailable" } } as any], [])?.kind, "unavailable");
-  assert.equal(sandboxNotice(run, [{ ...fixer, last_error: "sandbox_unavailable: no runtime" } as any], [])?.kind, "unavailable");
+  assert.equal(sandboxNotice(run, [{ ...fixer, last_error: "sandbox_unavailable", last_error_message: "no runtime" } as any], [])?.kind, "unavailable");
   assert.equal(sandboxNotice(run, [], [{ seq: 1, type: "worker.tool_result", error: { code: "sandbox_unavailable", message: "no runtime" } }])?.kind, "unavailable");
   assert.equal(sandboxNotice(run, [], [{ seq: 1, type: "worker.tool_result", output_preview: '{"error":"sandbox_unavailable"}' }])?.kind, "unavailable");
   assert.equal(sandboxNotice(run, [], [{ seq: 1, type: "worker.message", message_preview: "the word sandbox_unavailable in chat" }]), null, "an agent's own words cannot raise the banner");
   assert.equal(sandboxNotice(run, [], [{ seq: 1, type: "worker.tool_result", output_preview: "grep found sandbox_unavailable in a log" }]), null, "command output cannot raise the banner");
 
+  const outage = { seq: 1, type: "worker.tool_result", error: { code: "sandbox_unavailable", message: "down" } };
+  assert.equal(sandboxNotice(run, [], [outage, { seq: 2, type: "run.resumed", resume_count: 1 }]), null, "a resume clears an old outage");
+  assert.equal(sandboxNotice(run, [], [outage, { seq: 2, type: "run.resumed", resume_count: 1 }, { ...outage, seq: 3 }])?.kind, "unavailable", "a new outage after the resume counts");
   liveRun({ run: { sandbox: { available: false, runtime: "runsc", runtime_verified: false, driver: "docker", unsafe_runtime: false, reason: "The runsc runtime is not registered." } } });
   const view = openRun();
   const banner = await view.findByRole("alert");
@@ -754,9 +844,9 @@ test("the unsafe-runtime banner is distinct and unavailable outranks it", async 
 test("agent output renders as text on every surface and never as markup", async () => {
   const attack = '<img src=x onerror="window.__owned=1"><script>window.__owned=1</script><a href="javascript:alert(1)">click</a>';
   liveRun({
-    run: { status: "failed", report: `report ${attack}`, last_error: `run error ${attack}` },
-    workers: [{ ...coordinator, status: "failed", agent: `agent ${attack}`, last_error: { code: "x", message: attack } }],
-    approvals: [{ ...approval, tool: attack, message: `approval ${attack}` }],
+    run: { status: "failed", report: `report ${attack}`, error: "x", error_message: `run error ${attack}` },
+    workers: [{ ...coordinator, status: "failed", agent: `agent ${attack}`, last_error: "x", last_error_message: attack }],
+    approvals: [{ ...approval, tool_name: attack, message: `approval ${attack}` }],
     events: [{ seq: 1, type: "worker.message", message_preview: `feed ${attack}`, from: attack, to: attack }, { seq: 2, type: "worker.tool_result", output_preview: `event ${attack}` }, { seq: 3, type: "worker.waiting_approval", approval_id: "apr-1", input_preview: attack }],
     details: {
       "atw-c": {

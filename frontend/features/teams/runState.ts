@@ -7,7 +7,6 @@ import type {
   ToolCall,
   TranscriptMessage,
   Usage,
-  WorkerError,
 } from "./types";
 
 const TERMINAL_RUN = new Set(["succeeded", "failed", "cancelled"]);
@@ -15,18 +14,23 @@ const MAX_EVENTS = 2000;
 export const isTerminalRun = (run?: Pick<TeamRun, "status"> | null) =>
   !!run && TERMINAL_RUN.has(run.status);
 export const canCancel = (run?: TeamRun | null) => run?.status === "running";
-/** Resume requeues failed workers, so it applies only while something has failed. */
+/** Mirrors the gateway: budgets stay spent, and only a worker marked resumable comes back. */
 export const canResume = (run: TeamRun | null | undefined, workers: TeamWorker[]) =>
   !!run &&
-  run.status !== "cancelling" &&
-  run.status !== "cancelled" &&
-  run.status !== "succeeded" &&
-  (run.status === "failed" || workers.some((worker) => worker.status === "failed"));
+  run.error !== "budget_exceeded" &&
+  (run.status === "failed" ||
+    (run.status === "running" &&
+      workers.some((worker) => worker.status === "failed" && worker.last_error_resumable)));
 export const canMessage = (run?: TeamRun | null) => run?.status === "running";
-/** A completed worker can be messaged (it resumes); failed and cancelled ones cannot. */
+/** Mirrors the gateway: a completed worker can be messaged (it resumes); failed, cancelled and a completed coordinator cannot. */
 export const messageTargets = (workers: TeamWorker[]) =>
   workers
-    .filter((worker) => worker.status !== "failed" && worker.status !== "cancelled")
+    .filter(
+      (worker) =>
+        worker.status !== "failed" &&
+        worker.status !== "cancelled" &&
+        !(worker.status === "completed" && worker.role === "coordinator"),
+    )
     .sort((a, b) => Number(b.role === "coordinator") - Number(a.role === "coordinator"));
 /** Events keep their sequence order; a redelivered seq after a reconnect is ignored. */
 export function mergeEvents(current: RunEvent[], incoming: RunEvent[]) {
@@ -60,23 +64,19 @@ export function formatDuration(milliseconds: number) {
       ? `${minutes}m ${seconds}s`
       : `${seconds}s`;
 }
-const LIVE_WORKER = new Set(["queued", "running", "waiting_retry", "waiting_approval", "idle"]);
-export function workerElapsed(worker: TeamWorker, now: number): number | null {
-  const start = Date.parse(worker.started_at || worker.created_at || "");
-  if (Number.isNaN(start)) return null;
-  if (LIVE_WORKER.has(worker.status)) return now - start;
-  const end = Date.parse(worker.finished_at || worker.updated_at || "");
-  return Number.isNaN(end) ? null : end - start;
-}
-export const errorCode = (error?: WorkerError) =>
-  typeof error === "object" && error ? error.code || "" : "";
-export const errorText = (error?: WorkerError) =>
-  !error
-    ? ""
-    : typeof error === "string"
-      ? error
-      : [error.code, error.message].filter(Boolean).join(": ");
+/** The gateway's measured active time. Null means not reported; it is never estimated. */
+export const activeTime = (worker: TeamWorker) =>
+  typeof worker.active_millis === "number" ? formatDuration(worker.active_millis) : null;
+export const issueText = (code?: string, message?: string) =>
+  [code, message].filter(Boolean).join(": ");
+export const workerIssue = (worker?: TeamWorker | null) =>
+  issueText(worker?.last_error, worker?.last_error_message);
 const SANDBOX_UNAVAILABLE = "sandbox_unavailable";
+/** An outage before the last resume is history, not the current state. */
+function eventsSinceResume(events: RunEvent[]) {
+  const resumed = events.findLastIndex((event) => event.type === "run.resumed");
+  return resumed < 0 ? events : events.slice(resumed + 1);
+}
 /** Only the gateway's structured result counts. Command output that merely contains the word does not. */
 function reportsSandboxUnavailable(event: RunEvent) {
   if (event.type !== "worker.tool_result") return false;
@@ -101,8 +101,8 @@ export function sandboxNotice(
   const state = run?.sandbox;
   const reported =
     state?.available === false ||
-    workers.some((worker) => errorText(worker.last_error).includes(SANDBOX_UNAVAILABLE)) ||
-    events.some(reportsSandboxUnavailable);
+    workers.some((worker) => worker.last_error === SANDBOX_UNAVAILABLE) ||
+    eventsSinceResume(events).some(reportsSandboxUnavailable);
   if (reported)
     return {
       kind: "unavailable",
@@ -132,7 +132,7 @@ export function approvalOrigin(approval: Approval, events: RunEvent[]) {
   const event = events.find((item) => item.approval_id === approval.id);
   return {
     workerId: approval.worker_id || event?.worker_id,
-    tool: approval.tool || event?.tool,
+    tool: approval.tool_name || event?.tool,
     input: event?.input_preview,
   };
 }

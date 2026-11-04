@@ -66,10 +66,10 @@ function RunList({ identity, project, onNavigate }: ViewProps) {
             rows={rows}
             columns={[
               { key: "id", label: "Run", render: (row) => <span className="team-mono">{row.id}</span> },
-              { key: "team", label: "Team", render: (row) => row.team_name || names.get(row.team_id) || row.team_id },
+              { key: "team", label: "Team", render: (row) => row.snapshot?.team?.name || names.get(row.team_id) || row.team_id },
               { key: "status", label: "Status", render: (row) => <Status value={row.status} /> },
               { key: "subject", label: "Started by", render: (row) => row.subject || NOT_REPORTED },
-              { key: "created_at", label: "Started", render: (row) => formatTime(row.started_at || row.created_at) },
+              { key: "created_at", label: "Started", render: (row) => formatTime(row.created_at) },
               { key: "tokens", label: "Tokens", render: (row) => tokens(row.usage)?.toLocaleString("en") ?? NOT_REPORTED },
               { key: "resume_count", label: "Resumes", render: (row) => row.resume_count ?? 0 },
             ]}

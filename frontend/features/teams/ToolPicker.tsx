@@ -15,7 +15,7 @@ const SOURCES: Array<{
   none: string;
   service?: string;
 }> = [
-  { kind: "tool", label: "Registered tools", path: "/api/v1/tools", hint: "Each call needs a person's approval.", none: "No registered tools in this project.", service: "catalog" },
+  { kind: "tool", label: "Registered tools", path: "/api/v1/tools", hint: "Each call needs a person's approval. Registered tools cannot run in a team yet: an approved call returns tool_not_executable.", none: "No registered tools in this project.", service: "catalog" },
   { kind: "connection", label: "API connections", path: "/api/v1/agent-api-connections", hint: "Each call needs a person's approval.", none: "No API connections in this project." },
   { kind: "knowledge", label: "Knowledge bases", path: "/api/v1/knowledge-bases", hint: "Read-only search.", none: "No knowledge bases in this project." },
   { kind: "dataset", label: "Datasets", path: "/api/v1/datasets", hint: "Read-only access.", none: "No datasets in this project." },

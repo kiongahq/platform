@@ -12,15 +12,16 @@ import {
   ConfirmDialog,
   ErrorSummary,
   ProjectField,
+  SelectField,
   TextField,
   conflictFrom,
-  serverFieldErrors,
+  failureText,
   setSearchParam,
   type SaveConflict,
 } from "./shared";
 import { applyTemplate, TEAM_TEMPLATES } from "./templates";
 import type { AgentDefinition, List, Team } from "./types";
-import { blankTeam, TEAM_LIMITS, teamPayload, TEXT_LIMITS, validateTeam, type FieldErrors } from "./validation";
+import { blankTeam, MODEL_OPTIONS, TEAM_LIMITS, teamPayload, TEXT_LIMITS, validateTeam, type FieldErrors } from "./validation";
 
 const VIEW = "agent-teams";
 const fieldId = (key: string) => `team-${key.replaceAll(".", "-")}`;
@@ -347,8 +348,8 @@ export function TeamForm({
     }
     setBusy(true);
     try {
-      const body = teamPayload(draft, !!saved.id);
-      const result = saved.id ? await teamsApi.update(saved.id, body, saved.revision) : await teamsApi.create(body);
+      const body = teamPayload(draft, saved.id ? saved.revision : undefined);
+      const result = saved.id ? await teamsApi.update(saved.id, body) : await teamsApi.create(body);
       setSaved(result);
       setBaseline(comparable(draft));
       setDraft((old) => ({ ...old, id: result.id, revision: result.revision }));
@@ -357,8 +358,7 @@ export function TeamForm({
     } catch (failure) {
       const clash = conflictFrom(failure);
       setConflict(clash);
-      setErrors(serverFieldErrors(failure));
-      setError(clash ? "Someone else saved this team after you opened it." : errorMessage(failure));
+      setError(clash ? "Someone else saved this team after you opened it." : failureText(failure));
     } finally {
       setBusy(false);
     }
@@ -396,7 +396,7 @@ export function TeamForm({
         <TextField id="team-name" label="Name" required mono value={draft.name} error={errors.name} disabled={disabled} onChange={(value) => change({ name: value })} />
         <TextField id="team-description" label="Description" multiline rows={2} value={draft.description} error={errors.description} disabled={disabled} onChange={(value) => change({ description: value })} />
         <TextField id="team-coordinator-instructions" label="Coordinator instructions" required multiline rows={8} value={draft.coordinator.instructions} error={errors["coordinator.instructions"]} disabled={disabled} help="How the coordinator splits work, starts members and checks their reports." onChange={(value) => change({ coordinator: { ...draft.coordinator, instructions: value } })} />
-        <TextField id="team-coordinator-model" label="Coordinator model" required mono value={draft.coordinator.model} error={errors["coordinator.model"]} disabled={disabled} onChange={(value) => change({ coordinator: { ...draft.coordinator, model: value } })} />
+        <SelectField id="team-coordinator-model" label="Coordinator model" value={draft.coordinator.model} error={errors["coordinator.model"]} disabled={disabled} options={MODEL_OPTIONS} onChange={(value) => change({ coordinator: { ...draft.coordinator, model: value } })} />
         <fieldset className="field-wide team-members" id="team-members" tabIndex={-1} aria-describedby={errors.members ? "team-members-error" : undefined}>
           <legend>Members</legend>
           <small>The coordinator can start only these agents. Select from 1 to 16.</small>
@@ -486,7 +486,7 @@ export function TeamForm({
           revision={saved.revision}
           disabled={!writable || busy}
           onLoad={(value) => {
-            setDraft({ ...value, id: saved.id, revision: saved.revision });
+            setDraft({ ...value.content, id: saved.id, project_id: saved.project_id, revision: saved.revision });
             setErrors({});
             onNotice(`Loaded revision ${value.revision}. Save to make it current.`);
           }}

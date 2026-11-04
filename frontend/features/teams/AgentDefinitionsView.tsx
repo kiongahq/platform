@@ -2,7 +2,6 @@
 import { useState } from "react";
 import { useQuery } from "@/hooks/useQuery";
 import { useUnsaved } from "@/hooks/useUnsaved";
-import { errorMessage } from "@/lib/api";
 import { DataState, Feedback, ResourceTable, type ViewProps } from "@/features/shared/View";
 import { Icon } from "@/components/ui/Icon";
 import { definitionsApi, DEFINITIONS_PATH } from "./api";
@@ -14,7 +13,7 @@ import {
   SelectField,
   TextField,
   conflictFrom,
-  serverFieldErrors,
+  failureText,
   setSearchParam,
   type SaveConflict,
 } from "./shared";
@@ -24,6 +23,7 @@ import {
   blankDefinition,
   DEFINITION_LIMITS,
   definitionPayload,
+  MODEL_OPTIONS,
   TEXT_LIMITS,
   validateDefinition,
   type FieldErrors,
@@ -112,7 +112,7 @@ export function AgentDefinitionsView({ identity, project, resource, onNavigate }
             list.reload();
           }}
         >
-          <p>Running teams keep their snapshot. Teams that list this agent need a new member before their next run.</p>
+          <p>Runs already started keep their snapshot. An agent that a team still lists cannot be deleted; remove it from the team first.</p>
         </ConfirmDialog>
       )}
     </section>
@@ -189,8 +189,8 @@ export function DefinitionForm({
     }
     setBusy(true);
     try {
-      const body = definitionPayload(draft, !!saved.id);
-      const result = saved.id ? await definitionsApi.update(saved.id, body, saved.revision) : await definitionsApi.create(body);
+      const body = definitionPayload(draft, saved.id ? saved.revision : undefined);
+      const result = saved.id ? await definitionsApi.update(saved.id, body) : await definitionsApi.create(body);
       // Fields typed while the request was pending stay in the editor as unsaved changes.
       setSaved(result);
       setBaseline(comparable(draft));
@@ -200,8 +200,7 @@ export function DefinitionForm({
     } catch (failure) {
       const clash = conflictFrom(failure);
       setConflict(clash);
-      setErrors(serverFieldErrors(failure));
-      setError(clash ? "Someone else saved this agent after you opened it." : errorMessage(failure));
+      setError(clash ? "Someone else saved this agent after you opened it." : failureText(failure));
     } finally {
       setBusy(false);
     }
@@ -239,7 +238,7 @@ export function DefinitionForm({
         <TextField id="definition-name" label="Name" required mono value={draft.name} error={errors.name} disabled={disabled} help="Lowercase letters, digits and hyphens. The coordinator starts this agent by name." onChange={(value) => change({ name: value })} />
         <TextField id="definition-description" label="When to use" required multiline rows={3} value={draft.description} error={errors.description} disabled={disabled} help={`Shown to the coordinator. At most ${TEXT_LIMITS.description.toLocaleString("en")} characters.`} onChange={(value) => change({ description: value })} />
         <TextField id="definition-instructions" label="Instructions" required multiline rows={10} value={draft.instructions} error={errors.instructions} disabled={disabled} help={`This agent's system prompt. At most ${TEXT_LIMITS.instructions.toLocaleString("en")} characters.`} onChange={(value) => change({ instructions: value })} />
-        <TextField id="definition-model" label="Model" required mono value={draft.model} error={errors.model} disabled={disabled} onChange={(value) => change({ model: value })} />
+        <SelectField id="definition-model" label="Model" value={draft.model} error={errors.model} disabled={disabled} options={MODEL_OPTIONS} onChange={(value) => change({ model: value })} />
         <SelectField id="definition-workspace" label="Workspace" value={draft.workspace} error={errors.workspace} disabled={disabled} help="Code sandbox and git access need the sandbox workspace." options={[{ value: "none", label: "None" }, { value: "sandbox", label: "Sandbox" }]} onChange={(value) => change({ workspace: value as AgentDefinition["workspace"] })} />
         <ToolPicker project={draft.project_id || ""} identity={identity} tools={draft.tools} errors={errors} disabled={disabled} onChange={(tools) => change({ tools })} />
         <fieldset className="field-wide team-limits">
@@ -267,7 +266,7 @@ export function DefinitionForm({
           revision={saved.revision}
           disabled={!writable || busy}
           onLoad={(value) => {
-            setDraft({ ...value, id: saved.id, revision: saved.revision });
+            setDraft({ ...value.content, id: saved.id, project_id: saved.project_id, revision: saved.revision });
             setErrors({});
             onNotice(`Loaded revision ${value.revision}. Save to make it current.`);
           }}

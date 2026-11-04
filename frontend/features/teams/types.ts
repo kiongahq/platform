@@ -41,11 +41,10 @@ export type Team = {
   limits: TeamLimits;
   updated_at?: string;
 };
-export type Revision<T> = T & {
+export type Revision<T> = {
   revision: number;
-  updated_at?: string;
   saved_at?: string;
-  actor?: string;
+  content: T;
 };
 export type Usage = {
   input_tokens?: number;
@@ -67,9 +66,6 @@ export type WorkerStatus =
   | "completed"
   | "failed"
   | "cancelled";
-export type WorkerError =
-  | string
-  | { code?: string; message?: string; resumable?: boolean };
 /** Reported by the gateway when the run's team has sandbox members. */
 export type SandboxState = {
   available: boolean;
@@ -83,21 +79,23 @@ export type TeamRun = {
   id: string;
   project_id?: string;
   team_id: string;
-  team_name?: string;
   status: RunStatus;
   input?: string;
   allow_side_effects?: boolean;
   subject?: string;
   roles?: string[];
+  error?: string;
+  error_message?: string;
+  report?: string;
   usage?: Usage;
   resume_count?: number;
   content_sha256?: string;
-  report?: string;
-  last_error?: WorkerError;
+  coordinator_id?: string;
+  worker_ids?: string[];
   sandbox?: SandboxState;
-  snapshot?: { team?: Partial<Team>; members?: Partial<AgentDefinition>[] };
+  snapshot?: { team_id?: string; team_revision?: number; team?: Partial<Team>; members?: Partial<AgentDefinition>[] };
   created_at?: string;
-  started_at?: string;
+  updated_at?: string;
   finished_at?: string;
 };
 export type ToolCall = {
@@ -115,6 +113,7 @@ export type TranscriptMessage = {
 export type TeamWorker = {
   id: string;
   run_id?: string;
+  project_id?: string;
   role?: string;
   agent: string;
   task?: string;
@@ -122,13 +121,14 @@ export type TeamWorker = {
   transcript?: TranscriptMessage[];
   usage?: Usage;
   turns?: number;
+  active_millis?: number;
   next_attempt_at?: string;
   report?: string;
-  last_error?: WorkerError;
+  last_error?: string;
+  last_error_message?: string;
+  last_error_resumable?: boolean;
   sandbox_id?: string;
   created_at?: string;
-  started_at?: string;
-  finished_at?: string;
   updated_at?: string;
 };
 /** One log entry, contracts agent-team/team-run-event.v1. Previews are redacted by the gateway. */
@@ -161,16 +161,16 @@ export type RunEvent = {
 export type EventPage = {
   events?: RunEvent[];
   done?: boolean;
-  has_more?: boolean;
 };
 export type Approval = {
   id: string;
   run_id?: string;
   worker_id?: string;
-  tool?: string;
+  tool_name?: string;
   message?: string;
   status: string;
   created_at?: string;
+  expires_at?: string;
 };
 export type ProjectResource = {
   id?: string;
