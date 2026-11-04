@@ -27,6 +27,8 @@ type agentApproval struct {
 	ProjectID   string     `json:"project_id"`
 	RunID       string     `json:"run_id,omitempty"`
 	NodeID      string     `json:"node_id"`
+	WorkerID    string     `json:"worker_id,omitempty"`
+	ToolName    string     `json:"tool_name,omitempty"`
 	Message     string     `json:"message"`
 	Source      string     `json:"source"`
 	RequestedBy string     `json:"requested_by"`
