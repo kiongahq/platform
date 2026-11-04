@@ -1,0 +1,173 @@
+name: Sandbox attack suite
+
+# Runs hostile commands in real sandboxes under real gVisor, then proves the manager
+# fails closed with gVisor gone. This is the only place the sandbox isolation is
+# proven against gVisor: a developer's Podman machine has none.
+on:
+  push:
+    branches: [main]
+    paths: &paths
+      - go/internal/sandbox/**
+      - go/cmd/sandbox-manager/**
+      - go/Dockerfile
+      - go/go.mod
+      - deploy/sandbox/**
+      - scripts/ci-install-runsc.sh
+      - scripts/sandbox-attack-test.sh
+      - .github/workflows/sandbox-attack.yml
+  pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandbox-attack-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gvisor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Compile the suite
+        working-directory: go
+        run: go vet -tags sandboxattack ./internal/sandbox ./cmd/sandbox-manager
+      - name: Install pinned, checksum-verified gVisor
+        run: sudo scripts/ci-install-runsc.sh
+      # runc-renamed is a normal runtime under another name. The manager must refuse it
+      # by the kernel check, because a registered name proves nothing about isolation.
+      - name: Register runsc with Docker
+        run: |
+          sudo /opt/gvisor/runsc install -- --oci-seccomp
+          sudo python3 - <<'PY'
+          import json, pathlib, shutil
+          path = pathlib.Path("/etc/docker/daemon.json")
+          config = json.loads(path.read_text())
+          config["runtimes"]["runc-renamed"] = {"path": shutil.which("runc")}
+          path.write_text(json.dumps(config, indent=2))
+          print(json.dumps(config, indent=2))
+          PY
+          sudo systemctl restart docker
+          docker info --format '{{json .Runtimes}}'
+      - name: Build the sandbox image
+        run: |
+          docker build --quiet --tag kionga-sandbox-attack-base:dev deploy/sandbox
+          echo "KIONGA_ATTACK_IMAGE=$(docker image inspect kionga-sandbox-attack-base:dev --format '{{.Id}}')" >> "$GITHUB_ENV"
+          echo "KIONGA_ATTACK_GIT_HOST=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')" >> "$GITHUB_ENV"
+      - name: Attack suite under real gVisor
+        env:
+          KIONGA_ATTACK_RUNTIME: runsc
+          KIONGA_ATTACK_REQUIRE_GVISOR: "1"
+          KIONGA_ATTACK_NOT_GVISOR_RUNTIME: runc-renamed
+        run: scripts/sandbox-attack-test.sh
+      - name: Build the real binary
+        working-directory: go
+        run: go build -o "$RUNNER_TEMP/sandbox-manager" ./cmd/sandbox-manager
+      - name: The binary refuses to start without a token
+        run: |
+          if env -u KIONGA_SANDBOX_TOKEN "$RUNNER_TEMP/sandbox-manager"; then
+            echo "::error::the manager started with no token"
+            exit 1
+          fi
+      - name: The unsafe flag is refused in production
+        env:
+          KIONGA_SANDBOX_TOKEN: ${{ github.run_id }}-attack-suite-token-for-this-run
+          KIONGA_ENVIRONMENT: production
+          KIONGA_SANDBOX_ALLOW_UNSAFE_RUNTIME: "1"
+        run: |
+          if "$RUNNER_TEMP/sandbox-manager"; then
+            echo "::error::the manager started with the unsafe flag in production"
+            exit 1
+          fi
+      - name: The binary verifies gVisor
+        env:
+          KIONGA_SANDBOX_TOKEN: ${{ github.run_id }}-attack-suite-token-for-this-run
+          KIONGA_SANDBOX_IMAGES: ${{ env.KIONGA_ATTACK_IMAGE }}
+          KIONGA_SANDBOX_NAME_PREFIX: kabin-
+        run: |
+          "$RUNNER_TEMP/sandbox-manager" &
+          manager=$!
+          for _ in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:8088/healthz | tee "$RUNNER_TEMP/health.json" | grep -q '"runtime_verified":true'; then break; fi
+            sleep 1
+          done
+          kill "$manager"
+          cat "$RUNNER_TEMP/health.json"
+          grep -q '"runtime_verified":true' "$RUNNER_TEMP/health.json"
+          grep -q '"unsafe_runtime":false' "$RUNNER_TEMP/health.json"
+      # The spec's fail-closed proof: gVisor really unregistered from the daemon.
+      - name: Unregister runsc from Docker
+        run: |
+          sudo python3 - <<'PY'
+          import json, pathlib
+          path = pathlib.Path("/etc/docker/daemon.json")
+          config = json.loads(path.read_text())
+          del config["runtimes"]["runsc"]
+          path.write_text(json.dumps(config, indent=2))
+          PY
+          sudo systemctl restart docker
+          if docker info --format '{{json .Runtimes}}' | grep -q runsc; then
+            echo "::error::runsc is still registered"
+            exit 1
+          fi
+      - name: Creates return 503 and no container appears
+        env:
+          KIONGA_ATTACK_RUNTIME: runsc
+          KIONGA_ATTACK_MISSING_RUNTIME: runsc
+          KIONGA_ATTACK_RUN: ^TestAttackFailClosedRuntimeMissing$
+        run: scripts/sandbox-attack-test.sh
+      - name: The binary reports it and creates nothing
+        env:
+          KIONGA_SANDBOX_TOKEN: ${{ github.run_id }}-attack-suite-token-for-this-run
+          KIONGA_SANDBOX_IMAGES: ${{ env.KIONGA_ATTACK_IMAGE }}
+          KIONGA_SANDBOX_NAME_PREFIX: kabin-
+        run: |
+          before="$(docker ps --all --quiet | wc -l)"
+          "$RUNNER_TEMP/sandbox-manager" &
+          manager=$!
+          for _ in $(seq 1 30); do
+            curl --silent --fail http://127.0.0.1:8088/healthz > "$RUNNER_TEMP/health.json" && break
+            sleep 1
+          done
+          status="$(curl --silent --output "$RUNNER_TEMP/create.json" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $KIONGA_SANDBOX_TOKEN" --header 'Content-Type: application/json' \
+            --data '{"run_id":"atr-aaaaaaaaaaaaaaaaaaaaaaaa","worker_id":"atw-aaaaaaaaaaaaaaaaaaaaaaaa","project_id":"p"}' \
+            http://127.0.0.1:8088/sandboxes)"
+          kill "$manager"
+          cat "$RUNNER_TEMP/health.json" "$RUNNER_TEMP/create.json"
+          test "$status" = 503
+          grep -q '"error":"sandbox_unavailable"' "$RUNNER_TEMP/create.json"
+          grep -q '"runtime_verified":false' "$RUNNER_TEMP/health.json"
+          test "$(docker ps --all --quiet | wc -l)" = "$before"
+      # The disk limit has to hold on both engines. Podman here gets runsc the same way.
+      - name: Prepare Podman with runsc
+        run: |
+          sudo mkdir -p /etc/containers
+          printf '[engine.runtimes]\nrunsc = ["/opt/gvisor/runsc"]\n' | sudo tee /etc/containers/containers.conf
+          sudo systemctl start podman.socket
+          sudo chmod 755 /run/podman
+          sudo chmod 666 /run/podman/podman.sock
+          docker save kionga-sandbox-attack-base:dev | sudo podman load
+          sudo podman --version
+          sudo podman info --format '{{json .Host.OCIRuntime}}'
+          id="$(sudo podman image inspect kionga-sandbox-attack-base:dev --format '{{.Id}}')"
+          echo "KIONGA_ATTACK_IMAGE=sha256:${id#sha256:}" >> "$GITHUB_ENV"
+      - name: Disk limit under Podman with real gVisor
+        env:
+          KIONGA_ATTACK_SOCKET: /run/podman/podman.sock
+          KIONGA_ATTACK_RUNTIME: runsc
+          KIONGA_ATTACK_RUN: ^TestAttack(KernelIdentity|DiskLimit|PerFileLimit|Hiding|FileCount|FreeDiskFloor|EvaluateFixedSize|MeasureWriteRate)
+          KIONGA_ATTACK_REQUIRE_GVISOR: "1"
+        run: |
+          # The git test server is not used by these tests.
+          export KIONGA_ATTACK_GIT_HOST=127.0.0.1
+          scripts/sandbox-attack-test.sh
