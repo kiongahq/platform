@@ -819,6 +819,7 @@ func (e *teamEngine) settleRun(ctx context.Context, run agentteam.Run, workers [
 		return
 	}
 	if run.SettledAt == nil {
+		e.closeApprovals(workers)
 		final := sumUsage(teamWorkers(e.docs(), run))
 		status := run.Status
 		if status == agentteam.RunCancelling {
@@ -850,6 +851,27 @@ func (e *teamEngine) settleRun(ctx context.Context, run agentteam.Run, workers [
 	}
 	if run.SettledAt != nil {
 		e.cleanupRun(ctx, run)
+	}
+}
+
+// closeApprovals expires requests a stopped run left open, so nobody is asked to
+// decide something that can no longer happen.
+func (e *teamEngine) closeApprovals(workers []agentteam.Worker) {
+	for _, worker := range workers {
+		for _, message := range worker.Transcript {
+			for _, call := range message.ToolCalls {
+				if call.Status != agentteam.CallWaitingApproval || call.ApprovalID == "" {
+					continue
+				}
+				_, _ = store.UpdateDoc(e.docs(), agentApprovalKind, call.ApprovalID, func(current agentApproval, exists bool) (agentApproval, error) {
+					if !exists || current.view().Status != "pending" {
+						return current, store.ErrSkipWrite
+					}
+					current.ExpiresAt = time.Now().UTC().Add(-time.Second)
+					return current, nil
+				}, "agent_approval.expired", teamSchedulerSystem)
+			}
+		}
 	}
 }
 

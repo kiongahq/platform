@@ -442,6 +442,10 @@ func (s *Server) cancelTeamRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "access_denied", "Team runs are controlled by people.")
 		return
 	}
+	if err := requireJSON(r); err != nil {
+		writeDecodeError(w, err)
+		return
+	}
 	run, ok := s.teamRunFor(r)
 	if !ok {
 		writeError(w, 404, "not_found", "run not found")
@@ -470,6 +474,10 @@ func (s *Server) cancelTeamRun(w http.ResponseWriter, r *http.Request) {
 func (s *Server) resumeTeamRun(w http.ResponseWriter, r *http.Request) {
 	if machineCredential(principal(r)) {
 		writeError(w, 403, "access_denied", "Team runs are controlled by people.")
+		return
+	}
+	if err := requireJSON(r); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	run, ok := s.teamRunFor(r)

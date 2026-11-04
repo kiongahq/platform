@@ -2202,3 +2202,104 @@ func TestTeamNonPlatformModelRejectedAtSave(t *testing.T) {
 		t.Fatalf("team: %d", response.Code)
 	}
 }
+
+func TestTeamStoppedRunClosesItsApprovals(t *testing.T) {
+	forEachTeamStore(t, func(t *testing.T, repository store.Repository) {
+		h := newTeamHarness(t, repository)
+		connection, hits := h.connectionStub(nil)
+		runID, approval := approvalRun(t, h, connection)
+		h.api("POST", "/api/v1/team-runs/"+runID+"/cancel", "", 202)
+		if run := h.drive(runID); run.Status != agentteam.RunCancelled {
+			t.Fatalf("%+v", run)
+		}
+		if items := decodeTeam[approvalPage](t, h.api("GET", "/api/v1/agent-approvals?status=pending&run_id="+runID, "", 200)).Items; len(items) != 0 {
+			t.Fatalf("still pending: %+v", items)
+		}
+		late := h.callAs(h.starter, "POST", "/api/v1/agent-approvals/"+approval.ID+"/decision", `{"decision":"approve"}`)
+		if late.Code != 409 || hits.Load() != 0 {
+			t.Fatalf("late approval: %d hits=%d", late.Code, hits.Load())
+		}
+	})
+}
+
+func TestTeamControlRoutesRefuseFormPosts(t *testing.T) {
+	h := newTeamHarness(t, store.New())
+	runID := h.start(h.team([]string{h.definition("one", nil)}, nil), false)
+	for _, path := range []string{"cancel", "resume"} {
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/team-runs/"+runID+"/"+path, strings.NewReader("a=1"))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		response := httptest.NewRecorder()
+		h.mux.ServeHTTP(response, request.WithContext(auth.WithPrincipal(request.Context(), h.starter)))
+		if response.Code != http.StatusUnsupportedMediaType {
+			t.Errorf("%s: %d", path, response.Code)
+		}
+	}
+	if h.run(runID).Status != agentteam.RunRunning {
+		t.Fatal("a form post changed the run")
+	}
+}
+
+func TestTeamRegisteredToolIsGatedThenNotExecutable(t *testing.T) {
+	h := newTeamHarness(t, store.New())
+	if _, err := h.repository.RegisterTool(api.RegisterToolRequest{Name: "lookup", Version: "1.0.0", Description: "d", InputSchema: map[string]any{"type": "object"}}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	team := h.team([]string{h.definition("one", func(body map[string]any) {
+		body["tools"] = []map[string]any{{"kind": "tool", "ref": "lookup"}}
+	})}, nil)
+	h.runner.set(workerScript("one", func(_ context.Context, request turnRequest) (turnResponse, error) {
+		if request.Turn == 1 {
+			return reply("", toolCall("tool_lookup", map[string]any{"q": "x"})), nil
+		}
+		return reply("", finishCall(lastMessage(request))), nil
+	}))
+	runID := h.start(team, true)
+	h.step(h.engine)
+	h.step(h.engine)
+	if worker := h.workerNamed(runID, "one"); worker.Status != agentteam.WorkerWaitingApproval {
+		t.Fatalf("a registered tool skipped approval: %s", worker.Status)
+	}
+	approval := decodeTeam[approvalPage](t, h.api("GET", "/api/v1/agent-approvals?status=pending&run_id="+runID, "", 200)).Items[0]
+	h.api("POST", "/api/v1/agent-approvals/"+approval.ID+"/decision", `{"decision":"approve"}`, 200)
+	h.drive(runID)
+	if report := h.workerNamed(runID, "one").Report; !strings.Contains(report, "tool_not_executable") {
+		t.Fatalf("report: %s", report)
+	}
+}
+
+func TestTeamKnowledgeToolRunsAsTheStarter(t *testing.T) {
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/points/query") {
+			_, _ = w.Write([]byte(`{"result":{"points":[{"id":"p","score":0.9,"payload":{"text":"a known fact"}}]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"result":true}`))
+	}))
+	defer stub.Close()
+	h := newTeamHarness(t, store.New())
+	id := "kb-" + strings.Repeat("c", 32)
+	if _, err := store.UpdateDoc(h.repository, knowledgeKind, id, func(knowledgeBase, bool) (knowledgeBase, error) {
+		return knowledgeBase{ID: id, ProjectID: h.project, Name: "docs", Backend: "qdrant", Endpoint: stub.URL, SecretRef: "none", Dimensions: 2}, nil
+	}, "knowledge_base.created", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	team := h.team([]string{h.definition("one", func(body map[string]any) {
+		body["tools"] = []map[string]any{{"kind": "knowledge", "ref": id}}
+	})}, nil)
+	var noVector, found string
+	h.runner.set(workerScript("one", func(_ context.Context, request turnRequest) (turnResponse, error) {
+		switch request.Turn {
+		case 1:
+			return reply("", toolCall("knowledge_"+id, map[string]any{})), nil
+		case 2:
+			noVector = lastMessage(request)
+			return reply("", toolCall("knowledge_"+id, map[string]any{"vector": []float64{1, 0}})), nil
+		}
+		found = lastMessage(request)
+		return reply("", finishCall("done")), nil
+	}))
+	h.drive(h.start(team, false))
+	if !strings.Contains(noVector, "embedding_required") || !strings.Contains(found, "a known fact") {
+		t.Fatalf("noVector=%s found=%s", noVector, found)
+	}
+}
