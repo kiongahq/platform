@@ -1964,18 +1964,20 @@ func TestTeamRunWithoutSandboxLeavesTheScan(t *testing.T) {
 	}
 }
 
-func TestTeamInvalidModelErrorFailsWorker(t *testing.T) {
+func TestTeamModelErrorFailsWorker(t *testing.T) {
 	h := newTeamHarness(t, store.New())
 	team := h.team([]string{h.definition("one", nil)}, nil)
+	calls := 0
 	h.runner.set(workerScript("one", func(context.Context, turnRequest) (turnResponse, error) {
-		return turnResponse{Error: &turnError{Code: "invalid_request", Message: "context too long"}}, nil
+		calls++
+		return turnResponse{Error: &turnError{Code: "model_error", Message: "bad output"}}, nil
 	}))
 	runID := h.start(team, false)
 	h.step(h.engine)
 	h.step(h.engine)
 	worker := h.workerNamed(runID, "one")
-	if worker.Status != agentteam.WorkerFailed || worker.LastError != "invalid_request" || !worker.LastErrorResumable {
-		t.Fatalf("%+v", worker)
+	if worker.Status != agentteam.WorkerFailed || worker.LastError != "model_error" || !worker.LastErrorResumable || calls != 1 {
+		t.Fatalf("%s %s calls=%d", worker.Status, worker.LastError, calls)
 	}
 }
 
@@ -2068,10 +2070,7 @@ func TestTeamLongWorkerCompactsWhatItSends(t *testing.T) {
 	forEachTeamStore(t, func(t *testing.T, repository store.Repository) {
 		h := newTeamHarness(t, repository)
 		h.engine.compactAt = 20000
-		team := h.team([]string{h.definition("one", func(body map[string]any) {
-			sandboxMember(sandboxGrant)(body)
-			body["limits"] = map[string]any{"max_tokens": 5000000}
-		})}, nil)
+		team := h.team([]string{h.definition("one", sandboxMember(sandboxGrant))}, nil)
 		h.sandbox.files["big.txt"] = strings.Repeat("line of output\n", 400)
 		var mu sync.Mutex
 		var sentMarkers int
@@ -2100,7 +2099,7 @@ func TestTeamLongWorkerCompactsWhatItSends(t *testing.T) {
 		if worker.Status != agentteam.WorkerCompleted {
 			t.Fatalf("%s %s", worker.Status, worker.LastError)
 		}
-		if sentMarkers == 0 || worker.CompactedBefore == 0 {
+		if sentMarkers == 0 || worker.CompactionLevel == 0 {
 			t.Fatalf("never compacted: markers=%d", sentMarkers)
 		}
 		// The stored transcript stays complete.
@@ -2115,59 +2114,141 @@ func TestTeamLongWorkerCompactsWhatItSends(t *testing.T) {
 	})
 }
 
-func TestTeamContextExhaustedFailsThenResumes(t *testing.T) {
+// holdOpenScript keeps a run alive with a second worker that waits, so one worker's
+// end does not finish the run.
+func holdOpenScript(worker func(context.Context, turnRequest) (turnResponse, error)) func(context.Context, turnRequest) (turnResponse, error) {
+	return func(ctx context.Context, request turnRequest) (turnResponse, error) {
+		if isCoordinator(request) {
+			if request.Turn == 1 {
+				return reply("", toolCall(agentteam.ToolSpawnWorker, map[string]string{"agent": "one", "task": "t"}), toolCall(agentteam.ToolSpawnWorker, map[string]string{"agent": "two", "task": "t"})), nil
+			}
+			return reply("waiting"), nil
+		}
+		if strings.Contains(request.System, "Do two") {
+			return turnResponse{Error: &turnError{Code: "rate_limited", Message: "hold", RetryAfterSeconds: 3600}}, nil
+		}
+		return worker(ctx, request)
+	}
+}
+
+func TestTeamThresholdNeverFailsAWorker(t *testing.T) {
 	forEachTeamStore(t, func(t *testing.T, repository store.Repository) {
 		h := newTeamHarness(t, repository)
 		h.engine.compactAt = 100
-		team := h.team([]string{h.definition("one", nil), h.definition("two", nil)}, nil)
-		over := true
-		calls := 0
-		h.runner.set(func(_ context.Context, request turnRequest) (turnResponse, error) {
-			if isCoordinator(request) {
-				if request.Turn == 1 {
-					return reply("", toolCall(agentteam.ToolSpawnWorker, map[string]string{"agent": "one", "task": "t"}), toolCall(agentteam.ToolSpawnWorker, map[string]string{"agent": "two", "task": "t"})), nil
-				}
-				return reply("waiting"), nil
+		team := h.team([]string{h.definition("one", func(body map[string]any) { body["limits"] = map[string]any{"max_tokens": 5000000} })}, nil)
+		h.runner.set(workerScript("one", func(_ context.Context, request turnRequest) (turnResponse, error) {
+			assertTurnShape(t, request)
+			if request.Turn > 6 {
+				return reply("", finishCall("done")), nil
 			}
-			if strings.Contains(request.System, "Do two") {
-				return turnResponse{Error: &turnError{Code: "rate_limited", Message: "hold", RetryAfterSeconds: 3600}}, nil
-			}
-			calls++
+			// Far over the threshold on every turn, with nothing old to remove.
 			response := reply("", toolCall(agentteam.ToolSendMessage, map[string]string{"to": "coordinator", "text": "more"}))
-			response.Usage = agentteam.Usage{InputTokens: 50}
-			if over {
-				response.Usage.InputTokens = 5000
+			response.Usage.InputTokens = 500000
+			return response, nil
+		}))
+		runID := h.start(team, false)
+		h.step(h.engine)
+		h.step(h.engine)
+		worker := h.workerNamed(runID, "one")
+		if worker.Status != agentteam.WorkerCompleted || worker.CompactionLevel != agentteam.MaxCompactionLevel {
+			t.Fatalf("%s %s level %d", worker.Status, worker.LastError, worker.CompactionLevel)
+		}
+	})
+}
+
+func TestTeamInvalidRequestCompactsAndRetriesWithoutSpendingATurn(t *testing.T) {
+	forEachTeamStore(t, func(t *testing.T, repository store.Repository) {
+		h := newTeamHarness(t, repository)
+		team := h.team([]string{h.definition("one", sandboxMember(sandboxGrant))}, nil)
+		h.sandbox.files["big.txt"] = "large output"
+		attempts := []int{}
+		refused := 0
+		h.runner.set(workerScript("one", func(_ context.Context, request turnRequest) (turnResponse, error) {
+			assertTurnShape(t, request)
+			if request.Turn <= 14 {
+				return reply("", toolCall(agentteam.ToolReadFile, map[string]string{"path": "big.txt"})), nil
 			}
-			if !over {
+			if request.Turn == 15 && refused < 1 {
+				refused++
+				attempts = append(attempts, strings.Count(strings.Join(messageContents(request), ""), "Output removed"))
+				return turnResponse{Error: &turnError{Code: "invalid_request", Message: "context too long"}}, nil
+			}
+			attempts = append(attempts, strings.Count(strings.Join(messageContents(request), ""), "Output removed"))
+			return reply("", finishCall("done")), nil
+		}))
+		runID := h.start(team, false)
+		h.step(h.engine)
+		h.step(h.engine)
+		worker := h.workerNamed(runID, "one")
+		if worker.Status != agentteam.WorkerCompleted || worker.CompactionLevel != 1 {
+			t.Fatalf("%s %s level %d", worker.Status, worker.LastError, worker.CompactionLevel)
+		}
+		if fmt.Sprint(attempts) != "[0 4]" {
+			t.Fatalf("markers per attempt: %v", attempts)
+		}
+		if worker.Turns != 15 {
+			t.Fatalf("the retry spent a turn: %d", worker.Turns)
+		}
+	})
+}
+
+// A request that is simply bad gets one retry per level, then stops.
+func TestTeamBadRequestCannotLoop(t *testing.T) {
+	forEachTeamStore(t, func(t *testing.T, repository store.Repository) {
+		h := newTeamHarness(t, repository)
+		team := h.team([]string{h.definition("one", nil), h.definition("two", nil)}, nil)
+		var calls atomic.Int64
+		fixed := atomic.Bool{}
+		h.runner.set(holdOpenScript(func(context.Context, turnRequest) (turnResponse, error) {
+			calls.Add(1)
+			if fixed.Load() {
 				return reply("", finishCall("finished after resume")), nil
 			}
-			return response, nil
-		})
+			return turnResponse{Error: &turnError{Code: "invalid_request", Message: "unsupported field"}}, nil
+		}))
 		runID := h.start(team, false)
 		h.step(h.engine)
 		h.step(h.engine)
 		worker := h.workerNamed(runID, "one")
 		if worker.Status != agentteam.WorkerFailed || worker.LastError != agentteam.ErrContextExhausted || !worker.LastErrorResumable {
-			t.Fatalf("%+v %s", worker.Status, worker.LastError)
+			t.Fatalf("%s %s", worker.Status, worker.LastError)
 		}
-		if calls != 1 {
-			t.Fatalf("looped on the model: %d calls", calls)
+		if !strings.Contains(worker.LastErrorMessage, "unsupported field") {
+			t.Fatalf("message: %s", worker.LastErrorMessage)
 		}
+		if got := calls.Load(); got != int64(agentteam.MaxCompactionLevel+1) {
+			t.Fatalf("attempts %d, want one per level", got)
+		}
+		if worker.Turns != 0 {
+			t.Fatalf("turns %d", worker.Turns)
+		}
+		// More scans do nothing: it failed, it does not loop.
 		h.step(h.engine)
+		h.step(h.engine)
+		if got := calls.Load(); got != int64(agentteam.MaxCompactionLevel+1) {
+			t.Fatalf("retried after failing: %d", got)
+		}
 		handBack := false
-		for _, message := range append(h.worker(h.run(runID).CoordinatorID).Transcript, agentteam.Message{}) {
+		for _, message := range h.worker(h.run(runID).CoordinatorID).Transcript {
 			handBack = handBack || (strings.Contains(message.Content, `kind="hand-back"`) && strings.Contains(message.Content, agentteam.ErrContextExhausted))
 		}
 		if !handBack {
 			t.Fatal("the coordinator was not told")
 		}
-		// A resume makes one more attempt on the compacted transcript.
-		over = false
+		// A resume makes exactly one attempt at the top level, and a still-bad request fails again.
 		h.api("POST", "/api/v1/team-runs/"+runID+"/resume", "", 202)
 		h.step(h.engine)
-		worker = h.workerNamed(runID, "one")
-		if worker.Status != agentteam.WorkerCompleted || worker.Report != "finished after resume" {
-			t.Fatalf("after resume: %s %s %s", worker.Status, worker.LastError, worker.Report)
+		if got := calls.Load(); got != int64(agentteam.MaxCompactionLevel+2) {
+			t.Fatalf("attempts after resume: %d", got)
+		}
+		if failed := h.workerNamed(runID, "one"); failed.Status != agentteam.WorkerFailed || failed.LastError != agentteam.ErrContextExhausted {
+			t.Fatalf("%s %s", failed.Status, failed.LastError)
+		}
+		fixed.Store(true)
+		h.api("POST", "/api/v1/team-runs/"+runID+"/resume", "", 202)
+		h.step(h.engine)
+		if done := h.workerNamed(runID, "one"); done.Status != agentteam.WorkerCompleted || done.Report != "finished after resume" {
+			t.Fatalf("%s %s %s", done.Status, done.LastError, done.Report)
 		}
 	})
 }

@@ -65,6 +65,8 @@ const (
 	ErrWorkersLive            = "workers_live"
 	ErrMaxWorkers             = "max_workers_exceeded"
 	ErrContextExhausted       = "context_exhausted"
+	ErrToolNoFunction         = "tool_no_function"
+	ErrEmbeddingUnavailable   = "embedding_unavailable"
 )
 
 // ToolGrant is one entry in a definition's tools list.
@@ -253,11 +255,11 @@ type Worker struct {
 	Turns        int   `json:"turns"`
 	ActiveMillis int64 `json:"active_millis"`
 
-	// LastInputTokens is what the last model call measured. CompactedBefore is the
-	// transcript index below which tool results are sent as markers, and only moves
-	// forward. CompactedAtTurn stops one measurement from compacting twice.
+	// LastInputTokens is what the last model call measured. CompactionLevel says how
+	// much of the transcript is sent as markers, and only rises. CompactedAtTurn stops
+	// one measurement from raising it twice.
 	LastInputTokens int `json:"last_input_tokens,omitempty"`
-	CompactedBefore int `json:"compacted_before,omitempty"`
+	CompactionLevel int `json:"compaction_level,omitempty"`
 	CompactedAtTurn int `json:"compacted_at_turn,omitempty"`
 
 	NextAttemptAt *time.Time `json:"next_attempt_at,omitempty"`

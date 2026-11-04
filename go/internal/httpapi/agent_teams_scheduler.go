@@ -576,19 +576,17 @@ func (e *teamEngine) modelStep(ctx context.Context, run agentteam.Run, worker ag
 		e.cancelLeased(run, lease, worker)
 		return worker, false
 	}
+	// Crossing the threshold only compacts more. It never fails a worker: the
+	// provider decides what is too long, through invalid_request below.
 	if worker.LastInputTokens > e.compactAt && worker.Turns > worker.CompactedAtTurn {
-		exhausted := false
 		saved, err := e.apply(lease, func(current *agentteam.Worker) error {
-			exhausted = agentteam.AdvanceCompaction(current, e.compactAt, agentteam.CompactKeepTurns)
+			agentteam.AdvanceCompaction(current, e.compactAt)
 			return nil
 		})
 		if err != nil {
 			return worker, false
 		}
 		worker = saved
-		if exhausted {
-			return e.failWorker(run, lease, worker, agentteam.ErrContextExhausted, "The context is over its limit even after compacting old tool results.", true), false
-		}
 	}
 	model := run.Snapshot.Team.Coordinator.Model
 	if member, ok := run.Snapshot.Member(worker.Agent); ok {
@@ -612,6 +610,8 @@ func (e *teamEngine) modelStep(ctx context.Context, run agentteam.Run, worker ag
 		switch response.Error.Code {
 		case "rate_limited", agentteam.ErrProviderUnavailable:
 			return e.waitOrFail(run, worker, lease, response.Error.Code, response.Error.Message, response.Error.RetryAfterSeconds)
+		case "invalid_request":
+			return e.compactOrExhaust(run, worker, lease, response.Error.Message)
 		}
 		return e.failWorker(run, lease, worker, response.Error.Code, response.Error.Message, true), false
 	}
@@ -625,6 +625,25 @@ func (e *teamEngine) modelStep(ctx context.Context, run agentteam.Run, worker ag
 	usage := response.Usage
 	appendTeamEvent(e.docs(), teamEvent{Type: "worker.turn", RunID: run.ID, WorkerID: saved.ID, Agent: saved.Agent, Role: saved.Role, Turn: saved.Turns, Status: agentteam.WorkerRunning, Usage: &usage, OutputPreview: preview(response.Content)})
 	return saved, true
+}
+
+// compactOrExhaust answers invalid_request. Below the top level it compacts further
+// and tries again without spending a turn, so one level gets one retry and a request
+// that is simply bad stops within agentteam.MaxCompactionLevel attempts. At the top
+// level there is nothing left to remove.
+func (e *teamEngine) compactOrExhaust(run agentteam.Run, worker agentteam.Worker, lease *teamLease, message string) (agentteam.Worker, bool) {
+	raised := false
+	saved, err := e.apply(lease, func(current *agentteam.Worker) error {
+		raised = agentteam.RaiseCompaction(current)
+		return nil
+	})
+	if err != nil {
+		return worker, false
+	}
+	if raised {
+		return saved, true
+	}
+	return e.failWorker(run, lease, saved, agentteam.ErrContextExhausted, "The model refused the request with old tool results already removed: "+message, true), false
 }
 
 func (e *teamEngine) waitOrFail(run agentteam.Run, worker agentteam.Worker, lease *teamLease, code, message string, retryAfter int) (agentteam.Worker, bool) {
