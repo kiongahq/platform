@@ -625,6 +625,14 @@ func TestLookupsRefuseForeignIDsAndContainers(t *testing.T) {
 	}
 }
 
+func TestLookupsRefuseAnotherInstallsSandbox(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := createTest(t, service)
+	driver.instances[service.containerName(id)].Labels[LabelPrefix] = "another-install"
+	_, err := service.Exec(context.Background(), id, client.ExecRequest{Command: "id"})
+	wantStatus(t, err, http.StatusNotFound, client.CodeNotFound)
+}
+
 func TestExecRefusesWrongRuntimeOnExistingSandbox(t *testing.T) {
 	service, driver, _ := newTestService(t, nil)
 	id := createTest(t, service)
