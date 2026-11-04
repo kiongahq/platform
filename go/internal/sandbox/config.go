@@ -68,7 +68,7 @@ type Config struct {
 	TmpBytes                int64
 	VolumeBytes             int64
 	BundleBytes             int64
-	MaxSandboxes            int
+	MaxSandboxes            int64
 	TTL                     time.Duration
 	GitTimeout              time.Duration
 	// HelperMaxAge removes a helper left behind by a crashed manager, because it
