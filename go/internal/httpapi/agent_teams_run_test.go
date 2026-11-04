@@ -580,18 +580,18 @@ func TestTeamConcurrencyLimitHoldsWorkersBack(t *testing.T) {
 		body["limits"] = map[string]any{"max_workers_total": 2, "max_concurrent_workers": 1}
 	})
 	runID := h.spawnOne(team, false)
-	slotted := h.engine.acquireSlot(h.run(runID), "atw-held")
+	slotted := h.engine.acquireSlot(h.run(runID), "atw-held", "held-token")
 	if !slotted {
 		t.Fatal("first slot refused")
 	}
-	if h.engine.acquireSlot(h.run(runID), h.workerNamed(runID, "one").ID) {
+	if h.engine.acquireSlot(h.run(runID), h.workerNamed(runID, "one").ID, "one-token") {
 		t.Fatal("slot over the limit")
 	}
-	if h.engine.acquireSlot(h.run(runID), "atw-held") {
+	if h.engine.acquireSlot(h.run(runID), "atw-held", "held-token") {
 		t.Fatal("a held slot was shared")
 	}
 	h.clock.advance(2 * teamLeaseTTL)
-	if !h.engine.acquireSlot(h.run(runID), h.workerNamed(runID, "one").ID) {
+	if !h.engine.acquireSlot(h.run(runID), h.workerNamed(runID, "one").ID, "one-token") {
 		t.Fatal("expired slot did not free")
 	}
 }
