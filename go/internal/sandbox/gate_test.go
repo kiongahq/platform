@@ -2096,3 +2096,27 @@ func TestDeleteRemovesAMeterHoldingTheVolume(t *testing.T) {
 		t.Fatalf("left %v", driver.instances)
 	}
 }
+
+func TestSandboxSpecLimitsOneFileToTheDiskLimit(t *testing.T) {
+	service, driver, _ := newTestService(t, map[string]string{"KIONGA_SANDBOX_DISK_MB": "100"})
+	createTest(t, service)
+	if spec := driver.specNamed(RoleSandbox)[0]; spec.FileSizeBytes != 100<<20 {
+		t.Fatalf("file size limit: %d", spec.FileSizeBytes)
+	}
+}
+
+func TestRecoveryNeverRestartsASandboxStoppedForDisk(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := createTest(t, service)
+	name := service.containerName(id)
+	service.quotaStopped.Store(name, "over")
+	service.restartQuietly(name)
+	if len(driver.restarted) != 0 {
+		t.Fatalf("restarted: %v", driver.restarted)
+	}
+	service.quotaStopped.Delete(name)
+	service.restartQuietly(name)
+	if len(driver.restarted) != 1 {
+		t.Fatal("a sandbox not stopped for disk should restart")
+	}
+}
