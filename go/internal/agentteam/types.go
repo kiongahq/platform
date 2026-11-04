@@ -275,6 +275,8 @@ type Worker struct {
 	LastError          string `json:"last_error,omitempty"`
 	LastErrorMessage   string `json:"last_error_message,omitempty"`
 	LastErrorResumable bool   `json:"last_error_resumable,omitempty"`
+	// CompletionGeneration identifies a finish independently of lease timestamps.
+	CompletionGeneration uint64 `json:"completion_generation,omitempty"`
 	// NotifyPending says a hand-back or failure is not yet in the coordinator's
 	// inbox. It is written with the status change, and a scan re-drives it, so a
 	// crash between the two writes cannot strand an idle coordinator.
