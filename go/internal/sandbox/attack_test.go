@@ -17,6 +17,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -1593,4 +1594,35 @@ rm -f /workspace/rate-*`, 60)
 		t.Fatal(err)
 	}
 	t.Logf("MEASURED under %s: %s; one meter takes %s", os.Getenv("KIONGA_ATTACK_RUNTIME"), strings.Join(report, "; "), time.Since(started).Round(time.Millisecond))
+}
+
+// The workflow runs this against real gVisor. A changed expectation forces the
+// resumed/recovered instance to prove its kernel again instead of using a probe.
+func TestAttackRuntimeReattestation(t *testing.T) {
+	for _, restartManager := range []bool{false, true} {
+		t.Run(strconv.FormatBool(restartManager), func(t *testing.T) {
+			env := newEnv(t)
+			ref := env.sandbox(t)
+			s := env.service
+			ctx := context.Background()
+			if restartManager {
+				s = NewService(s.config, attackDriver, s.logger)
+			} else {
+				if err := attackDriver.Stop(ctx, s.containerName(ref.id)); err != nil {
+					t.Fatal(err)
+				}
+				env.ok(t, ref, "true") // a real restart must first pass attestation
+				if err := attackDriver.Stop(ctx, s.containerName(ref.id)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			s.config.AllowUnsafe = false
+			s.config.ExpectKernel = "impossible-kernel-" + randomHex(16)
+			_, err := s.Exec(ctx, ref.id, client.ExecRequest{Command: "touch /workspace/unattested-command"})
+			wantCode(t, err, client.CodeUnavailable)
+			if _, err := attackDriver.Inspect(ctx, s.containerName(ref.id)); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("failed instance retained: %v", err)
+			}
+		})
+	}
 }

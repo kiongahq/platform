@@ -63,7 +63,7 @@ jobs:
           docker build --quiet --tag kionga-sandbox-attack-base:dev deploy/sandbox
           echo "KIONGA_ATTACK_IMAGE=$(docker image inspect kionga-sandbox-attack-base:dev --format '{{.Id}}')" >> "$GITHUB_ENV"
           echo "KIONGA_ATTACK_GIT_HOST=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')" >> "$GITHUB_ENV"
-      - name: Attack suite under real gVisor
+      - name: Attack suite and restart attestation under real gVisor
         env:
           KIONGA_ATTACK_RUNTIME: runsc
           KIONGA_ATTACK_REQUIRE_GVISOR: "1"

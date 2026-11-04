@@ -187,7 +187,7 @@ func (f *fakeDriver) Create(_ context.Context, spec ContainerSpec) error {
 	if _, ok := f.instances[spec.Name]; ok {
 		return ErrExists
 	}
-	f.instances[spec.Name] = &Instance{Name: spec.Name, Labels: spec.Labels, Running: true, Runtime: spec.Runtime}
+	f.instances[spec.Name] = &Instance{Identity: spec.Name + "/1", Name: spec.Name, Labels: spec.Labels, Running: true, Runtime: spec.Runtime}
 	if spec.Volume != nil {
 		f.volumes[spec.Volume.Name] = spec.Labels
 	}
@@ -259,7 +259,7 @@ func (f *fakeDriver) Exec(ctx context.Context, name string, request ExecRequest)
 	handler := f.onExec
 	kernel := f.kernel
 	f.mu.Unlock()
-	if containsArg(request.Argv, "uname -r") {
+	if containsArg(request.Argv, "/bin/uname") {
 		_, _ = io.WriteString(request.Stdout, kernel+"\n")
 		return 0, nil
 	}
@@ -286,6 +286,7 @@ func (f *fakeDriver) Restart(_ context.Context, name string) error {
 	f.restarted = append(f.restarted, name)
 	if found, ok := f.instances[name]; ok {
 		found.Running = true
+		found.Identity += "/restart"
 	}
 	return nil
 }
@@ -763,7 +764,7 @@ func (b *blockingDriver) Exec(ctx context.Context, name string, request ExecRequ
 	if containsArg(request.Argv, sweepScript) {
 		return b.onSweep(request.Stdout)
 	}
-	if containsArg(request.Argv, "uname -r") || containsArg(request.Argv, meterScript) {
+	if containsArg(request.Argv, "/bin/uname") || containsArg(request.Argv, meterScript) {
 		return b.fakeDriver.Exec(ctx, name, request)
 	}
 	<-ctx.Done()

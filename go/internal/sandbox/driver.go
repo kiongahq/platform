@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// Labels on everything the manager creates. They are the only state: the manager
-// keeps none of its own, and only ever touches objects carrying its own prefix.
+// Labels on everything the manager creates. Durable state is discovered through
+// these labels; runtime attestations are cached only in the manager.
 const (
 	LabelManaged = "kionga.dev/sandbox-managed"
 	LabelPrefix  = "kionga.dev/sandbox-prefix"
@@ -91,9 +91,11 @@ type ContainerSpec struct {
 
 // Instance is a container or pod as the engine reports it.
 type Instance struct {
-	Name    string
-	Labels  map[string]string
-	Running bool
+	// Identity is engine-owned and changes on replacement or restart.
+	Identity string
+	Name     string
+	Labels   map[string]string
+	Running  bool
 	// Runtime is what the engine says the instance runs on, or "" when it cannot say.
 	Runtime string
 }

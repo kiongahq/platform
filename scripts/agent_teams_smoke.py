@@ -51,7 +51,7 @@ QDRANT_IMAGE = "qdrant/qdrant@sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e
 
 NOT_EXERCISED = [
     "dataset tools: they need an object store and a registered dataset, and no scenario grants one",
-    "registered `tool` grants: they need a function runtime (OPENFAAS_URL); side effects are exercised through `connection` and `git_push` instead",
+    "a real function runtime: scenario 11 runs registered `tool` grants against the counting backend in place of OpenFaaS",
     "the Kubernetes sandbox driver, and Podman: this runs Docker only",
     "several gateway replicas: one gateway process at a time, restarted",
     "a real model provider: the runner uses MLAIOPS_LLM_BACKEND=mock, so model decisions are scripted",
@@ -144,6 +144,8 @@ class Smoke:
             # Short, so scenario 7 can watch a real delete. Long enough that nothing
             # else in a run sees its sandbox go.
             "KIONGA_TEAM_SANDBOX_RETENTION_SECONDS": "30",
+            # The function runtime is outside Kionga, so the counting backend stands in.
+            "OPENFAAS_URL": self.backend.url, "OPENFAAS_PASSWORD": "smoke-" + secrets.token_hex(8),
         }
         if os.environ.get("DATABASE_URL"):
             env["DATABASE_URL"] = os.environ["DATABASE_URL"]
@@ -364,6 +366,12 @@ class Smoke:
 
     def containers(self, label: str, value: str, role: str = "sandbox") -> list[str]:
         return run(["docker", "ps", "-aq", "--filter", f"label=kionga.dev/sandbox-{label}={value}", "--filter", f"label=kionga.dev/sandbox-role={role}"]).split()
+
+    def exec_actions(self, container: str, since: float) -> list[str]:
+        """The commands Docker itself recorded being started in a container since a time."""
+        out = run(["docker", "events", "--since", str(int(since)), "--until", str(int(time.time()) + 1), "--filter", f"container={container}",
+                   "--filter", "event=exec_create", "--format", "{{.Action}}"], timeout=30)
+        return [line.removeprefix("exec_create: ").strip() for line in out.splitlines()]
 
     def volumes(self, label: str, value: str) -> list[str]:
         return run(["docker", "volume", "ls", "-q", "--filter", f"label=kionga.dev/sandbox-{label}={value}"]).split()
@@ -660,9 +668,11 @@ def scenario_6a(s: Smoke) -> None:
     s.decide(s.approval_for(push_run, pusher, "git_push"), "approve")
     wait_for("the push to reach the git server", lambda: s.git.push_count(repo) == 1, 90)
 
-    # In-flight read-only search, blocked on a FIFO: re-run, and the second run finds the text.
+    # In-flight read-only search, blocked on a FIFO. After the crash the fixture
+    # replaces the FIFO with a regular file, which only a fresh search can read.
     searcher = s.name("searcher")
-    search_steps = [call("exec", command="mkfifo /workspace/pipe && (nohup sh -c 'sleep 45; while :; do echo needle > /workspace/pipe; sleep 1; done' >/dev/null 2>&1 &) ; echo ok"),
+    search_started = time.time()
+    search_steps = [call("exec", command="mkfifo /workspace/pipe"),
                     call("search_files", pattern="needle", path="/workspace/pipe"),
                     finish("search re-ran")]
     search_run = s.start(s.team(s.define(searcher, s.sandbox_tools(), "sandbox")), coordinator_input((searcher, script(search_steps))))
@@ -686,12 +696,30 @@ def scenario_6a(s: Smoke) -> None:
     for label, (run_id, agent) in runs.items():
         pending[label] = s.worker(run_id, agent)
         check(pending[label]["lease_expires_at"], f"{label}: no lease at kill time")
+    search_containers = s.containers("worker", pending["search"]["id"])
+    check(len(search_containers) == 1, f"search containers: {search_containers}")
+    search_container = search_containers[0]
+    def search_invocations() -> list[str]:
+        return [command for command in s.exec_actions(search_container, search_started)
+                if "grep -rnIE" in command and "/workspace/pipe" in command]
+    check(len(search_invocations()) == 1, "the initial search must reach the engine before the crash")
+    search_calls = [c for m in pending["search"]["transcript"] for c in m.get("tool_calls") or [] if c["name"] == "search_files"]
+    check(len(search_calls) == 1 and search_calls[0]["status"] == "pending" and search_calls[0].get("started_at"),
+          f"search at kill time: {search_calls}")
     pending_call = [c for m in pending["connection"]["transcript"] for c in m.get("tool_calls") or [] if c["name"] == tool]
     check(pending_call and pending_call[0]["status"] == "pending" and pending_call[0].get("started_at"), f"call at kill time: {pending_call}")
     s.say(f"at kill: exec, search_files, git_push (server count {s.git.push_count(repo)}) and connection (backend count {s.backend.count(path)}) all pending with started_at")
 
     s.gateway.kill9()
     killed = datetime.now(timezone.utc)
+    # Cancellation sweeps all processes in this sandbox, including background writers.
+    # The fixture changes only the filesystem; neither the persisted call nor its result
+    # is touched. An old reader of the FIFO cannot read this new inode.
+    def release_search() -> bool:
+        run(["docker", "exec", search_container, "python3", "-c",
+             "from pathlib import Path; p=Path('/workspace/replay.txt'); p.write_text('needle\\n'); p.replace('/workspace/pipe')"])
+        return True
+    wait_for("replace the FIFO after cancellation cleanup", release_search, 30)
     backend_hold.set()
     git_hold.set()
     s.start_gateway()
@@ -744,7 +772,8 @@ def scenario_6a(s: Smoke) -> None:
     result = s.one_result(worker, "search_files")
     check(result["status"] == "done", f"search_files: {result}")
     check("needle" in result["content"], f"search_files did not run again: {result}")
-    s.say("search_files (read-only): re-ran after the restart and found the text")
+    check(len(search_invocations()) == 2, f"expected exactly two search execs: {search_invocations()}")
+    s.say("search_files (read-only): two engine execs; replay read the replacement file after the restart")
     check("outcome_unknown" not in json.dumps(s.tool_results(worker)), "a read-only call got outcome_unknown")
 
 
@@ -813,6 +842,7 @@ def scenario_6c(s: Smoke) -> None:
     down = s.run_view(run_id)["sandbox"]
     check(down["available"] is False, f"sandbox with the manager down: {down}")
     s.say(f"manager down: run view says sandbox {down}")
+    restarted = time.time()
     s.start_manager()
     time.sleep(11)
     up = s.run_view(run_id)["sandbox"]
@@ -820,8 +850,14 @@ def scenario_6c(s: Smoke) -> None:
     s.decide(approval, "approve")
 
     s.wait_tool_started(run_id, "exec")
-    wait_for("exec under the manager", lambda: any(e["type"] == "worker.tool_call" and e.get("tool") == "exec" for e in s.events(run_id)), 30)
     time.sleep(2)
+    # A new manager trusts nothing it did not prove itself: the first command it starts in
+    # this existing sandbox is the kernel check, ahead of the read_file and the exec.
+    commands = s.exec_actions(before[0], restarted)
+    check(commands and commands[0] == "/bin/uname -r", f"first command after the manager restart: {commands[:5]}")
+    check(len(commands) >= 3, f"commands after the manager restart: {commands}")
+    s.say(f"re-attested after restart: first exec in the existing sandbox was {commands[0]!r}, then {len(commands) - 1} more")
+    second_restart = time.time()
     s.manager.kill9()
     approval = s.approval_for(run_id, name, tool_b)
     interrupted = s.tool_results(s.worker(run_id, name), "exec")[0]
@@ -830,6 +866,8 @@ def scenario_6c(s: Smoke) -> None:
     s.start_manager()
     s.decide(approval, "approve")
     s.wait_run(run_id)
+    commands = s.exec_actions(before[0], second_restart)
+    check(commands and commands[0] == "/bin/uname -r", f"first command after the second restart: {commands[:5]}")
     worker = s.worker(run_id, name)
     check(worker["sandbox_id"] == sandbox_id, f"sandbox changed: {sandbox_id} -> {worker['sandbox_id']}")
     check(s.containers("worker", worker["id"]) == before, f"container changed: {before} -> {s.containers('worker', worker['id'])}")
@@ -993,6 +1031,52 @@ def scenario_9b(s: Smoke) -> None:
     s.say(f"healthz {health}; GET run sandbox={view['sandbox']}; exec sandbox_unavailable; no container created; run {final['status']}")
 
 
+def scenario_11(s: Smoke) -> None:
+    """A starter who loses the functions service can no longer run a registered tool."""
+    function = s.name("smoke-fn")
+    s.api.post("/functions", {"project_id": s.project, "name": function, "image": "registry.example.invalid/smoke@sha256:" + "0" * 64}, expect=(200, 201, 202))
+    s.api.post("/tools", {"name": function, "version": "1.0.0", "description": "Smoke tool.", "tags": [], "input_schema": {"type": "object"}}, expect=(200, 201))
+    subject = s.name("starter")
+    access = {"email": f"{subject}@example.invalid", "role": "user", "services": ["agents", "functions"], "project_ids": [s.project]}
+    s.api.call("PUT", f"/admin/users/{subject}", access)
+    password = "smoke-" + secrets.token_hex(12)
+    s.api.call("PUT", f"/admin/users/{subject}/local-password", {"password": password})
+    starter = Api(s.origin, subject, password)
+    starter.login()
+
+    name = s.name("toolrunner")
+    tool = "tool_" + function
+    steps = [call(tool, input="first"), call(tool, input="second"), finish("the tool was refused the second time")]
+    team = s.team(s.define(name, [{"kind": "tool", "ref": function}], "none"))
+    created = starter.post("/team-runs", {"team_id": team, "input": coordinator_input((name, script(steps))), "allow_side_effects": True}, expect=202)
+    run_id = created["id"]
+    s.runs.append(run_id)
+    check(created["subject"] == subject, f"run subject: {created['subject']}")
+    path = "/function/" + function
+
+    # The control: with the service, the tool really runs.
+    s.decide(s.approval_for(run_id, name, tool), "approve")
+    wait_for("the first call to reach the function", lambda: s.backend.count(path) == 1, 30)
+    def second_parked() -> Any:
+        worker = s.worker(run_id, name)
+        return worker["status"] == "waiting_approval" and len(s.tool_results(worker, tool)) == 1
+    wait_for("the second call to wait for approval", second_parked, 60)
+    first = s.tool_results(s.worker(run_id, name), tool)[0]
+    check(first["status"] == "done", f"first call: {first}")
+    s.say(f"with the functions service: first call done, function request count {s.backend.count(path)}")
+
+    pending = s.api.get(f"/agent-approvals?status=pending&run_id={run_id}")["items"]
+    check(len(pending) == 1, f"pending approvals: {pending}")
+    s.api.call("PUT", f"/admin/users/{subject}", {**access, "services": ["agents"]})
+    s.decide(pending[0]["id"], "approve")
+    final = s.wait_run(run_id)
+    second = s.tool_results(s.worker(run_id, name), tool)[1]
+    body = json.loads(second["content"])
+    check(second["status"] == "error" and body["error"] == "access_denied", f"second call: {second}")
+    check(s.backend.count(path) == 1, f"the function ran without the service: count {s.backend.count(path)}")
+    s.say(f"functions removed, then a person approved: result {body['error']!r}, function count stays {s.backend.count(path)}; run {final['status']}, because the starter keeps agents")
+
+
 def scenario_10(s: Smoke) -> None:
     """Real responses, events and runner wire traffic against the contract schemas."""
     schema_dir = s.contracts
@@ -1126,6 +1210,7 @@ SCENARIOS: list[tuple[str, str, Callable[[Smoke], None], bool]] = [
     ("7", "person messages and cancel", scenario_7, True),
     ("8", "knowledge query through /embeddings", scenario_8, True),
     ("9a", "fail closed: manager stopped", scenario_9a, False),
+    ("11", "starter loses the functions service", scenario_11, False),
     ("10", "contract schemas and leak checks", scenario_10, True),
     ("9b", "fail closed: runsc unregistered", scenario_9b, True),
 ]

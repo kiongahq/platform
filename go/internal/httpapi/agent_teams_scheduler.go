@@ -39,7 +39,8 @@ const (
 // teamSlots enforces max_concurrent_workers across replicas. Entries expire with
 // the lease that holds them, so a dead gateway's slot frees itself.
 type teamSlots struct {
-	Held map[string]time.Time `json:"held"`
+	Held   map[string]time.Time `json:"held"`
+	Tokens map[string]string    `json:"tokens,omitempty"`
 }
 
 var teamKick = make(chan struct{}, 1)
@@ -253,7 +254,7 @@ func (e *teamEngine) launch(ctx context.Context, runID, workerID string, decided
 	}()
 }
 
-func (e *teamEngine) acquireSlot(run agentteam.Run, workerID string) bool {
+func (e *teamEngine) acquireSlot(run agentteam.Run, workerID, token string) bool {
 	expires := e.now().Add(e.leaseTTL)
 	limit := run.Snapshot.Team.Limits.MaxConcurrentWorkers
 	acquired := false
@@ -265,6 +266,7 @@ func (e *teamEngine) acquireSlot(run agentteam.Run, workerID string) bool {
 		for id, until := range current.Held {
 			if !until.After(now) {
 				delete(current.Held, id)
+				delete(current.Tokens, id)
 			}
 		}
 		// A held entry means another attempt owns this worker. Refusing here, rather
@@ -272,6 +274,10 @@ func (e *teamEngine) acquireSlot(run agentteam.Run, workerID string) bool {
 		if _, held := current.Held[workerID]; held || len(current.Held) >= limit {
 			return current, store.ErrSkipWrite
 		}
+		if current.Tokens == nil {
+			current.Tokens = map[string]string{}
+		}
+		current.Tokens[workerID] = token
 		current.Held[workerID] = expires
 		acquired = true
 		return current, nil
@@ -279,30 +285,38 @@ func (e *teamEngine) acquireSlot(run agentteam.Run, workerID string) bool {
 	return err == nil && acquired
 }
 
-func (e *teamEngine) renewSlot(runID, workerID string) {
-	_, _ = store.UpdateDoc(e.docs(), teamSlotKind, runID, func(current teamSlots, _ bool) (teamSlots, error) {
-		if _, held := current.Held[workerID]; !held {
+func (e *teamEngine) renewSlot(runID, workerID, token string) bool {
+	renewed := false
+	_, err := store.UpdateDoc(e.docs(), teamSlotKind, runID, func(current teamSlots, _ bool) (teamSlots, error) {
+		if _, held := current.Held[workerID]; !held || current.Tokens[workerID] != token {
+			return current, store.ErrSkipWrite
+		}
+		if !current.Held[workerID].After(e.now()) {
 			return current, store.ErrSkipWrite
 		}
 		current.Held[workerID] = e.now().Add(e.leaseTTL)
+		renewed = true
 		return current, nil
 	}, "", "")
+	return err == nil && renewed
 }
 
-func (e *teamEngine) releaseSlot(runID, workerID string) {
+func (e *teamEngine) releaseSlot(runID, workerID, token string) {
 	_, _ = store.UpdateDoc(e.docs(), teamSlotKind, runID, func(current teamSlots, _ bool) (teamSlots, error) {
-		if _, held := current.Held[workerID]; !held {
+		if _, held := current.Held[workerID]; !held || current.Tokens[workerID] != token {
 			return current, store.ErrSkipWrite
 		}
 		delete(current.Held, workerID)
+		delete(current.Tokens, workerID)
 		return current, nil
 	}, "", "")
 }
 
 // teamLease is this gateway's hold on one worker.
 type teamLease struct {
-	workerID string
-	token    string
+	workerID  string
+	token     string
+	slotToken string
 }
 
 // acquireLease takes the lease with compare-and-set and applies the crash rule in
@@ -323,6 +337,7 @@ func (e *teamEngine) acquireLease(run agentteam.Run, workerID string, decided bo
 			tool, ok := agentteam.FindTool(tools, name)
 			return tool.Class, ok
 		}, randomToken)
+		redactSettledArguments(&current)
 		expires := now.Add(e.leaseTTL)
 		started := now
 		current.LeaseOwner, current.LeaseToken, current.LeaseExpiresAt = e.owner, token, &expires
@@ -350,6 +365,7 @@ func (e *teamEngine) apply(lease *teamLease, change func(*agentteam.Worker) erro
 		if err := change(&current); err != nil {
 			return current, err
 		}
+		redactSettledArguments(&current)
 		now := e.now()
 		if current.ActiveSince != nil {
 			current.ActiveMillis += now.Sub(*current.ActiveSince).Milliseconds()
@@ -398,7 +414,10 @@ func (e *teamEngine) keepAlive(ctx context.Context, cancel context.CancelFunc, r
 				return
 			}
 			if isWorker {
-				e.renewSlot(run.ID, lease.workerID)
+				if !e.renewSlot(run.ID, lease.workerID, lease.slotToken) {
+					cancel()
+					return
+				}
 			}
 		case <-watch.C:
 			current, err := store.GetDoc[agentteam.Run](e.docs(), teamRunKind, run.ID)
@@ -415,17 +434,19 @@ func (e *teamEngine) runWorker(parent context.Context, runID, workerID string, d
 	if err != nil || run.Status != agentteam.RunRunning {
 		return
 	}
+	slotToken := randomToken()
 	isWorker := workerID != run.CoordinatorID
 	if isWorker {
-		if !e.acquireSlot(run, workerID) {
+		if !e.acquireSlot(run, workerID, slotToken) {
 			return
 		}
-		defer e.releaseSlot(runID, workerID)
+		defer e.releaseSlot(runID, workerID, slotToken)
 	}
 	worker, lease, takeover, unknown := e.acquireLease(run, workerID, decided)
 	if lease == nil {
 		return
 	}
+	lease.slotToken = slotToken
 	// A message can wake this worker while its lease is still held, so look again.
 	defer kickTeamScheduler()
 	defer e.release(lease)
@@ -616,7 +637,7 @@ func (e *teamEngine) modelStep(ctx context.Context, run agentteam.Run, worker ag
 		return e.failWorker(run, lease, worker, response.Error.Code, response.Error.Message, true), false
 	}
 	saved, err := e.apply(lease, func(current *agentteam.Worker) error {
-		agentteam.ApplyReply(current, agentteam.ModelReply{Content: response.Content, ToolCalls: response.ToolCalls, Usage: response.Usage})
+		agentteam.ApplyReply(current, agentteam.ModelReply{Content: redact.String(response.Content), ToolCalls: response.ToolCalls, Usage: response.Usage})
 		return nil
 	})
 	if err != nil {
@@ -763,7 +784,7 @@ func (e *teamEngine) notifyCoordinator(run agentteam.Run, worker agentteam.Worke
 	if worker.Status == agentteam.WorkerFailed {
 		body = fmt.Sprintf("Worker %s (%s) failed: %s: %s", worker.ID, worker.Agent, worker.LastError, worker.LastErrorMessage)
 	}
-	id := worker.ID + ":notify:" + worker.UpdatedAt.Format(time.RFC3339Nano)
+	id := fmt.Sprintf("%s:notify:%d", worker.ID, worker.CompletionGeneration)
 	_, err := store.UpdateDoc(e.docs(), teamWorkerKind, run.CoordinatorID, func(current agentteam.Worker, exists bool) (agentteam.Worker, error) {
 		if !exists {
 			return current, store.ErrNotFound
@@ -778,7 +799,7 @@ func (e *teamEngine) notifyCoordinator(run agentteam.Run, worker agentteam.Worke
 		return
 	}
 	_, err = store.UpdateDoc(e.docs(), teamWorkerKind, worker.ID, func(current agentteam.Worker, exists bool) (agentteam.Worker, error) {
-		if !exists || !current.NotifyPending {
+		if !exists || !current.NotifyPending || current.CompletionGeneration != worker.CompletionGeneration {
 			return current, store.ErrSkipWrite
 		}
 		current.NotifyPending = false

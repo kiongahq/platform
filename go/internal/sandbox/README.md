@@ -47,6 +47,7 @@ Treat every command, file, repository and byte of output as hostile.
 | `KIONGA_SANDBOX_DISK_CHECK_SECONDS` | 5 | 300. Sweep interval, `docker` only |
 | `KIONGA_SANDBOX_MIN_FREE_DISK_MB` | 5120 | Refuse new sandboxes under this, `docker` only |
 | `KIONGA_SANDBOX_TTL_SECONDS` | 86400 | 7 days |
+| `KIONGA_SANDBOX_MAX_GIT_HELPERS` | 8 | 64 |
 | `KIONGA_SANDBOX_MAX_SANDBOXES` | 256 | 4096 |
 | `KIONGA_SANDBOX_NAME_PREFIX` | `kionga-sandbox-` | scopes everything this manager sees |
 | `KIONGA_SANDBOX_DOCKER_SOCKET` | `/var/run/docker.sock` | `docker` only |
@@ -121,16 +122,17 @@ sandbox is killed and calls return 507 `workspace_quota_exceeded`. An engine fai
 the limit by is roughly: write rate x (check interval + meter time + sweep time), plus
 buffered data up to the memory limit. Sweep time is about (running sandboxes / 4) x meter time.
 
-| Measured in CI, GitHub-hosted runner | Docker | Podman 4.9.3 |
+| Ranges over several CI runs on GitHub-hosted runners, which vary run to run | Docker | Podman 4.9.3 |
 | --- | --- | --- |
-| Sustained `fsync` writes | 209 MiB/s | 210 MiB/s |
-| Buffered burst, until the memory limit stopped the sandbox | 2119 MiB/s for 512 MiB | 1959 MiB/s for 512 MiB |
-| One meter | 2.2 s | 0.4 s |
-| Past a 64 MiB limit with a 2 s sweep, one writer | 264 MiB | 376 MiB |
+| Sustained `fsync` writes | 185 to 421 MiB/s | 156 to 422 MiB/s |
+| Buffered burst, until the memory limit stopped the sandbox | up to 4742 MiB/s for 448 to 640 MiB | up to 4721 MiB/s for 448 to 576 MiB |
+| One meter | 0.5 to 2.2 s | 0.4 to 1.3 s |
+| Past a 64 MiB limit with a 2 s sweep, one writer | 157 to 600 MiB | 128 to 736 MiB |
 
-At the defaults of a 5 second check and 2 GiB of memory, one sandbox on such a disk can pass
-its limit by about 1.5 GiB of sustained writes, plus up to about 2 GiB of buffered data. A faster disk
-allows more. Several sandboxes share the disk's rate, and a longer sweep widens the window.
+At the defaults of a 5 second check and 2 GiB of memory, one sandbox at the highest rate seen
+can pass its limit by about 3 GiB of sustained writes, plus up to about 2 GiB of buffered data.
+These are estimates from the formula, not a bound: a faster disk allows more. Several sandboxes
+share the disk's rate, and a longer sweep widens the window.
 
 **Recovery.** The sandbox stays stopped and its volume is kept. Reads and `git/diff` keep
 working through a read-only container, and never restart it. Exec, writes, clone and push
@@ -173,3 +175,13 @@ Kubernetes claims are bounded by the storage class, so none of this runs there.
 - A sandbox restart keeps `/workspace` and loses `/tmp` and running processes.
 - `KIONGA_SANDBOX_MAX_SANDBOXES` is checked then created, so concurrent creates can pass
   it by a few.
+
+Git clone and push reserve helper capacity before starting work. At most one git
+operation (including diff) runs per sandbox; contention returns HTTP 503
+`sandbox_unavailable` immediately. `KIONGA_SANDBOX_MAX_GIT_HELPERS` defaults to 8
+and refuses values above 64. Admission counts labelled helpers, including stopped
+helpers left by a previous manager, plus local operations awaiting helper creation.
+Capacity is released after cleanup; failed cleanup continues to consume capacity
+until the labelled helper is removed. Run one active manager per name prefix:
+reservations are process-local and do not coordinate multiple active managers.
+Clone rejects an existing target before fetching and checks it again on ingestion.
