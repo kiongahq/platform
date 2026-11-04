@@ -245,7 +245,12 @@ func TestAttackKernelIdentityIsGVisor(t *testing.T) {
 		t.Fatalf("the sandbox reports the host kernel %s", uname)
 	}
 	found, err := attackDriver.Inspect(context.Background(), attackPrefix+ref.id)
-	if err != nil || found.Runtime != "runsc" {
+	// Podman's compatibility API answers "oci" for every runtime, which reads as unknown.
+	wantRuntime := "runsc"
+	if os.Getenv("KIONGA_ATTACK_ENGINE_IS_PODMAN") == "1" {
+		wantRuntime = ""
+	}
+	if err != nil || found.Runtime != wantRuntime {
 		t.Fatalf("the engine says %+v, %v", found, err)
 	}
 	processes, err := exec.Command("ps", "-eo", "args").Output()

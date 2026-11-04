@@ -92,10 +92,66 @@ in the helper, clone fresh, read the bundle as data, push a private ref with no 
 secret arrives over exec stdin onto a memory-backed mount and is read by an askpass
 program, so it is in no argv, environment or engine inspect output.
 
+## Disk
+
+Under the Docker driver a workspace limit is a usage check, because a fixed-size volume is
+not available on common hosts. Measured under real gVisor in CI, on ext4:
+
+| Option | Docker | Podman |
+| --- | --- | --- |
+| `size` volume option | refused: "no quota support" | start refused |
+| `o=size` volume option | refused: "device" required | refused: no project quota |
+| tmpfs volume | hard limit, but it uses memory and is lost on restart | same |
+| Loopback file | needs a privileged helper on the host, so not used | same |
+
+`size` needs XFS with project quota, which this code does not use because no CI host can
+prove it.
+
+**What runs.** Before every exec, write, clone and push, and every
+`KIONGA_SANDBOX_DISK_CHECK_SECONDS` for each running sandbox, a throwaway read-only container
+measures the workspace with `du`. It runs outside the sandbox, so no agent process can kill
+it, stop it or forge its output. Over `KIONGA_SANDBOX_DISK_MB` or `KIONGA_SANDBOX_DISK_FILES`,
+or unmeasurable because a directory is unreadable or the walk takes over 60 seconds, the
+sandbox is killed and calls return 507 `workspace_quota_exceeded`. An engine failure returns
+503 and refuses the call without stopping anything.
+
+**One file is a hard limit.** `RLIMIT_FSIZE` is set to the disk limit, and a write past it fails.
+
+**The window.** Between two checks a writer is limited only by the disk. The most it can pass
+the limit by is roughly: write rate x (check interval + meter time + sweep time), plus
+buffered data up to the memory limit. Sweep time is about (running sandboxes / 4) x meter time.
+
+| Measured in CI, GitHub-hosted runner | Docker | Podman 4.9.3 |
+| --- | --- | --- |
+| Sustained `fsync` writes | 209 MiB/s | 210 MiB/s |
+| Buffered burst, until the memory limit stopped the sandbox | 2119 MiB/s for 512 MiB | 1959 MiB/s for 512 MiB |
+| One meter | 2.2 s | 0.4 s |
+| Past a 64 MiB limit with a 2 s sweep, one writer | 264 MiB | 376 MiB |
+
+At the defaults of a 5 second check and 2 GiB of memory, one sandbox on such a disk can pass
+its limit by about 1.5 GiB of sustained writes, plus up to about 2 GiB of buffered data. A faster disk
+allows more. Several sandboxes share the disk's rate, and a longer sweep widens the window.
+
+**Recovery.** The sandbox stays stopped and its volume is kept. Reads and `git/diff` keep
+working through a read-only container, and never restart it. Exec, writes, clone and push
+return 507 every time. Nothing inside can free space, so `DELETE` is the way out, and it
+loses the workspace. A new create then starts empty.
+
+**The floor.** A create returns 503 when the free space on the filesystem holding engine volumes,
+read by a meter and cached 15 seconds, is under `KIONGA_SANDBOX_MIN_FREE_DISK_MB`. Running
+sandboxes are not stopped by it, so the floor protects against new work and does not reserve
+space. Choose `KIONGA_SANDBOX_MAX_SANDBOXES` x `KIONGA_SANDBOX_DISK_MB` with the disk size in
+mind. If the images are on another filesystem than the volumes, the floor does not see it.
+
+Kubernetes claims are bounded by the storage class, so none of this runs there.
+
 ## Failure modes
 
-- The Docker volume has no size limit. A hostile agent can fill the engine's disk until
-  the TTL. Keep the engine's data root on its own filesystem. Kubernetes claims are bounded.
+- The Docker disk limit is a usage check with a write window, not a hard limit. See "Disk".
+- Each exec, write, clone and push waits for a disk meter, which took 0.4 to 2.2 seconds in CI.
+- Podman's Docker-compatible API ignores `HostConfig.Runtime` and uses its default runtime.
+  Seen on 4.9.3 and 6.1.4. With `KIONGA_SANDBOX_RUNTIME=runsc`, creates return 503 unless
+  runsc is Podman's default runtime, which applies to every container on that engine.
 - The manager resolves an allowed host, refuses it if any answer is private, loopback,
   link-local, metadata or reserved, and pins the answers in the helper's hosts file, so
   DNS rebinding after the check cannot reach git, and redirects are refused. This is a
