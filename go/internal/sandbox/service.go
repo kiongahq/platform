@@ -253,7 +253,7 @@ func (s *Service) Create(ctx context.Context, request client.CreateRequest) (cli
 		s.logger.Printf("sandbox: list failed: %v", err)
 		return client.Sandbox{}, unavailable("the container engine could not list sandboxes")
 	}
-	if len(existing) >= s.config.MaxSandboxes {
+	if int64(len(existing)) >= s.config.MaxSandboxes {
 		return client.Sandbox{}, unavailable("the sandbox limit has been reached")
 	}
 	spec := s.hardenedSpec(name, image, RoleSandbox)

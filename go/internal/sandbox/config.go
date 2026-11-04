@@ -187,11 +187,9 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	if config.BundleBytes, err = limit(getenv, "KIONGA_SANDBOX_GIT_BUNDLE_BYTES", defaultBundleBytes, maxBundleBytes); err != nil {
 		return Config{}, err
 	}
-	sandboxes, err := limit(getenv, "KIONGA_SANDBOX_MAX_SANDBOXES", int64(defaultMaxSandboxes), int64(maxMaxSandboxes))
-	if err != nil {
+	if config.MaxSandboxes, err = limit(getenv, "KIONGA_SANDBOX_MAX_SANDBOXES", int64(defaultMaxSandboxes), int64(maxMaxSandboxes)); err != nil {
 		return Config{}, err
 	}
-	config.MaxSandboxes = int(sandboxes)
 	ttl, err := limit(getenv, "KIONGA_SANDBOX_TTL_SECONDS", int64(defaultTTLSeconds), int64(maxTTLSeconds))
 	if err != nil {
 		return Config{}, err
