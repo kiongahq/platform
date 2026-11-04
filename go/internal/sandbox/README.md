@@ -44,7 +44,7 @@ Treat every command, file, repository and byte of output as hostile.
 | `KIONGA_SANDBOX_TMP_BYTES` | 256 MiB | 4 GiB |
 | `KIONGA_SANDBOX_DISK_MB` | 10240 | 512000. Per workspace. Also the per-file limit. Under `kubernetes`, the claim size |
 | `KIONGA_SANDBOX_DISK_FILES` | 2000000 | 50000000. Per workspace, `docker` only |
-| `KIONGA_SANDBOX_DISK_CHECK_SECONDS` | 10 | 300. Sweep interval, `docker` only |
+| `KIONGA_SANDBOX_DISK_CHECK_SECONDS` | 5 | 300. Sweep interval, `docker` only |
 | `KIONGA_SANDBOX_MIN_FREE_DISK_MB` | 5120 | Refuse new sandboxes under this, `docker` only |
 | `KIONGA_SANDBOX_TTL_SECONDS` | 86400 | 7 days |
 | `KIONGA_SANDBOX_MAX_SANDBOXES` | 256 | 4096 |

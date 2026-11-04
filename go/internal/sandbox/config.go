@@ -23,7 +23,7 @@ const (
 	defaultTmpBytes, maxTmpBytes         = int64(256 << 20), int64(4 << 30)
 	defaultDiskMB, maxDiskMB             = int64(10240), int64(512000)
 	defaultDiskFiles, maxDiskFiles       = int64(2_000_000), int64(50_000_000)
-	defaultDiskCheck, maxDiskCheck       = int64(10), int64(300)
+	defaultDiskCheck, maxDiskCheck       = int64(5), int64(300)
 	defaultMinFreeMB, maxMinFreeMB       = int64(5120), int64(10 << 20)
 	defaultTTLSeconds, maxTTLSeconds     = 86400, 7 * 86400
 	defaultGitTimeout, maxGitTimeout     = 900, 3600

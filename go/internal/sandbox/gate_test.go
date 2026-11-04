@@ -52,7 +52,7 @@ func TestConfigDefaultsMatchTheSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.DiskBytes != 10240<<20 || config.DiskCheck != 10*time.Second || config.MinFreeDiskBytes != 5120<<20 || config.DiskFiles != 2_000_000 {
+	if config.DiskBytes != 10240<<20 || config.DiskCheck != 5*time.Second || config.MinFreeDiskBytes != 5120<<20 || config.DiskFiles != 2_000_000 {
 		t.Fatalf("disk defaults: %+v", config)
 	}
 	if config.Runtime != "runsc" || config.AllowUnsafe || config.Pids != 512 || config.MemoryBytes != 2<<30 || config.NanoCPUs != 2e9 || config.TTL != 24*time.Hour || config.Port != "8088" || config.Driver != "docker" {

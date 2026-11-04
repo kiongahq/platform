@@ -1347,9 +1347,20 @@ PY`, TimeoutSeconds: 120})
 	if elapsed > 90*time.Second {
 		t.Fatalf("stopping took %s", elapsed)
 	}
-	found, inspectErr := attackDriver.Inspect(ctx, attackPrefix+ref.id)
-	if inspectErr != nil || found.Running {
-		t.Fatalf("the sandbox must be stopped: %+v, %v", found, inspectErr)
+	// The stream ends as the kill lands, a moment before the engine records the stop.
+	var found Instance
+	for attempt := 0; attempt < 60; attempt++ {
+		var inspectErr error
+		if found, inspectErr = attackDriver.Inspect(ctx, attackPrefix+ref.id); inspectErr != nil {
+			t.Fatal(inspectErr)
+		}
+		if !found.Running {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if found.Running {
+		t.Fatalf("the sandbox must be stopped: %+v", found)
 	}
 	usage, measureErr := env.service.measure(ctx, ref.id, env.service.volumeName(ref.id))
 	if measureErr != nil {
@@ -1514,9 +1525,9 @@ func TestAttackEvaluateFixedSizeVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, options := range map[string]map[string]string{
-		"docker size":   {"size": "32m"},
-		"podman o=size": {"o": "size=32m"},
-		"local tmpfs":   {"type": "tmpfs", "device": "tmpfs", "o": "size=32m"},
+		"docker size": {"size": "32m"},
+		"o=size":      {"o": "size=32m"},
+		"local tmpfs": {"type": "tmpfs", "device": "tmpfs", "o": "size=32m"},
 	} {
 		volume := attackPrefix + "eval-" + randomHex(3)
 		labels := map[string]string{LabelManaged: "true", LabelPrefix: strings.TrimRight(attackPrefix, "-")}
@@ -1538,4 +1549,35 @@ func TestAttackEvaluateFixedSizeVolume(t *testing.T) {
 		_ = attackDriver.Remove(ctx, container)
 		_ = attackDriver.RemoveVolume(ctx, volume)
 	}
+}
+
+// TestAttackMeasureWriteRate reports the numbers the write window is stated from. It
+// asserts nothing about speed, because that belongs to the disk the engine runs on.
+func TestAttackMeasureWriteRate(t *testing.T) {
+	env := quotaEnv(t, map[string]string{"KIONGA_SANDBOX_DISK_MB": "20480", "KIONGA_SANDBOX_DISK_CHECK_SECONDS": "300"})
+	ref := env.sandbox(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	result := env.run(t, ref, `python3 - <<'PY'
+import os, time
+block = os.urandom(1 << 20)
+for mode, sync in (("buffered", False), ("fsync", True)):
+    written, index, started = 0, 0, time.time()
+    while time.time() - started < 4:
+        with open("/workspace/rate-%s-%d" % (mode, index), "wb") as out:
+            for _ in range(16):
+                out.write(block)
+                written += 1
+            if sync:
+                out.flush()
+                os.fsync(out.fileno())
+        index += 1
+    print("RATE", mode, round(written / (time.time() - started)), "MiB/s", flush=True)
+    os.system("rm -f /workspace/rate-*")
+PY`, 60)
+	started := time.Now()
+	if _, err := env.service.measure(ctx, ref.id, env.service.volumeName(ref.id)); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("MEASURED under %s: %s; one meter takes %s", os.Getenv("KIONGA_ATTACK_RUNTIME"), strings.Join(strings.Fields(result.Stdout), " "), time.Since(started).Round(time.Millisecond))
 }
