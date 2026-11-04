@@ -2,21 +2,22 @@ name: Build & Publish Images
 
 # Publishes the platform's Go services to ghcr.io/kiongahq/<service>. Other
 # images are published by their own repositories (see kiongahq/deploy).
-#   sha-<short>  every build      latest  default branch      X.Y.Z  v* tags
+# Development: edge and SHA references. Releases: exact X.Y.Z and digest records.
 on:
+  release:
+    types: [published]
   push:
     branches: [main]
-    tags: ["v*"]
     paths: [go/**, frontend/**, Dockerfile.gateway, .dockerignore, .github/workflows/build.yml]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   images:
@@ -26,7 +27,7 @@ jobs:
       matrix:
         service: [gateway, operator, integration-worker, feature-gateway, storage-proxy,
                   metrics-collector, log-exporter, cli]
-    uses: kiongahq/.github/.github/workflows/image.yml@76e4fed230c4f0b89b1bcf884df60e5b2fffca67
+    uses: kiongahq/.github/.github/workflows/image.yml@717e2cc3be707aff75c717662c6b3fea58ab56d8
     with:
       image: ${{ matrix.service }}
       context: ${{ matrix.service == 'gateway' && '.' || 'go' }}
