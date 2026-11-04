@@ -1,89 +1,53 @@
 package httpapi
 
 import (
-	"errors"
-	"os"
-	"strings"
+	"log"
 
 	"github.com/kiongahq/platform/internal/runtimeconfig"
+	"github.com/kiongahq/platform/internal/store"
+	"github.com/kiongahq/platform/pkg/api"
 )
 
-// secretScope limits which gateway environment variables a user-registered
-// resource can reference. A resource pairs its reference with a caller-chosen
-// endpoint, so an unrestricted env: lookup would hand any gateway secret
-// (DATABASE_URL, MLAIOPS_INTERNAL_TOKEN) to whoever controls that endpoint.
-//
-// A variable is permitted when it carries the scope's dedicated prefix, is one
-// of the names the scope has always documented, or is listed by the operator in
-// the scope's allowlist variable (comma separated). The gateway's own secrets
-// are refused whatever the configuration says.
-type secretScope struct {
-	prefix    string
-	names     []string
-	allowlist string
-}
-
+// The rules live in runtimeconfig, which also loads these variables from files.
 var (
-	knowledgeSecrets = secretScope{
-		prefix:    "KIONGA_KB_SECRET_",
-		names:     []string{"KIONGA_QDRANT_KEY", "KIONGA_KNOWLEDGE_DSN"},
-		allowlist: "KIONGA_KB_SECRET_REFS",
-	}
-	connectionSecrets = secretScope{
-		prefix:    "KIONGA_CONNECTION_SECRET_",
-		names:     []string{"KIONGA_AGENT_API_TOKEN"},
-		allowlist: "KIONGA_CONNECTION_SECRET_REFS",
-	}
+	knowledgeSecrets  = runtimeconfig.KnowledgeSecrets
+	connectionSecrets = runtimeconfig.ConnectionSecrets
+	featureSecrets    = runtimeconfig.FeatureSecrets
+	storageSecrets    = runtimeconfig.StorageSecrets
 )
 
-var errSecretRefNotPermitted = errors.New("secret reference is not permitted")
-
-// gatewayOwnSecret reports whether name is a secret the gateway holds for its
-// own use, which no resource may reference even when an allowlist names it.
-func gatewayOwnSecret(name string) bool {
-	for _, own := range runtimeconfig.SecretNames {
-		if name == own {
-			return true
+// refusedSecretRefs lists stored records whose reference no longer resolves, as
+// "kind id variable". It holds names only, never values.
+func refusedSecretRefs(data store.Repository) []string {
+	refused := []string{}
+	check := func(kind, id, ref string, scope runtimeconfig.SecretScope) {
+		if ref != "" && ref != "none" && !scope.Permits(ref) {
+			refused = append(refused, kind+" "+id+" "+ref)
 		}
 	}
-	switch name {
-	case "KIONGA_DESIGNER_RUNNER_TOKEN", "KIONGA_SANDBOX_TOKEN":
-		return true
+	for _, item := range data.Connections() {
+		check("connection", item.ID, item.SecretRef, runtimeconfig.PlatformSecrets(item.Type))
 	}
-	return false
+	for _, item := range store.ListDocs[api.FeatureStoreConnection](data, store.FeatureStoreConnectionKind) {
+		check("feature_store", item.ID, item.SecretRef, featureSecrets)
+	}
+	for _, item := range store.ListDocs[api.StorageConnection](data, store.StorageConnectionKind) {
+		check("storage_connection", item.ID, item.SecretRef, storageSecrets)
+	}
+	for _, item := range store.ListDocs[knowledgeBase](data, knowledgeKind) {
+		check("knowledge_base", item.ID, item.SecretRef, knowledgeSecrets)
+		check("knowledge_base", item.ID, item.DSNRef, knowledgeSecrets)
+	}
+	for _, item := range store.ListDocs[agentAPIConnection](data, agentConnectionKind) {
+		check("agent_api_connection", item.ID, item.SecretRef, connectionSecrets)
+	}
+	return refused
 }
 
-// permits reports whether ref is an env: reference this scope may resolve.
-func (scope secretScope) permits(ref string) bool {
-	if !knowledgeRef.MatchString(ref) {
-		return false
+// LogRefusedSecretRefs reports at startup which records need migrating, so an
+// operator finds them before a request fails. See ARCHITECTURE.md for the fix.
+func LogRefusedSecretRefs(data store.Repository) {
+	for _, item := range refusedSecretRefs(data) {
+		log.Printf("secret reference refused, record will not authenticate until migrated: %s", item)
 	}
-	name := strings.TrimPrefix(ref, "env:")
-	if gatewayOwnSecret(name) {
-		return false
-	}
-	if len(name) > len(scope.prefix) && strings.HasPrefix(name, scope.prefix) {
-		return true
-	}
-	for _, allowed := range scope.names {
-		if name == allowed {
-			return true
-		}
-	}
-	for _, allowed := range strings.Split(os.Getenv(scope.allowlist), ",") {
-		if strings.TrimSpace(allowed) == name {
-			return true
-		}
-	}
-	return false
-}
-
-// resolve returns the variable's value. Records stored before this restriction
-// existed are checked here too, so a saved reference to a gateway secret stops
-// resolving rather than continuing to send it.
-func (scope secretScope) resolve(ref string) (string, error) {
-	if !scope.permits(ref) {
-		return "", errSecretRefNotPermitted
-	}
-	return os.Getenv(strings.TrimPrefix(ref, "env:")), nil
 }

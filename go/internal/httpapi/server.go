@@ -23,6 +23,7 @@ import (
 	"github.com/kiongahq/platform/internal/pipelinespec"
 	"github.com/kiongahq/platform/internal/platform"
 	"github.com/kiongahq/platform/internal/policy"
+	"github.com/kiongahq/platform/internal/runtimeconfig"
 	"github.com/kiongahq/platform/internal/store"
 	"github.com/kiongahq/platform/pkg/api"
 )
@@ -1593,6 +1594,10 @@ func (s *Server) createConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	if decision := s.authorize(r, policy.InfraProvision, policy.ConnectionResource("*")); !decision.Allowed {
 		writeDenied(w, decision)
+		return
+	}
+	if strings.HasPrefix(req.SecretRef, "env:") && !runtimeconfig.PlatformSecrets(req.Type).Permits(req.SecretRef) {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_request", "Use env:KIONGA_PLATFORM_SECRET_<NAME>, or list the variable in KIONGA_PLATFORM_SECRET_REFS. The gateway's own secrets cannot be referenced.")
 		return
 	}
 	item, err := s.store.CreateConnection(req, actor(r))

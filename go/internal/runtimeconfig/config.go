@@ -75,7 +75,7 @@ func Load() error {
 			}
 		}
 	}
-	return nil
+	return loadReferenceFiles()
 }
 
 func ValidateGateway() error {

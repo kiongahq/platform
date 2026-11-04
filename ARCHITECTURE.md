@@ -122,11 +122,15 @@ a separate Node.js server.
   and HTTPS URLs.
 - **Secrets stay out of plain config.** `KIONGA_CONFIG_FILE` rejects secret names;
   secrets come from the environment or `<NAME>_FILE`.
-- **Registered resources read scoped secrets only.** A knowledge base or agent API
-  connection names a caller-chosen endpoint, so its `env:` reference resolves only
-  from `KIONGA_KB_SECRET_*` or `KIONGA_CONNECTION_SECRET_*`, the documented names, or
-  the `KIONGA_KB_SECRET_REFS` and `KIONGA_CONNECTION_SECRET_REFS` allowlists. The
-  gateway's own secrets are always refused (`httpapi/secret_refs.go`).
+- **Registered resources read scoped secrets only.** A registered record names a
+  caller-chosen endpoint, so its `env:` reference resolves only from its scope: the
+  prefix `KIONGA_KB_SECRET_*`, `KIONGA_CONNECTION_SECRET_*`, `KIONGA_FEATURE_SECRET_*`,
+  `KIONGA_STORAGE_SECRET_*` or `KIONGA_PLATFORM_SECRET_*`, the documented names, or the
+  matching `..._REFS` allowlist. The gateway's own secrets are always refused, apart
+  from a service's own integration secret on a connection of that type
+  (`httpapi/secret_refs.go`). The gateway logs refused records at startup; to migrate
+  one, list its variable in the allowlist, or copy a gateway secret into a variable
+  with the scope's prefix and point the record there.
 - **Banned technologies.** CI fails on any reference to excluded products.
 - **A team worker runs under one lease.** The scheduler takes a worker with
   compare-and-set through `store.UpdateDoc`, and every later write checks the lease
