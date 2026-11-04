@@ -27,7 +27,7 @@ func TestRegisteredStorageRespectsProjectGrantAndKeepsCredentials(t *testing.T) 
 		http.NotFound(w, r)
 	}))
 	defer upstream.Close()
-	t.Setenv("KIONGA_TEST_STORAGE_SECRET", "ACCESS:PRIVATE")
+	t.Setenv("KIONGA_STORAGE_SECRET_TEST", "ACCESS:PRIVATE")
 	repository := store.New()
 	project, err := repository.CreateProject(api.CreateProjectRequest{Name: "Storage project"}, "admin")
 	if err != nil {
@@ -39,7 +39,7 @@ func TestRegisteredStorageRespectsProjectGrantAndKeepsCredentials(t *testing.T) 
 	}
 	connection, err := store.SaveStorageConnection(repository, api.StorageConnection{
 		ID: "st-demo", Name: "reports", Endpoint: upstream.URL, Bucket: "data", Region: "us-east-1", PathStyle: true,
-		SecretRef: "env:KIONGA_TEST_STORAGE_SECRET", AllowedProjects: []string{project.ID},
+		SecretRef: "env:KIONGA_STORAGE_SECRET_TEST", AllowedProjects: []string{project.ID},
 	}, true, "admin")
 	if err != nil {
 		t.Fatal(err)

@@ -46,10 +46,10 @@ func TestActivatedPrefectPersistsAndDrivesRuntime(t *testing.T) {
 		}
 	}))
 	defer upstream.Close()
-	t.Setenv("TEST_PREFECT_SECRET", "private-test-token")
+	t.Setenv("KIONGA_PLATFORM_SECRET_PREFECT", "private-test-token")
 	path := t.TempDir() + "/state.json"
 	repository := store.New(path)
-	connection, err := repository.CreateConnection(api.CreateConnectionRequest{Name: "Test Prefect", Type: "prefect", Endpoint: upstream.URL + "/api", SecretRef: "env:TEST_PREFECT_SECRET"}, "admin")
+	connection, err := repository.CreateConnection(api.CreateConnectionRequest{Name: "Test Prefect", Type: "prefect", Endpoint: upstream.URL + "/api", SecretRef: "env:KIONGA_PLATFORM_SECRET_PREFECT"}, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestActivatedPrefectPersistsAndDrivesRuntime(t *testing.T) {
 	if err != nil || result != "flow-1" || calls != 1 {
 		t.Fatalf("runtime not wired: %s %v calls=%d", result, err, calls)
 	}
-	t.Setenv("TEST_PREFECT_SECRET", "")
+	t.Setenv("KIONGA_PLATFORM_SECRET_PREFECT", "")
 	if _, err = s.prefectClient().CreateFlowRun(t.Context(), "training-pipeline", "mlaiops", "test", nil); err == nil {
 		t.Fatal("missing credential must not fall back to anonymous")
 	}

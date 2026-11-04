@@ -138,7 +138,7 @@ func (s *Server) createKnowledgeBase(w http.ResponseWriter, r *http.Request) {
 	switch base.Backend {
 	case "qdrant":
 		target, err := url.Parse(base.Endpoint)
-		if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.User != nil || target.RawQuery != "" || target.Fragment != "" || (base.SecretRef != "none" && !knowledgeSecrets.permits(base.SecretRef)) {
+		if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.User != nil || target.RawQuery != "" || target.Fragment != "" || (base.SecretRef != "none" && !knowledgeSecrets.Permits(base.SecretRef)) {
 			writeError(w, 422, "invalid_request", "Qdrant requires an HTTP(S) endpoint and none or a permitted env: API-key reference (KIONGA_KB_SECRET_*)")
 			return
 		}
@@ -147,7 +147,7 @@ func (s *Server) createKnowledgeBase(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "pgvector":
-		if !knowledgeSecrets.permits(base.DSNRef) || base.Endpoint != "" || base.SecretRef != "" {
+		if !knowledgeSecrets.Permits(base.DSNRef) || base.Endpoint != "" || base.SecretRef != "" {
 			writeError(w, 422, "invalid_request", "pgvector requires a permitted env: DSN reference (KIONGA_KB_SECRET_*)")
 			return
 		}
@@ -183,8 +183,8 @@ func (base knowledgeBase) credential() (string, error) {
 	if ref == "none" {
 		return "", nil
 	}
-	value, err := knowledgeSecrets.resolve(ref)
-	if err != nil || value == "" {
+	value := knowledgeSecrets.Value(ref)
+	if value == "" {
 		return "", errors.New("knowledge credential unavailable")
 	}
 	return value, nil

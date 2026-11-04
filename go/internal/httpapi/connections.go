@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kiongahq/platform/internal/integrations"
+	"github.com/kiongahq/platform/internal/runtimeconfig"
 	"github.com/kiongahq/platform/pkg/api"
 )
 
@@ -31,7 +32,10 @@ func connectionToken(c api.Connection) (string, error) {
 	if !strings.HasPrefix(c.SecretRef, "env:") {
 		return "", fmt.Errorf("Use none for an unauthenticated service, or env:VARIABLE for a gateway environment credential")
 	}
-	token := os.Getenv(strings.TrimPrefix(c.SecretRef, "env:"))
+	token, permitted := runtimeconfig.PlatformSecrets(c.Type).Resolve(c.SecretRef)
+	if !permitted {
+		return "", fmt.Errorf("This credential reference is not permitted; use env:KIONGA_PLATFORM_SECRET_<NAME> or list the variable in KIONGA_PLATFORM_SECRET_REFS")
+	}
 	if token == "" {
 		return "", fmt.Errorf("The referenced credential is not available on the gateway")
 	}
