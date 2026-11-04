@@ -2,7 +2,10 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"io"
+	"k8s.io/apimachinery/pkg/util/httpstream"
+	"k8s.io/client-go/tools/remotecommand"
 	"strings"
 	"testing"
 	"time"
@@ -283,5 +286,54 @@ func TestKubernetesInspectExecRestartRemove(t *testing.T) {
 	}
 	if err := driver.RemoveVolume(context.Background(), "v1"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type countingExecutor struct {
+	calls int
+	err   error
+}
+
+func (e *countingExecutor) Stream(o remotecommand.StreamOptions) error {
+	return e.StreamWithContext(context.Background(), o)
+}
+func (e *countingExecutor) StreamWithContext(context.Context, remotecommand.StreamOptions) error {
+	e.calls++
+	return e.err
+}
+func TestFallbackOnlyBeforeCommandStarts(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		err      error
+		fallback int
+	}{
+		{"success", nil, 0}, {"upgrade", &httpstream.UpgradeFailureError{Cause: errors.New("upgrade rejected")}, 1}, {"command", errors.New("command failed"), 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			primary, secondary := &countingExecutor{err: tc.err}, &countingExecutor{}
+			executor, err := fallbackExecutor(primary, secondary)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := executor.StreamWithContext(context.Background(), remotecommand.StreamOptions{})
+			if primary.calls != 1 || secondary.calls != tc.fallback {
+				t.Fatalf("primary=%d secondary=%d, want 1/%d", primary.calls, secondary.calls, tc.fallback)
+			}
+			if tc.fallback == 0 && !errors.Is(got, tc.err) {
+				t.Fatalf("lost command result: %v", got)
+			}
+		})
+	}
+}
+
+func TestPodIdentityChangesOnRestartAndReplacement(t *testing.T) {
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-one"}, Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{Name: containerName, ContainerID: "container-one", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: metav1.NewTime(time.Unix(1, 0))}}}}}}
+	first := instanceOf(pod).Identity
+	pod.Status.ContainerStatuses[0].State.Running.StartedAt = metav1.NewTime(time.Unix(2, 0))
+	second := instanceOf(pod).Identity
+	pod.UID = "pod-two"
+	third := instanceOf(pod).Identity
+	if first == "" || first == second || second == third {
+		t.Fatalf("identities: %q %q %q", first, second, third)
 	}
 }

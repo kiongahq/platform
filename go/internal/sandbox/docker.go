@@ -277,12 +277,14 @@ func (d *Docker) pull(ctx context.Context, image string) error {
 }
 
 type dockerInspect struct {
+	ID     string `json:"Id"`
 	Name   string `json:"Name"`
 	Config struct {
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
 	State struct {
-		Running bool `json:"Running"`
+		Running   bool   `json:"Running"`
+		StartedAt string `json:"StartedAt"`
 	} `json:"State"`
 	HostConfig struct {
 		Runtime string `json:"Runtime"`
@@ -304,7 +306,11 @@ func (d *Docker) Inspect(ctx context.Context, name string) (Instance, error) {
 	if runtime == "oci" {
 		runtime = ""
 	}
-	return Instance{Name: name, Labels: found.Config.Labels, Running: found.State.Running, Runtime: runtime}, nil
+	identity := ""
+	if found.ID != "" && found.State.StartedAt != "" {
+		identity = found.ID + "/" + found.State.StartedAt
+	}
+	return Instance{Identity: identity, Name: name, Labels: found.Config.Labels, Running: found.State.Running, Runtime: runtime}, nil
 }
 
 func labelFilter(labels map[string]string) string {

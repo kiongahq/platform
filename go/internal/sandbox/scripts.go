@@ -88,6 +88,10 @@ done`
 	// cross this boundary. The remote URL it records has no credential because the
 	// manager rejects URLs with user information and the secret only ever lived on
 	// the helper's tmpfs. $1 target, $2 url, $3 ref, $4 size.
+	cloneTargetScript = resolveFn + `set -eu
+resolve "$1"
+if [ -e "$p" ] || [ -L "$p" ]; then exit 71; fi`
+
 	ingestScript = resolveFn + `set -eu
 resolve "$1"
 if [ -e "$p" ] || [ -L "$p" ]; then exit 71; fi

@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -226,7 +227,13 @@ func instanceOf(pod *corev1.Pod) Instance {
 	if pod.Spec.RuntimeClassName != nil {
 		runtime = *pod.Spec.RuntimeClassName
 	}
-	return Instance{Name: pod.Name, Labels: pod.Labels, Running: pod.Status.Phase == corev1.PodRunning, Runtime: runtime}
+	identity := ""
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name == containerName && status.State.Running != nil && pod.UID != "" && status.ContainerID != "" {
+			identity = string(pod.UID) + "/" + status.ContainerID + "/" + status.State.Running.StartedAt.String()
+		}
+	}
+	return Instance{Identity: identity, Name: pod.Name, Labels: pod.Labels, Running: pod.Status.Phase == corev1.PodRunning, Runtime: runtime}
 }
 
 // List finds pods carrying all the labels.
@@ -341,7 +348,7 @@ func (r *RemoteExecer) Exec(ctx context.Context, namespace, pod string, request 
 	if err != nil {
 		return 0, err
 	}
-	executor, err := remotecommand.NewFallbackExecutor(websocket, spdy, func(err error) bool { return true })
+	executor, err := fallbackExecutor(websocket, spdy)
 	if err != nil {
 		return 0, err
 	}
@@ -354,4 +361,10 @@ func (r *RemoteExecer) Exec(ctx context.Context, namespace, pod string, request 
 		return exit.Code, nil
 	}
 	return 0, err
+}
+
+func fallbackExecutor(primary, secondary remotecommand.Executor) (remotecommand.Executor, error) {
+	return remotecommand.NewFallbackExecutor(primary, secondary, func(err error) bool {
+		return err != nil && (httpstream.IsUpgradeFailure(err) || httpstream.IsHTTPSProxyError(err))
+	})
 }
