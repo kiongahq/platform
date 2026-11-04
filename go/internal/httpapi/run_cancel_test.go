@@ -160,15 +160,12 @@ func TestRunQuotaHeldUntilCancelledWorkloadsStop(t *testing.T) {
 
 // A cancellation recorded by another replica stops this replica's executor.
 func TestExecutionStopsWhenAnotherReplicaCancels(t *testing.T) {
-	previous := runCancelPoll
-	runCancelPoll = 5 * time.Millisecond
-	t.Cleanup(func() { runCancelPoll = previous })
 	repository := store.New()
 	run, err := repository.SubmitPipeline(api.SubmitPipelineRequest{ProjectID: "prj-demo", Name: "training-pipeline"}, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{store: repository}
+	server := &Server{store: repository, executions: runExecutions{poll: 5 * time.Millisecond}}
 	ctx, done := server.startRunExecution(run.ID)
 	defer done()
 	if _, err := repository.CancelRun(run.ID, "other-replica"); err != nil {
