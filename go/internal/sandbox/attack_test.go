@@ -75,6 +75,8 @@ func TestMain(m *testing.M) {
 func cleanupPrefix() int {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	// The free disk floor keeps this volume on purpose, so it is no leak.
+	_ = attackDriver.RemoveVolume(ctx, attackPrefix+"disk-floor")
 	labels := map[string]string{LabelManaged: "true", LabelPrefix: strings.TrimRight(attackPrefix, "-")}
 	count := 0
 	defer func() {
@@ -1558,26 +1560,32 @@ func TestAttackMeasureWriteRate(t *testing.T) {
 	ref := env.sandbox(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	result := env.run(t, ref, `python3 - <<'PY'
-import os, time
+	report := []string{}
+	for _, mode := range []string{"fsync", "buffered"} {
+		result := env.run(t, ref, `python3 - `+mode+` <<'PY'
+import os, sys, time
+sync = sys.argv[1] == "fsync"
 block = os.urandom(1 << 20)
-for mode, sync in (("buffered", False), ("fsync", True)):
-    written, index, started = 0, 0, time.time()
-    while time.time() - started < 4:
-        with open("/workspace/rate-%s-%d" % (mode, index), "wb") as out:
-            for _ in range(16):
-                out.write(block)
-                written += 1
-            if sync:
-                out.flush()
-                os.fsync(out.fileno())
-        index += 1
-    print("RATE", mode, round(written / (time.time() - started)), "MiB/s", flush=True)
-    os.system("rm -f /workspace/rate-*")
-PY`, 60)
+written, index, started = 0, 0, time.time()
+while time.time() - started < 4:
+    with open("/workspace/rate-%d" % index, "wb") as out:
+        for _ in range(16):
+            out.write(block)
+            written += 1
+            if written % 64 == 0:
+                print(written, round(written / (time.time() - started)), flush=True)
+        if sync:
+            out.flush()
+            os.fsync(out.fileno())
+    index += 1
+PY
+rm -f /workspace/rate-*`, 60)
+		last := strings.Fields(lastLines(result.Stdout, 1))
+		report = append(report, fmt.Sprintf("%s: exit %d, %v (MiB written, MiB/s)", mode, result.ExitCode, last))
+	}
 	started := time.Now()
 	if _, err := env.service.measure(ctx, ref.id, env.service.volumeName(ref.id)); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("MEASURED under %s: %s; one meter takes %s", os.Getenv("KIONGA_ATTACK_RUNTIME"), strings.Join(strings.Fields(result.Stdout), " "), time.Since(started).Round(time.Millisecond))
+	t.Logf("MEASURED under %s: %s; one meter takes %s", os.Getenv("KIONGA_ATTACK_RUNTIME"), strings.Join(report, "; "), time.Since(started).Round(time.Millisecond))
 }
