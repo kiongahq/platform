@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,12 +46,14 @@ type Service struct {
 	verifiedOK bool
 	checkedAt  time.Time
 	probe      func(context.Context) error
+	resolve    func(context.Context, string) ([]netip.Addr, error)
 }
 
 // NewService builds a Service. The caller starts Run for the background work.
 func NewService(config Config, driver Driver, logger *log.Logger) *Service {
 	service := &Service{config: config, driver: driver, now: time.Now, logger: logger}
 	service.probe = service.runProbe
+	service.resolve = resolveLookup
 	return service
 }
 
@@ -186,8 +189,8 @@ func (s *Service) attest(ctx context.Context, name string) error {
 		return err
 	}
 	kernel := strings.TrimSpace(string(stdout.data))
-	if code != 0 || kernel != s.config.ExpectKernel {
-		return errors.New("kernel release " + strconv.Quote(kernel) + " does not match the expected " + strconv.Quote(s.config.ExpectKernel))
+	if code != 0 || !strings.Contains(strings.ToLower(kernel), strings.ToLower(s.config.ExpectKernel)) {
+		return errors.New("kernel release " + strconv.Quote(kernel) + " does not contain " + strconv.Quote(s.config.ExpectKernel))
 	}
 	return nil
 }

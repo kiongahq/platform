@@ -89,6 +89,10 @@ func podFor(spec ContainerSpec, namespace string) *corev1.Pod {
 		volumes = append(volumes, corev1.Volume{Name: "workspace", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: spec.Volume.Name}}})
 		mounts = append(mounts, corev1.VolumeMount{Name: "workspace", MountPath: spec.Volume.Path})
 	}
+	var aliases []corev1.HostAlias
+	for _, entry := range spec.ExtraHosts {
+		aliases = append(aliases, corev1.HostAlias{IP: entry.Address, Hostnames: []string{entry.Host}})
+	}
 	runtime := spec.Runtime
 	limits := corev1.ResourceList{
 		corev1.ResourceMemory: *quantity(spec.MemoryBytes),
@@ -129,7 +133,8 @@ func podFor(spec ContainerSpec, namespace string) *corev1.Pod {
 					Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 				},
 			}},
-			Volumes: volumes,
+			Volumes:     volumes,
+			HostAliases: aliases,
 		},
 	}
 }
@@ -147,6 +152,9 @@ func pvcFor(spec ContainerSpec, namespace, storageClass string) *corev1.Persiste
 	}
 	return claim
 }
+
+// EnsureNetwork is the chart's job here: egress follows the git-helper label.
+func (k *Kubernetes) EnsureNetwork(context.Context, string, map[string]string) error { return nil }
 
 // Create verifies the network policy first, so no pod ever exists without it. Then it
 // waits for the pod to run: a pod that never starts under the RuntimeClass is a failure.

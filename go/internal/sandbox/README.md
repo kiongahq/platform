@@ -27,12 +27,13 @@ Treat every command, file, repository and byte of output as hostile.
 | `PORT` | `8088` | |
 | `KIONGA_SANDBOX_DRIVER` | `docker` | `docker`, `kubernetes` |
 | `KIONGA_SANDBOX_RUNTIME` | `runsc` | RuntimeClass name under `kubernetes` |
-| `KIONGA_SANDBOX_EXPECT_KERNEL` | `4.4.0` | what the runtime must report for `uname -r` |
+| `KIONGA_SANDBOX_EXPECT_KERNEL` | `gvisor` | text the runtime's `uname -r` must contain, such as `4.19.0-gvisor` |
 | `KIONGA_SANDBOX_ALLOW_UNSAFE_RUNTIME` | unset | `1`, development only; refused with `KIONGA_ENVIRONMENT=production` |
 | `KIONGA_SANDBOX_IMAGES` | empty: creates return 503 | comma-separated, `repo@sha256:digest`. The Docker driver also takes a local `sha256:` image ID |
 | `KIONGA_SANDBOX_HELPER_IMAGE` | first of the images | pinned by digest |
 | `KIONGA_SANDBOX_GIT_HOSTS` | empty: all git refused | comma-separated `host` or `host:port` |
-| `KIONGA_SANDBOX_GIT_NETWORK` | `bridge` | engine network for helpers. See the failure modes |
+| `KIONGA_SANDBOX_GIT_NETWORK` | `<prefix>git` | helpers' own engine network, which the manager creates. Not `bridge`, `host` or any network it did not create |
+| `KIONGA_SANDBOX_GIT_ALLOW_PRIVATE_FOR_TESTS` | unset | `1` lets helpers reach private addresses, for local test servers; refused with `KIONGA_ENVIRONMENT=production` |
 | `KIONGA_SANDBOX_GIT_USERNAME` | `x-access-token` | |
 | `KIONGA_SANDBOX_GIT_CA_FILE` | system roots | PEM bundle for a private git host |
 | `KIONGA_SANDBOX_GIT_BUNDLE_BYTES` | 1 GiB | 8 GiB |
@@ -64,7 +65,7 @@ the engine's seccomp profile.
 **Runtime.** The engine's list of runtimes is necessary and not sufficient. Podman lists
 `runsc` with no binary behind it, and Docker will register any path under that name. So a
 throwaway container proves the runtime before creates are allowed, and every sandbox and
-helper proves it again, by reporting gVisor's kernel release before any other code runs
+helper proves it again, by reporting a gVisor kernel release before any other code runs
 in it. Failure removes the container and its volume and returns 503.
 
 **Exec.** The command is one argv element to `bash -c`, under `env -i`. The deadline is on
@@ -92,11 +93,16 @@ program, so it is in no argv, environment or engine inspect output.
 
 - The Docker volume has no size limit. A hostile agent can fill the engine's disk until
   the TTL. Keep the engine's data root on its own filesystem. Kubernetes claims are bounded.
-- A helper has unrestricted egress on `KIONGA_SANDBOX_GIT_NETWORK`. It only ever runs
-  fixed scripts, so reaching this needs a code-execution bug in git or the image, inside
-  gVisor. The host allowlist is a request check, not a network control.
-- Docker's embedded DNS on a user-defined network is not reachable under gVisor unless
-  runsc has `--reproduce-nat`. Keep helpers on the default bridge.
+- The manager resolves an allowed host, refuses it if any answer is private, loopback,
+  link-local, metadata or reserved, and pins the answers in the helper's hosts file, so
+  DNS rebinding after the check cannot reach git, and redirects are refused. This is a
+  request check. It is not a firewall: the engine network still routes to private
+  addresses, so code execution inside a helper, through a git or image bug, could reach
+  them. Closing that needs a host firewall on the helper network (platform#115).
+- The manager needs a DNS path. On a network with no route out, git fails closed with
+  "could not be resolved".
+- A private git host cannot be used: only the test allowance permits one.
+- An address list that changes after the check only causes a connection failure.
 - Redirects are refused, so a renamed repository fails until its URL is updated.
 - Push bundles whole history, so a repository over the bundle limit cannot be pushed.
 - A manager crash can leave a helper holding a credential until the reaper removes it,

@@ -60,6 +60,13 @@ type VolumeMount struct {
 	SizeBytes int64
 }
 
+// HostEntry pins a name to an address in the instance's hosts file. Only the manager
+// builds these, from a host it resolved and checked. No request field reaches them.
+type HostEntry struct {
+	Host    string
+	Address string
+}
+
 // ContainerSpec is everything a driver may vary. There is deliberately no field for
 // environment, host mounts, capabilities or privileges: drivers hard-code the
 // hardened values, so no caller can weaken them.
@@ -75,6 +82,7 @@ type ContainerSpec struct {
 	Pids        int64
 	Tmpfs       []TmpfsMount
 	Volume      *VolumeMount
+	ExtraHosts  []HostEntry
 }
 
 // Instance is a container or pod as the engine reports it.
@@ -115,6 +123,9 @@ type Driver interface {
 	Inspect(ctx context.Context, name string) (Instance, error)
 	List(ctx context.Context, labels map[string]string) ([]Instance, error)
 	ListVolumes(ctx context.Context, labels map[string]string) ([]VolumeInfo, error)
+	// EnsureNetwork makes the helpers' own network. It refuses a network of that name
+	// that this manager did not create, because that could be shared with services.
+	EnsureNetwork(ctx context.Context, name string, labels map[string]string) error
 	// Exec returns the exit code. A non-nil error means no exit code is known.
 	Exec(ctx context.Context, name string, request ExecRequest) (int, error)
 	// Restart kills every process in the instance and starts it again, keeping the

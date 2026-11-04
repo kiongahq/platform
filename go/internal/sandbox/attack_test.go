@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/http/cgi"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -76,6 +77,10 @@ func cleanupPrefix() int {
 	defer cancel()
 	labels := map[string]string{LabelManaged: "true", LabelPrefix: strings.TrimRight(attackPrefix, "-")}
 	count := 0
+	defer func() {
+		// The helper network holds no data and is only ever this run's, by name.
+		_, _ = attackDriver.do(ctx, http.MethodDelete, "/networks/"+attackPrefix+"git", nil, nil)
+	}()
 	instances, _ := attackDriver.List(ctx, labels)
 	for _, item := range instances {
 		_ = attackDriver.Remove(ctx, item.Name)
@@ -124,11 +129,14 @@ func baseEnv(token string) map[string]string {
 		"KIONGA_SANDBOX_MEMORY_BYTES":         strconv.Itoa(attackMemory),
 		"KIONGA_SANDBOX_GIT_BUNDLE_BYTES":     strconv.Itoa(128 << 20),
 		"KIONGA_SANDBOX_TMP_BYTES":            strconv.Itoa(64 << 20),
-		"KIONGA_SANDBOX_GIT_NETWORK":          os.Getenv("KIONGA_ATTACK_GIT_NETWORK"),
+		"KIONGA_SANDBOX_GIT_NETWORK":          attackPrefix + "git",
 	}
 }
 
 const attackMemory = 512 << 20
+
+// attackGitName exists in no DNS anywhere, so only a pinned hosts entry can resolve it.
+const attackGitName = "git.kionga-attack.invalid"
 
 func newEnv(t *testing.T) *attackEnv {
 	t.Helper()
@@ -140,6 +148,8 @@ func newEnv(t *testing.T) *attackEnv {
 	values := baseEnv(token)
 	values["KIONGA_SANDBOX_GIT_HOSTS"] = git.host
 	values["KIONGA_SANDBOX_GIT_CA_FILE"] = git.caFile
+	// The local server is on a private address. Production cannot set this.
+	values["KIONGA_SANDBOX_GIT_ALLOW_PRIVATE_FOR_TESTS"] = "1"
 	return startEnv(t, values, token, git)
 }
 
@@ -220,8 +230,8 @@ func TestAttackKernelIdentityIsGVisor(t *testing.T) {
 	if os.Getenv("KIONGA_ATTACK_REQUIRE_GVISOR") != "1" {
 		t.Skipf("NOT gVisor: this run uses %s, kernel %s", os.Getenv("KIONGA_ATTACK_RUNTIME"), uname)
 	}
-	if uname != defaultExpectKernel {
-		t.Fatalf("kernel release %q is not gVisor's %q", uname, defaultExpectKernel)
+	if !strings.Contains(uname, defaultExpectKernel) {
+		t.Fatalf("kernel release %q does not identify gVisor", uname)
 	}
 	// The sentry's boot log is the strongest identity available from inside. A host
 	// kernel would not print it, and a hostile process cannot change what this exec reads.
@@ -750,10 +760,11 @@ func testCertificates(t *testing.T, host string) (tls.Certificate, []byte) {
 		t.Fatal(err)
 	}
 	leafTemplate := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: host}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	leafTemplate.DNSNames = []string{attackGitName}
 	if ip := net.ParseIP(host); ip != nil {
 		leafTemplate.IPAddresses = []net.IP{ip}
 	} else {
-		leafTemplate.DNSNames = []string{host}
+		leafTemplate.DNSNames = append(leafTemplate.DNSNames, host)
 	}
 	caCert, err := x509.ParseCertificate(caDER)
 	if err != nil {
@@ -1178,6 +1189,66 @@ func TestAttackSymlinkRepositoryIsRejected(t *testing.T) {
 	_, err = env.api.GitClone(ctx, ref.id, client.GitCloneRequest{Repository: env.git.url("linked"), Credential: client.Credential(env.git.secret)})
 	if client.Code(err) != client.CodePathRejected && client.Code(err) != client.CodeConflict {
 		t.Fatalf("clone onto a symlink: %v", err)
+	}
+	assertNoHelpers(t, ctx)
+}
+
+func TestAttackHelperUsesPinnedAddressOnItsOwnNetwork(t *testing.T) {
+	env := newEnv(t)
+	env.git.seedRepo(t, "pinned")
+	ref := env.sandbox(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	host := attackGitName + ":" + strconv.Itoa(env.git.port)
+	env.service.config.GitHosts = []string{host}
+	address, err := netip.ParseAddr(env.git.ip)
+	if err != nil {
+		t.Skipf("KIONGA_ATTACK_GIT_HOST is not an address: %v", err)
+	}
+	env.service.resolve = func(context.Context, string) ([]netip.Addr, error) { return []netip.Addr{address}, nil }
+	var inspected []string
+	var once sync.Once
+	env.git.onGit = func() { once.Do(func() { inspected = inspectHelpers(t, ctx) }) }
+	repository := "https://" + host + "/pinned.git"
+	if _, err := env.api.GitClone(ctx, ref.id, client.GitCloneRequest{Repository: repository, Credential: client.Credential(env.git.secret)}); err != nil {
+		t.Fatalf("clone through a name only the pinned entry can resolve: %v\nlogs:\n%s", err, env.logs.String())
+	}
+	if len(inspected) != 1 {
+		t.Fatalf("inspected %d helpers", len(inspected))
+	}
+	var helper struct {
+		HostConfig struct {
+			NetworkMode string
+			ExtraHosts  []string
+		}
+		NetworkSettings struct {
+			Networks map[string]json.RawMessage
+		}
+	}
+	if err := json.Unmarshal([]byte(inspected[0]), &helper); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("helper network %s, hosts %v, networks %d", helper.HostConfig.NetworkMode, helper.HostConfig.ExtraHosts, len(helper.NetworkSettings.Networks))
+	if _, ok := helper.NetworkSettings.Networks[attackPrefix+"git"]; !ok || len(helper.NetworkSettings.Networks) != 1 {
+		t.Fatalf("the helper must be on its dedicated network and no other: %v", helper.NetworkSettings.Networks)
+	}
+	if strings.Contains(inspected[0], `"bridge"`) && helper.HostConfig.NetworkMode == "bridge" {
+		t.Fatal("the helper is on the default bridge")
+	}
+	assertNoHelpers(t, ctx)
+}
+
+func TestAttackPrivateAddressRefusedWithoutTheTestAllowance(t *testing.T) {
+	env := newEnv(t)
+	ref := env.sandbox(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	env.service.config.GitAllowPrivateForTests = false
+	before := env.git.requestCount()
+	_, err := env.api.GitClone(ctx, ref.id, client.GitCloneRequest{Repository: env.git.url("any"), Credential: client.Credential(env.git.secret)})
+	wantCode(t, err, client.CodeHostNotAllowed)
+	if env.git.requestCount() != before {
+		t.Fatal("a private address was contacted")
 	}
 	assertNoHelpers(t, ctx)
 }

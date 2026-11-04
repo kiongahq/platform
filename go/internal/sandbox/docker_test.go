@@ -240,6 +240,60 @@ func TestDockerExecStopsWhenWriterFails(t *testing.T) {
 	}
 }
 
+func TestDockerEnsureNetworkRefusesAForeignNetwork(t *testing.T) {
+	labels := map[string]string{LabelManaged: "true", LabelPrefix: "kionga-sandbox"}
+	cases := map[string]struct {
+		get     int
+		body    string
+		wantErr bool
+		creates bool
+	}{
+		"missing":         {get: http.StatusNotFound, creates: true},
+		"ours":            {get: http.StatusOK, body: `{"Labels":{"` + LabelManaged + `":"true","` + LabelPrefix + `":"kionga-sandbox"}}`},
+		"compose network": {get: http.StatusOK, body: `{"Labels":{"com.docker.compose.project":"mlaiops"}}`, wantErr: true},
+		"another install": {get: http.StatusOK, body: `{"Labels":{"` + LabelManaged + `":"true","` + LabelPrefix + `":"other"}}`, wantErr: true},
+		"engine error":    {get: http.StatusInternalServerError, wantErr: true},
+	}
+	for name, item := range cases {
+		t.Run(name, func(t *testing.T) {
+			var created map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					_ = json.NewDecoder(r.Body).Decode(&created)
+					w.WriteHeader(http.StatusCreated)
+					return
+				}
+				w.WriteHeader(item.get)
+				_, _ = w.Write([]byte(item.body))
+			}))
+			defer server.Close()
+			driver := &Docker{BaseURL: server.URL}
+			err := driver.EnsureNetwork(context.Background(), "kionga-sandbox-git", labels)
+			if (err != nil) != item.wantErr {
+				t.Fatalf("err %v", err)
+			}
+			if (created != nil) != item.creates {
+				t.Fatalf("created %v", created)
+			}
+			if item.creates && (created["Internal"] != false || created["Options"].(map[string]any)["com.docker.network.bridge.enable_icc"] != "false") {
+				t.Fatalf("created %v", created)
+			}
+		})
+	}
+}
+
+func TestCreateBodyPinsOnlyManagerHosts(t *testing.T) {
+	spec := testSpec()
+	if hosts := createBody(spec)["HostConfig"].(map[string]any)["ExtraHosts"].([]string); len(hosts) != 0 {
+		t.Fatalf("no hosts unless the manager adds them: %v", hosts)
+	}
+	spec.ExtraHosts = []HostEntry{{Host: "github.com", Address: "140.82.112.3"}, {Host: "github.com", Address: "2606:50c0:8000::153"}}
+	hosts := createBody(spec)["HostConfig"].(map[string]any)["ExtraHosts"].([]string)
+	if strings.Join(hosts, ",") != "github.com:140.82.112.3,github.com:2606:50c0:8000::153" {
+		t.Fatalf("%v", hosts)
+	}
+}
+
 func TestDemuxRejectsUnknownStream(t *testing.T) {
 	if err := demux(bytes.NewReader(frame(9, "x")), io.Discard, io.Discard); err == nil {
 		t.Fatal("expected an error")

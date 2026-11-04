@@ -50,7 +50,7 @@ func helperEnv(withAskpass, withCA bool, program ...string) []string {
 
 // startHelper creates a helper with a network and no workspace, and loads the secret
 // over exec stdin. Callers defer the returned cleanup.
-func (s *Service) startHelper(ctx context.Context, sandboxID, secret string) (string, func(), error) {
+func (s *Service) startHelper(ctx context.Context, sandboxID, secret string, hosts []HostEntry) (string, func(), error) {
 	suffix := make([]byte, 6)
 	if _, err := rand.Read(suffix); err != nil {
 		return "", func() {}, err
@@ -59,12 +59,17 @@ func (s *Service) startHelper(ctx context.Context, sandboxID, secret string) (st
 	spec := s.hardenedSpec(name, s.config.HelperImage, RoleGitHelper)
 	spec.Labels[LabelID] = sandboxID
 	spec.Network = s.config.GitNetwork
+	spec.ExtraHosts = hosts
 	spec.MemoryBytes += 2 * s.config.BundleBytes
 	spec.Tmpfs = append(spec.Tmpfs,
 		TmpfsMount{Path: helperRunDir, SizeBytes: 4 << 20},
 		TmpfsMount{Path: helperScratch, SizeBytes: 2 * s.config.BundleBytes},
 	)
 	cleanup := func() { s.removeQuietly(name) }
+	if err := s.driver.EnsureNetwork(ctx, s.config.GitNetwork, s.labels(RoleGitHelper)); err != nil {
+		s.logger.Printf("sandbox: git helper network: %v", err)
+		return "", func() {}, unavailable("the git helper network is not available")
+	}
 	if err := s.driver.Create(ctx, spec); err != nil {
 		cleanup()
 		s.logger.Printf("sandbox: git helper failed to start: %v", err)
@@ -161,13 +166,17 @@ func (s *Service) GitClone(ctx context.Context, id string, request client.GitClo
 	if err != nil {
 		return client.GitCloneResult{}, err
 	}
+	hosts, err := s.pinRepositoryHost(ctx, repository)
+	if err != nil {
+		return client.GitCloneResult{}, err
+	}
 	found, err := s.running(ctx, id)
 	if err != nil {
 		return client.GitCloneResult{}, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.config.GitTimeout)
 	defer cancel()
-	helper, cleanup, err := s.startHelper(ctx, id, secret)
+	helper, cleanup, err := s.startHelper(ctx, id, secret, hosts)
 	if err != nil {
 		return client.GitCloneResult{}, err
 	}
@@ -244,6 +253,10 @@ func (s *Service) GitPush(ctx context.Context, id string, request client.GitPush
 	if err != nil {
 		return client.GitPushResult{}, err
 	}
+	hosts, err := s.pinRepositoryHost(ctx, repository)
+	if err != nil {
+		return client.GitPushResult{}, err
+	}
 	ctx, cancel := context.WithTimeout(ctx, s.config.GitTimeout)
 	defer cancel()
 
@@ -276,7 +289,7 @@ func (s *Service) GitPush(ctx context.Context, id string, request client.GitPush
 		return client.GitPushResult{}, &client.Error{Status: http.StatusRequestEntityTooLarge, Code: client.CodeTooLarge, Message: "the branch exceeds the bundle limit"}
 	}
 
-	helper, cleanup, err := s.startHelper(ctx, id, secret)
+	helper, cleanup, err := s.startHelper(ctx, id, secret, hosts)
 	if err != nil {
 		return client.GitPushResult{}, err
 	}

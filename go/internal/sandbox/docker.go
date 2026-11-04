@@ -140,7 +140,12 @@ func createBody(spec ContainerSpec) map[string]any {
 	if spec.Volume != nil {
 		mounts = append(mounts, map[string]any{"Type": "volume", "Source": spec.Volume.Name, "Target": spec.Volume.Path, "ReadOnly": false})
 	}
+	extraHosts := []string{}
+	for _, entry := range spec.ExtraHosts {
+		extraHosts = append(extraHosts, entry.Host+":"+entry.Address)
+	}
 	host := map[string]any{
+		"ExtraHosts":      extraHosts,
 		"Runtime":         spec.Runtime,
 		"NetworkMode":     spec.Network,
 		"ReadonlyRootfs":  true,
@@ -174,6 +179,34 @@ func createBody(spec ContainerSpec) map[string]any {
 		"Tty":             false,
 		"HostConfig":      host,
 	}
+}
+
+// EnsureNetwork creates the helpers' network, with traffic between its containers
+// disabled, or accepts one this manager created earlier. A network of that name without
+// our labels might be a Compose network, so it is refused rather than joined.
+func (d *Docker) EnsureNetwork(ctx context.Context, name string, labels map[string]string) error {
+	var existing struct {
+		Labels map[string]string `json:"Labels"`
+	}
+	status, err := d.do(ctx, http.MethodGet, "/networks/"+url.PathEscape(name), nil, &existing)
+	if err == nil {
+		if existing.Labels[LabelManaged] != "true" || existing.Labels[LabelPrefix] != labels[LabelPrefix] {
+			return fmt.Errorf("network %s exists and was not created by this manager", name)
+		}
+		return nil
+	}
+	if status != http.StatusNotFound {
+		return err
+	}
+	body := map[string]any{
+		"Name": name, "Driver": "bridge", "Internal": false, "Attachable": false, "Labels": labels,
+		"Options": map[string]string{"com.docker.network.bridge.enable_icc": "false"},
+	}
+	status, err = d.do(ctx, http.MethodPost, "/networks/create", body, nil)
+	if status == http.StatusConflict {
+		return nil // a concurrent helper just made it
+	}
+	return err
 }
 
 // Create makes the volume, then the container, and starts it. The image is pulled

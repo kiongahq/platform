@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -134,6 +135,8 @@ type fakeDriver struct {
 	removed     []string
 	restarted   []string
 	removedVols []string
+	networks    []string
+	networkErr  error
 }
 
 type execCall struct {
@@ -143,7 +146,7 @@ type execCall struct {
 }
 
 func newFakeDriver() *fakeDriver {
-	return &fakeDriver{registered: true, kernel: defaultExpectKernel, instances: map[string]*Instance{}, volumes: map[string]map[string]string{}}
+	return &fakeDriver{registered: true, kernel: "4.19.0-gvisor", instances: map[string]*Instance{}, volumes: map[string]map[string]string{}}
 }
 
 func (f *fakeDriver) Name() string { return "docker" }
@@ -215,6 +218,13 @@ func (f *fakeDriver) ListVolumes(_ context.Context, labels map[string]string) ([
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeDriver) EnsureNetwork(_ context.Context, name string, _ map[string]string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.networks = append(f.networks, name)
+	return f.networkErr
 }
 
 func (f *fakeDriver) Exec(ctx context.Context, name string, request ExecRequest) (int, error) {
@@ -310,7 +320,12 @@ func newTestService(t *testing.T, extra map[string]string) (*Service, *fakeDrive
 	}
 	driver := newFakeDriver()
 	logs := &lockedBuffer{}
-	return NewService(config, driver, log.New(logs, "", 0)), driver, logs
+	service := NewService(config, driver, log.New(logs, "", 0))
+	// Gate tests never touch real DNS.
+	service.resolve = func(context.Context, string) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("140.82.112.3")}, nil
+	}
+	return service, driver, logs
 }
 
 func createTest(t *testing.T, service *Service) string {
@@ -949,8 +964,16 @@ func TestGitCloneUsesIsolatedHelper(t *testing.T) {
 	if helper.Volume != nil {
 		t.Fatal("the helper must not mount the workspace: it must never run git in a .git the agent touched")
 	}
-	if helper.Network == NetworkNone || helper.Network != "bridge" {
-		t.Fatalf("helper network: %q", helper.Network)
+	if helper.Network != "kionga-sandbox-git" || len(driver.networks) == 0 || driver.networks[0] != helper.Network {
+		t.Fatalf("the helper must be on its own ensured network: %q %v", helper.Network, driver.networks)
+	}
+	if len(helper.ExtraHosts) != 1 || helper.ExtraHosts[0] != (HostEntry{Host: "github.com", Address: "140.82.112.3"}) {
+		t.Fatalf("the helper must use the address the manager checked: %+v", helper.ExtraHosts)
+	}
+	for _, spec := range driver.specNamed(RoleSandbox) {
+		if len(spec.ExtraHosts) != 0 {
+			t.Fatal("a sandbox has no network and needs no hosts")
+		}
 	}
 	if helper.Runtime != "runsc" {
 		t.Fatalf("the helper must use the same runtime: %q", helper.Runtime)
@@ -1496,6 +1519,8 @@ func TestStrictRequestBodies(t *testing.T) {
 		{"/sandboxes/" + sandbox.ID + "/exec", `{"command":["id"]}`},
 		{"/sandboxes/" + sandbox.ID + "/git/push", `{"repository":"https://github.com/o/r","branch":"x","credential":"c","force":true}`},
 		{"/sandboxes/" + sandbox.ID + "/exec", `not json`},
+		{"/sandboxes/" + sandbox.ID + "/git/clone", `{"repository":"https://github.com/o/r","extra_hosts":["github.com:10.0.0.1"]}`},
+		{"/sandboxes/" + sandbox.ID + "/git/push", `{"repository":"https://github.com/o/r","branch":"x","credential":"c","network":"host"}`},
 	}
 	for _, item := range cases {
 		request, _ := http.NewRequest("POST", server.URL+item.path, strings.NewReader(item.body))
@@ -1622,5 +1647,95 @@ func TestDeleteReturns204AndClientRoundTrip(t *testing.T) {
 	}
 	if !client.IsUnavailable(errors.New("connection refused")) || client.IsUnavailable(&client.Error{Code: client.CodeNotFound}) || !client.IsUnavailable(&client.Error{Code: client.CodeUnavailable}) {
 		t.Fatal("IsUnavailable")
+	}
+}
+
+func TestBlockedAddresses(t *testing.T) {
+	for _, raw := range []string{
+		"127.0.0.1", "127.8.8.8", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "100.100.100.200",
+		"0.0.0.0", "224.0.0.1", "240.0.0.1", "255.255.255.255", "198.18.0.1", "168.63.129.16",
+		"::", "::1", "fe80::1", "fc00::1", "fd00:ec2::254", "ff02::1", "::ffff:10.0.0.1", "::ffff:127.0.0.1", "::ffff:169.254.169.254", "64:ff9b::a00:1", "2002:a00:1::",
+	} {
+		if !blockedAddress(netip.MustParseAddr(raw)) {
+			t.Errorf("%s must be blocked", raw)
+		}
+	}
+	for _, raw := range []string{"140.82.112.3", "8.8.8.8", "172.32.0.1", "192.169.0.1", "2606:50c0:8000::153", "::ffff:140.82.112.3"} {
+		if blockedAddress(netip.MustParseAddr(raw)) {
+			t.Errorf("%s must be allowed", raw)
+		}
+	}
+	if !blockedAddress(netip.Addr{}) {
+		t.Error("an invalid address must be blocked")
+	}
+}
+
+func TestPrivateResolutionNeverStartsAHelper(t *testing.T) {
+	cases := map[string][]netip.Addr{
+		"private":         {netip.MustParseAddr("10.0.0.5")},
+		"metadata":        {netip.MustParseAddr("169.254.169.254")},
+		"loopback":        {netip.MustParseAddr("127.0.0.1")},
+		"mapped":          {netip.MustParseAddr("::ffff:192.168.0.1")},
+		"one bad of many": {netip.MustParseAddr("140.82.112.3"), netip.MustParseAddr("10.0.0.5")},
+	}
+	for name, answers := range cases {
+		t.Run(name, func(t *testing.T) {
+			service, driver, _ := newTestService(t, nil)
+			id := gitFixture(t, service, driver)
+			service.resolve = func(context.Context, string) ([]netip.Addr, error) { return answers, nil }
+			_, err := service.GitClone(context.Background(), id, client.GitCloneRequest{Repository: "https://github.com/o/r", Credential: "secret-value"})
+			wantStatus(t, err, http.StatusForbidden, client.CodeHostNotAllowed)
+			_, err = service.GitPush(context.Background(), id, client.GitPushRequest{Repository: "https://github.com/o/r", Branch: "kionga/" + testRun + "/x", Credential: "secret-value"})
+			wantStatus(t, err, http.StatusForbidden, client.CodeHostNotAllowed)
+			if len(driver.specNamed(RoleGitHelper)) != 0 {
+				t.Fatal("a helper started for a private address")
+			}
+		})
+	}
+}
+
+func TestPrivateLiteralRefusedAndTestAllowanceWorks(t *testing.T) {
+	service, driver, _ := newTestService(t, map[string]string{"KIONGA_SANDBOX_GIT_HOSTS": "10.0.0.5:8443"})
+	id := gitFixture(t, service, driver)
+	_, err := service.GitClone(context.Background(), id, client.GitCloneRequest{Repository: "https://10.0.0.5:8443/o/r"})
+	wantStatus(t, err, http.StatusForbidden, client.CodeHostNotAllowed)
+	if len(driver.specNamed(RoleGitHelper)) != 0 {
+		t.Fatal("a helper started for a private literal")
+	}
+
+	allowed, driver, logs := newTestService(t, map[string]string{"KIONGA_SANDBOX_GIT_HOSTS": "10.0.0.5:8443", "KIONGA_SANDBOX_GIT_ALLOW_PRIVATE_FOR_TESTS": "1"})
+	id = gitFixture(t, allowed, driver)
+	if _, err := allowed.GitClone(context.Background(), id, client.GitCloneRequest{Repository: "https://10.0.0.5:8443/o/r"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logs.String(), "WARNING") {
+		t.Fatal("the test allowance must be loud")
+	}
+}
+
+func TestResolutionFailureFailsClosed(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := gitFixture(t, service, driver)
+	for _, resolve := range []func(context.Context, string) ([]netip.Addr, error){
+		func(context.Context, string) ([]netip.Addr, error) { return nil, errors.New("no route to resolver") },
+		func(context.Context, string) ([]netip.Addr, error) { return nil, nil },
+	} {
+		service.resolve = resolve
+		_, err := service.GitClone(context.Background(), id, client.GitCloneRequest{Repository: "https://github.com/o/r"})
+		wantStatus(t, err, http.StatusBadGateway, client.CodeGitFailed)
+	}
+	if len(driver.specNamed(RoleGitHelper)) != 0 {
+		t.Fatal("a helper started with an unresolved host")
+	}
+}
+
+func TestHelperNetworkFailureFailsClosed(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := gitFixture(t, service, driver)
+	driver.networkErr = errors.New("network exists and was not created by this manager")
+	_, err := service.GitClone(context.Background(), id, client.GitCloneRequest{Repository: "https://github.com/o/r"})
+	wantStatus(t, err, http.StatusServiceUnavailable, client.CodeUnavailable)
+	if len(driver.specNamed(RoleGitHelper)) != 0 {
+		t.Fatal("a helper started without its network")
 	}
 }

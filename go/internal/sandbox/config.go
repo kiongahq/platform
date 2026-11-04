@@ -36,7 +36,7 @@ const (
 	maxFileWrite = 16 << 20
 	maxCommand   = 128<<10 - 1 // Linux MAX_ARG_STRLEN
 
-	defaultExpectKernel = "4.4.0" // what gVisor's sentry reports for uname -r
+	defaultExpectKernel = "gvisor" // found in the uname -r of a gVisor sentry, such as 4.19.0-gvisor
 	minTokenLength      = 16
 	minProdTokenLength  = 32
 	maxCredentialLength = 16 << 10
@@ -49,7 +49,7 @@ type Config struct {
 	Driver      string // docker or kubernetes
 	Runtime     string
 	AllowUnsafe bool
-	// ExpectKernel is the kernel release a verified sandbox must report. It proves
+	// ExpectKernel must appear in the kernel release a verified sandbox reports. It proves
 	// the runtime really is gVisor, whatever name the engine registered it under.
 	ExpectKernel string
 	Images       []string
@@ -58,16 +58,19 @@ type Config struct {
 	GitNetwork   string
 	GitUsername  string
 	GitCAPEM     []byte
-	NamePrefix   string
-	Pids         int64
-	MemoryBytes  int64
-	NanoCPUs     int64
-	TmpBytes     int64
-	VolumeBytes  int64
-	BundleBytes  int64
-	MaxSandboxes int
-	TTL          time.Duration
-	GitTimeout   time.Duration
+	// GitAllowPrivateForTests lets a helper reach a private git host, for local test
+	// servers. LoadConfig refuses it in production.
+	GitAllowPrivateForTests bool
+	NamePrefix              string
+	Pids                    int64
+	MemoryBytes             int64
+	NanoCPUs                int64
+	TmpBytes                int64
+	VolumeBytes             int64
+	BundleBytes             int64
+	MaxSandboxes            int
+	TTL                     time.Duration
+	GitTimeout              time.Duration
 	// HelperMaxAge removes a helper left behind by a crashed manager, because it
 	// may still hold a credential on its tmpfs.
 	HelperMaxAge time.Duration
@@ -88,7 +91,6 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		Runtime:      orDefault(getenv("KIONGA_SANDBOX_RUNTIME"), defaultRuntime),
 		AllowUnsafe:  getenv("KIONGA_SANDBOX_ALLOW_UNSAFE_RUNTIME") == "1",
 		ExpectKernel: orDefault(getenv("KIONGA_SANDBOX_EXPECT_KERNEL"), defaultExpectKernel),
-		GitNetwork:   orDefault(getenv("KIONGA_SANDBOX_GIT_NETWORK"), "bridge"),
 		GitUsername:  orDefault(getenv("KIONGA_SANDBOX_GIT_USERNAME"), gitUsernameDefault),
 		NamePrefix:   orDefault(getenv("KIONGA_SANDBOX_NAME_PREFIX"), defaultPrefix),
 		Port:         orDefault(getenv("PORT"), "8088"),
@@ -96,6 +98,8 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		DockerAPI:    getenv("DOCKER_API_VERSION"),
 		Namespace:    getenv("KIONGA_SANDBOX_NAMESPACE"),
 		StorageClass: getenv("KIONGA_SANDBOX_STORAGE_CLASS"),
+
+		GitAllowPrivateForTests: getenv("KIONGA_SANDBOX_GIT_ALLOW_PRIVATE_FOR_TESTS") == "1",
 	}
 	production := getenv("KIONGA_ENVIRONMENT") == "production"
 	if config.Token == "" {
@@ -113,6 +117,12 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	if config.AllowUnsafe && production {
 		return Config{}, errors.New("KIONGA_SANDBOX_ALLOW_UNSAFE_RUNTIME is refused when KIONGA_ENVIRONMENT=production")
 	}
+	if raw := getenv("KIONGA_SANDBOX_GIT_ALLOW_PRIVATE_FOR_TESTS"); raw != "" && raw != "1" {
+		return Config{}, errors.New("KIONGA_SANDBOX_GIT_ALLOW_PRIVATE_FOR_TESTS must be 1 or unset")
+	}
+	if config.GitAllowPrivateForTests && production {
+		return Config{}, errors.New("KIONGA_SANDBOX_GIT_ALLOW_PRIVATE_FOR_TESTS is refused when KIONGA_ENVIRONMENT=production")
+	}
 	if config.Driver != "docker" && config.Driver != "kubernetes" {
 		return Config{}, errors.New("KIONGA_SANDBOX_DRIVER must be docker or kubernetes")
 	}
@@ -128,11 +138,13 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	if !gitUsername.MatchString(config.GitUsername) {
 		return Config{}, errors.New("KIONGA_SANDBOX_GIT_USERNAME is not valid")
 	}
+	config.GitNetwork = orDefault(getenv("KIONGA_SANDBOX_GIT_NETWORK"), config.NamePrefix+"git")
 	if !dockerName.MatchString(config.GitNetwork) {
 		return Config{}, errors.New("KIONGA_SANDBOX_GIT_NETWORK is not a valid network name")
 	}
-	if config.GitNetwork == "none" {
-		return Config{}, errors.New("KIONGA_SANDBOX_GIT_NETWORK cannot be none: the helper has to reach the git host")
+	switch config.GitNetwork {
+	case "none", "host", "bridge", "default", "podman", "nat":
+		return Config{}, fmt.Errorf("KIONGA_SANDBOX_GIT_NETWORK cannot be %s: helpers get a network of their own", config.GitNetwork)
 	}
 	var err error
 	if config.Images, err = parseImages(getenv("KIONGA_SANDBOX_IMAGES"), config.Driver); err != nil {

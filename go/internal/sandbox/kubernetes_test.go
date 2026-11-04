@@ -146,6 +146,18 @@ func TestKubernetesAcceptsThePolicyByNameOnly(t *testing.T) {
 	}
 }
 
+func TestKubernetesPinsManagerHosts(t *testing.T) {
+	spec := kubeSpec(RoleGitHelper)
+	spec.ExtraHosts = []HostEntry{{Host: "github.com", Address: "140.82.112.3"}}
+	aliases := podFor(spec, "sbx").Spec.HostAliases
+	if len(aliases) != 1 || aliases[0].IP != "140.82.112.3" || aliases[0].Hostnames[0] != "github.com" {
+		t.Fatalf("%+v", aliases)
+	}
+	if aliases := podFor(kubeSpec(RoleSandbox), "sbx").Spec.HostAliases; len(aliases) != 0 {
+		t.Fatalf("%+v", aliases)
+	}
+}
+
 func TestKubernetesCredentialIsNeverInThePodSpec(t *testing.T) {
 	service, _, _ := newTestService(t, nil)
 	spec := service.hardenedSpec("h", testImage, RoleGitHelper)
