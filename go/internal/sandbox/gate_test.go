@@ -52,6 +52,9 @@ func TestConfigDefaultsMatchTheSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if config.DiskBytes != 10240<<20 || config.DiskCheck != 10*time.Second || config.MinFreeDiskBytes != 5120<<20 || config.DiskFiles != 2_000_000 {
+		t.Fatalf("disk defaults: %+v", config)
+	}
 	if config.Runtime != "runsc" || config.AllowUnsafe || config.Pids != 512 || config.MemoryBytes != 2<<30 || config.NanoCPUs != 2e9 || config.TTL != 24*time.Hour || config.Port != "8088" || config.Driver != "docker" {
 		t.Fatalf("defaults: %+v", config)
 	}
@@ -73,6 +76,11 @@ func TestConfigRefusals(t *testing.T) {
 		"bad helper image":                {"KIONGA_SANDBOX_HELPER_IMAGE": "debian:latest"},
 		"pids over ceiling":               {"KIONGA_SANDBOX_PIDS": "4097"},
 		"memory over ceiling":             {"KIONGA_SANDBOX_MEMORY_BYTES": strconv.FormatInt(maxMemoryBytes+1, 10)},
+		"disk over ceiling":               {"KIONGA_SANDBOX_DISK_MB": strconv.FormatInt(maxDiskMB+1, 10)},
+		"files over ceiling":              {"KIONGA_SANDBOX_DISK_FILES": strconv.FormatInt(maxDiskFiles+1, 10)},
+		"disk check over ceiling":         {"KIONGA_SANDBOX_DISK_CHECK_SECONDS": "301"},
+		"disk check zero":                 {"KIONGA_SANDBOX_DISK_CHECK_SECONDS": "0"},
+		"free floor over ceiling":         {"KIONGA_SANDBOX_MIN_FREE_DISK_MB": strconv.FormatInt(maxMinFreeMB+1, 10)},
 		"cpus over ceiling":               {"KIONGA_SANDBOX_CPUS": "17"},
 		"tmp over ceiling":                {"KIONGA_SANDBOX_TMP_BYTES": strconv.FormatInt(maxTmpBytes+1, 10)},
 		"ttl over ceiling":                {"KIONGA_SANDBOX_TTL_SECONDS": strconv.Itoa(maxTTLSeconds + 1)},
@@ -144,6 +152,11 @@ type fakeDriver struct {
 	networks    []string
 	networkErr  error
 	inspected   []string
+	stopped     []string
+	meterOutput string
+	meterExit   int
+	meterErr    error
+	meterCalls  []string
 }
 
 type execCall struct {
@@ -250,6 +263,17 @@ func (f *fakeDriver) Exec(ctx context.Context, name string, request ExecRequest)
 		_, _ = io.WriteString(request.Stdout, kernel+"\n")
 		return 0, nil
 	}
+	if containsArg(request.Argv, meterScript) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.meterCalls = append(f.meterCalls, name)
+		if f.meterOutput == "" {
+			_, _ = io.WriteString(request.Stdout, "4096 3 1099511627776\n")
+		} else {
+			_, _ = io.WriteString(request.Stdout, f.meterOutput)
+		}
+		return f.meterExit, f.meterErr
+	}
 	if handler != nil {
 		return handler(call, request)
 	}
@@ -262,6 +286,16 @@ func (f *fakeDriver) Restart(_ context.Context, name string) error {
 	f.restarted = append(f.restarted, name)
 	if found, ok := f.instances[name]; ok {
 		found.Running = true
+	}
+	return nil
+}
+
+func (f *fakeDriver) Stop(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stopped = append(f.stopped, name)
+	if found, ok := f.instances[name]; ok {
+		found.Running = false
 	}
 	return nil
 }
@@ -729,7 +763,7 @@ func (b *blockingDriver) Exec(ctx context.Context, name string, request ExecRequ
 	if containsArg(request.Argv, sweepScript) {
 		return b.onSweep(request.Stdout)
 	}
-	if containsArg(request.Argv, "uname -r") {
+	if containsArg(request.Argv, "uname -r") || containsArg(request.Argv, meterScript) {
 		return b.fakeDriver.Exec(ctx, name, request)
 	}
 	<-ctx.Done()
@@ -1396,7 +1430,7 @@ func TestDeleteRemovesHelpersContainerAndVolume(t *testing.T) {
 	if err := service.Delete(context.Background(), id); err != nil {
 		t.Fatal(err)
 	}
-	if len(driver.instances) != 0 || len(driver.volumes) != 0 {
+	if _, ok := driver.volumes[service.volumeName(id)]; ok || len(driver.instances) != 0 {
 		t.Fatalf("left %+v %+v", driver.instances, driver.volumes)
 	}
 	if err := service.Delete(context.Background(), id); err != nil {
@@ -1778,5 +1812,287 @@ func TestHelperNetworkFailureFailsClosed(t *testing.T) {
 	wantStatus(t, err, http.StatusServiceUnavailable, client.CodeUnavailable)
 	if len(driver.specNamed(RoleGitHelper)) != 0 {
 		t.Fatal("a helper started without its network")
+	}
+}
+
+func TestDiskCheckRunsBeforeEveryWriteOrExecAndStops(t *testing.T) {
+	calls := map[string]func(*Service, string) error{
+		"exec": func(s *Service, id string) error {
+			_, err := s.Exec(context.Background(), id, client.ExecRequest{Command: "true"})
+			return err
+		},
+		"write": func(s *Service, id string) error {
+			_, err := s.WriteFile(context.Background(), id, "x", []byte("y"))
+			return err
+		},
+		"clone": func(s *Service, id string) error {
+			_, err := s.GitClone(context.Background(), id, client.GitCloneRequest{Repository: "https://github.com/o/r"})
+			return err
+		},
+		"push": func(s *Service, id string) error {
+			_, err := s.GitPush(context.Background(), id, client.GitPushRequest{Repository: "https://github.com/o/r", Branch: "kionga/" + testRun + "/x", Credential: "secret-value"})
+			return err
+		},
+	}
+	for name, call := range calls {
+		t.Run(name, func(t *testing.T) {
+			service, driver, _ := newTestService(t, map[string]string{"KIONGA_SANDBOX_DISK_MB": "100"})
+			id := createTest(t, service)
+			driver.meterOutput = strconv.FormatInt(101<<20, 10) + " 3 1099511627776\n"
+			var ran int
+			driver.onExec = func(execCall, ExecRequest) (int, error) { ran++; return 0, nil }
+			before := len(driver.specNamed(RoleGitHelper))
+			wantStatus(t, call(service, id), http.StatusInsufficientStorage, client.CodeQuotaExceeded)
+			if ran != 0 || len(driver.specNamed(RoleGitHelper)) != before {
+				t.Fatal("an over-limit sandbox ran something")
+			}
+			container := service.containerName(id)
+			if len(driver.stopped) != 1 || driver.stopped[0] != container || driver.instances[container].Running {
+				t.Fatalf("the sandbox must be stopped: %v", driver.stopped)
+			}
+			if _, ok := driver.volumes[service.volumeName(id)]; !ok {
+				t.Fatal("the volume must be kept")
+			}
+		})
+	}
+}
+
+func TestDiskCheckAtTheLimitIsAllowed(t *testing.T) {
+	service, driver, _ := newTestService(t, map[string]string{"KIONGA_SANDBOX_DISK_MB": "100"})
+	id := createTest(t, service)
+	driver.meterOutput = strconv.FormatInt(100<<20, 10) + " 3 1099511627776\n"
+	if _, err := service.Exec(context.Background(), id, client.ExecRequest{Command: "true"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(driver.stopped) != 0 {
+		t.Fatal("stopped at the limit")
+	}
+}
+
+func TestFileCountLimit(t *testing.T) {
+	service, driver, _ := newTestService(t, map[string]string{"KIONGA_SANDBOX_DISK_FILES": "10"})
+	id := createTest(t, service)
+	driver.meterOutput = "4096 11 1099511627776\n"
+	wantStatus(t, execIgnoringResult(service, id, client.ExecRequest{Command: "true"}), http.StatusInsufficientStorage, client.CodeQuotaExceeded)
+}
+
+// chmod 000 on a directory must not hide data from the limit.
+func TestUnmeasurableWorkspaceIsOverTheLimit(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := createTest(t, service)
+	driver.meterExit = exitUnmeasured
+	driver.meterOutput = "\n"
+	wantStatus(t, execIgnoringResult(service, id, client.ExecRequest{Command: "true"}), http.StatusInsufficientStorage, client.CodeQuotaExceeded)
+	if len(driver.stopped) != 1 {
+		t.Fatal("not stopped")
+	}
+}
+
+// An engine failure says nothing about the workspace, so it must not stop the sandbox,
+// and it must not let the call through unchecked either.
+func TestMeterEngineFailureIsUnavailableAndDoesNotStop(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := createTest(t, service)
+	driver.meterErr = errors.New("engine trouble")
+	ran := 0
+	driver.onExec = func(execCall, ExecRequest) (int, error) { ran++; return 0, nil }
+	wantStatus(t, execIgnoringResult(service, id, client.ExecRequest{Command: "true"}), http.StatusServiceUnavailable, client.CodeUnavailable)
+	if ran != 0 || len(driver.stopped) != 0 {
+		t.Fatalf("ran %d, stopped %v", ran, driver.stopped)
+	}
+}
+
+func TestCancelledCallerIsNotReadAsAnUnmeasurableWorkspace(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := createTest(t, service)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	driver.meterErr = context.Canceled
+	if _, err := service.measure(ctx, id, service.volumeName(id)); errors.Is(err, errUnmeasurable) {
+		t.Fatal("a caller going away must not stop a sandbox")
+	}
+}
+
+func TestMeterIsReadOnlyIsolatedAndRemoved(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := createTest(t, service)
+	driver.specs = nil
+	driver.removed = nil
+	if _, err := service.Exec(context.Background(), id, client.ExecRequest{Command: "true"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(driver.specs) != 1 {
+		t.Fatalf("specs: %+v", driver.specs)
+	}
+	meter := driver.specs[0]
+	if meter.Volume == nil || !meter.Volume.ReadOnly || meter.Volume.Name != service.volumeName(id) || meter.Network != NetworkNone || meter.Runtime != "runsc" || meter.Labels[LabelRole] != RoleProbe {
+		t.Fatalf("meter: %+v", meter)
+	}
+	if strings.Contains(strings.Join(driver.meterCalls, ","), service.containerName(id)) {
+		t.Fatal("the meter must not run in the sandbox, where agent processes could tamper with it")
+	}
+	if len(driver.removed) != 1 || driver.removed[0] != meter.Name {
+		t.Fatalf("removed: %v", driver.removed)
+	}
+}
+
+func TestSweepStopsOnlyOverLimitRunningSandboxes(t *testing.T) {
+	service, driver, _ := newTestService(t, map[string]string{"KIONGA_SANDBOX_DISK_MB": "100"})
+	id := createTest(t, service)
+	container := service.containerName(id)
+	service.SweepDisk(context.Background())
+	if len(driver.stopped) != 0 {
+		t.Fatal("stopped a sandbox under its limit")
+	}
+	driver.meterOutput = strconv.FormatInt(200<<20, 10) + " 3 1099511627776\n"
+	service.SweepDisk(context.Background())
+	if len(driver.stopped) != 1 || driver.stopped[0] != container {
+		t.Fatalf("stopped: %v", driver.stopped)
+	}
+	calls := len(driver.meterCalls)
+	service.SweepDisk(context.Background())
+	if len(driver.meterCalls) != calls {
+		t.Fatal("a stopped sandbox cannot grow and needs no meter")
+	}
+}
+
+func TestExecRunningWhenStoppedReportsQuotaAndNoRestart(t *testing.T) {
+	service, driver, _ := newTestService(t, map[string]string{"KIONGA_SANDBOX_DISK_MB": "100"})
+	id := createTest(t, service)
+	container := service.containerName(id)
+	driver.onExec = func(call execCall, _ ExecRequest) (int, error) {
+		// The sweep stops the sandbox while the command runs.
+		driver.mu.Lock()
+		driver.meterOutput = strconv.FormatInt(200<<20, 10) + " 3 1099511627776\n"
+		driver.mu.Unlock()
+		service.SweepDisk(context.Background())
+		return 0, errors.New("connection closed by the stop")
+	}
+	_, err := service.Exec(context.Background(), id, client.ExecRequest{Command: "x"})
+	wantStatus(t, err, http.StatusInsufficientStorage, client.CodeQuotaExceeded)
+	if len(driver.restarted) != 0 {
+		t.Fatalf("restarted a sandbox stopped on purpose: %v", driver.restarted)
+	}
+	if driver.instances[container].Running {
+		t.Fatal("still running")
+	}
+}
+
+func TestStoppedSandboxUnderLimitRecovers(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := createTest(t, service)
+	driver.instances[service.containerName(id)].Running = false
+	if err := execIgnoringResult(service, id, client.ExecRequest{Command: "true"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(driver.restarted) != 1 {
+		t.Fatalf("restarts: %v", driver.restarted)
+	}
+}
+
+func TestReadsOfAStoppedSandboxUseAReadOnlyViewAndNeverRestart(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := createTest(t, service)
+	container := service.containerName(id)
+	driver.instances[container].Running = false
+	driver.specs = nil
+	var ranIn []string
+	driver.onExec = func(call execCall, request ExecRequest) (int, error) {
+		ranIn = append(ranIn, call.Name)
+		_, _ = io.WriteString(request.Stdout, "Fcontent")
+		return 0, nil
+	}
+	content, err := service.ReadPath(context.Background(), id, "x")
+	if err != nil || content.Content != "content" {
+		t.Fatalf("%+v %v", content, err)
+	}
+	if _, err := service.GitDiff(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	if len(driver.restarted) != 0 {
+		t.Fatal("a read restarted a stopped sandbox")
+	}
+	for _, name := range ranIn {
+		if name == container {
+			t.Fatal("a read ran in the stopped sandbox")
+		}
+	}
+	for _, spec := range driver.specs {
+		if spec.Volume == nil || !spec.Volume.ReadOnly {
+			t.Fatalf("view: %+v", spec)
+		}
+	}
+	if len(driver.instances) != 1 {
+		t.Fatalf("views were left: %v", driver.instances)
+	}
+}
+
+func TestFreeDiskFloor(t *testing.T) {
+	service, driver, logs := newTestService(t, map[string]string{"KIONGA_SANDBOX_MIN_FREE_DISK_MB": "1000"})
+	driver.meterOutput = "0 0 " + strconv.FormatInt(999<<20, 10) + "\n"
+	_, err := service.Create(context.Background(), client.CreateRequest{RunID: testRun, WorkerID: testWorker, ProjectID: testProject})
+	wantStatus(t, err, http.StatusServiceUnavailable, client.CodeUnavailable)
+	if len(driver.specNamed(RoleSandbox)) != 0 {
+		t.Fatal("a sandbox was created under the floor")
+	}
+	if !strings.Contains(logs.String(), "floor") {
+		t.Fatal(logs.String())
+	}
+	now := time.Now()
+	service.now = func() time.Time { return now.Add(time.Minute) }
+	driver.meterOutput = "0 0 " + strconv.FormatInt(1000<<20, 10) + "\n"
+	if _, err := service.Create(context.Background(), client.CreateRequest{RunID: testRun, WorkerID: testWorker, ProjectID: testProject}); err != nil {
+		t.Fatalf("exactly at the floor is allowed: %v", err)
+	}
+	// An existing sandbox stays available under the floor.
+	driver.meterOutput = "0 0 1\n"
+	service.now = func() time.Time { return now.Add(10 * time.Minute) }
+	if _, err := service.Create(context.Background(), client.CreateRequest{RunID: testRun, WorkerID: testWorker, ProjectID: testProject}); err != nil {
+		t.Fatalf("idempotent create: %v", err)
+	}
+}
+
+func TestFreeDiskFloorFailsClosedWhenUnreadable(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	driver.meterOutput = "garbage\n"
+	_, err := service.Create(context.Background(), client.CreateRequest{RunID: testRun, WorkerID: testWorker, ProjectID: testProject})
+	wantStatus(t, err, http.StatusServiceUnavailable, client.CodeUnavailable)
+	if len(driver.specNamed(RoleSandbox)) != 0 {
+		t.Fatal("a sandbox was created without a floor reading")
+	}
+}
+
+func TestDiskLimitsSkippedOnKubernetes(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := createTest(t, service)
+	calls := len(driver.meterCalls)
+	service.driver = kubernetesNamed{driver}
+	if err := execIgnoringResult(service, id, client.ExecRequest{Command: "true"}); err != nil {
+		t.Fatal(err)
+	}
+	service.SweepDisk(context.Background())
+	if err := service.checkFreeDisk(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(driver.meterCalls) != calls {
+		t.Fatal("a claim is already bounded; nothing should be metered")
+	}
+}
+
+type kubernetesNamed struct{ *fakeDriver }
+
+func (kubernetesNamed) Name() string { return "kubernetes" }
+
+func TestDeleteRemovesAMeterHoldingTheVolume(t *testing.T) {
+	service, driver, _ := newTestService(t, nil)
+	id := createTest(t, service)
+	labels := service.labels(RoleProbe)
+	labels[LabelID] = id
+	driver.instances["meter"] = &Instance{Name: "meter", Labels: labels}
+	if err := service.Delete(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	if len(driver.instances) != 0 {
+		t.Fatalf("left %v", driver.instances)
 	}
 }

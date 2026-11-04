@@ -293,6 +293,10 @@ func (k *Kubernetes) Restart(ctx context.Context, name string) error {
 	}
 }
 
+// Stop deletes the pod, which is the only way to stop one. The claim stays. Disk limits
+// never call this: a claim is bounded by its storage class.
+func (k *Kubernetes) Stop(ctx context.Context, name string) error { return k.Remove(ctx, name) }
+
 // Remove deletes the pod at once.
 func (k *Kubernetes) Remove(ctx context.Context, name string) error {
 	grace := int64(0)

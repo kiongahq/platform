@@ -61,6 +61,7 @@ func (s *Service) startHelper(ctx context.Context, sandboxID, secret string, hos
 	spec.Network = s.config.GitNetwork
 	spec.ExtraHosts = hosts
 	spec.MemoryBytes += 2 * s.config.BundleBytes
+	spec.FileSizeBytes = 2 * s.config.BundleBytes
 	spec.Tmpfs = append(spec.Tmpfs,
 		TmpfsMount{Path: helperRunDir, SizeBytes: 4 << 20},
 		TmpfsMount{Path: helperScratch, SizeBytes: 2 * s.config.BundleBytes},
@@ -170,7 +171,7 @@ func (s *Service) GitClone(ctx context.Context, id string, request client.GitClo
 	if err != nil {
 		return client.GitCloneResult{}, err
 	}
-	found, err := s.running(ctx, id)
+	found, err := s.writable(ctx, id)
 	if err != nil {
 		return client.GitCloneResult{}, err
 	}
@@ -242,7 +243,7 @@ func (s *Service) GitPush(ctx context.Context, id string, request client.GitPush
 	if err := checkCredential(secret, true); err != nil {
 		return client.GitPushResult{}, err
 	}
-	found, err := s.running(ctx, id)
+	found, err := s.writable(ctx, id)
 	if err != nil {
 		return client.GitPushResult{}, err
 	}

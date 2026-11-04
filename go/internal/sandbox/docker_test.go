@@ -151,6 +151,37 @@ func TestTmpfsAllowsExecExplicitly(t *testing.T) {
 	}
 }
 
+func TestCreateBodyDiskFields(t *testing.T) {
+	spec := testSpec()
+	spec.FileSizeBytes = 1024
+	spec.Volume.ReadOnly = true
+	raw, err := json.Marshal(createBody(spec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `{"Hard":1024,"Name":"fsize","Soft":1024}`) {
+		t.Fatalf("no file size limit: %s", raw)
+	}
+	if !strings.Contains(string(raw), `"ReadOnly":true,"Source":"v"`) {
+		t.Fatalf("not read-only: %s", raw)
+	}
+}
+
+func TestDockerStopToleratesGoneOrStopped(t *testing.T) {
+	for _, status := range []int{http.StatusNoContent, http.StatusNotFound, http.StatusConflict} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/containers/x/kill" || r.URL.Query().Get("signal") != "KILL" {
+				t.Errorf("unexpected %s", r.URL)
+			}
+			w.WriteHeader(status)
+		}))
+		if err := (&Docker{BaseURL: server.URL}).Stop(context.Background(), "x"); err != nil {
+			t.Errorf("%d: %v", status, err)
+		}
+		server.Close()
+	}
+}
+
 func TestDockerCreatePullsOnlyWhenMissingAndReportsConflict(t *testing.T) {
 	fake := &fakeEngine{createSt: []int{http.StatusNotFound, http.StatusCreated}}
 	driver := engine(t, fake)

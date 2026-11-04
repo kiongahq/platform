@@ -58,6 +58,7 @@ type VolumeMount struct {
 	Name      string
 	Path      string
 	SizeBytes int64
+	ReadOnly  bool
 }
 
 // HostEntry pins a name to an address in the instance's hosts file. Only the manager
@@ -83,6 +84,9 @@ type ContainerSpec struct {
 	Tmpfs       []TmpfsMount
 	Volume      *VolumeMount
 	ExtraHosts  []HostEntry
+	// FileSizeBytes is a kernel limit on one file, which also bounds a single writer
+	// exactly. It does not bound how many files a process makes.
+	FileSizeBytes int64
 }
 
 // Instance is a container or pod as the engine reports it.
@@ -131,6 +135,8 @@ type Driver interface {
 	// Restart kills every process in the instance and starts it again, keeping the
 	// workspace. It is the recovery path when an exec cannot even start.
 	Restart(ctx context.Context, name string) error
+	// Stop kills every process and leaves the instance and its volume in place.
+	Stop(ctx context.Context, name string) error
 	// Remove is force-removal. A missing instance is not an error.
 	Remove(ctx context.Context, name string) error
 	RemoveVolume(ctx context.Context, name string) error

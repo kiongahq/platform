@@ -21,7 +21,10 @@ const (
 	defaultMemoryBytes, maxMemoryBytes   = int64(2 << 30), int64(16 << 30)
 	defaultCPUs, maxCPUs                 = 2.0, 16.0
 	defaultTmpBytes, maxTmpBytes         = int64(256 << 20), int64(4 << 30)
-	defaultVolumeBytes, maxVolumeBytes   = int64(10 << 30), int64(500 << 30)
+	defaultDiskMB, maxDiskMB             = int64(10240), int64(512000)
+	defaultDiskFiles, maxDiskFiles       = int64(2_000_000), int64(50_000_000)
+	defaultDiskCheck, maxDiskCheck       = int64(10), int64(300)
+	defaultMinFreeMB, maxMinFreeMB       = int64(5120), int64(10 << 20)
 	defaultTTLSeconds, maxTTLSeconds     = 86400, 7 * 86400
 	defaultGitTimeout, maxGitTimeout     = 900, 3600
 	defaultBundleBytes, maxBundleBytes   = int64(1 << 30), int64(8 << 30)
@@ -66,11 +69,17 @@ type Config struct {
 	MemoryBytes             int64
 	NanoCPUs                int64
 	TmpBytes                int64
-	VolumeBytes             int64
-	BundleBytes             int64
-	MaxSandboxes            int64
-	TTL                     time.Duration
-	GitTimeout              time.Duration
+	// DiskBytes and DiskFiles are per workspace. Under Docker they are a usage check with
+	// a write window; see DiskCheck and the README. Under Kubernetes DiskBytes sizes the claim.
+	DiskBytes int64
+	DiskFiles int64
+	DiskCheck time.Duration
+	// MinFreeDiskBytes refuses new sandboxes when the engine's disk is under it.
+	MinFreeDiskBytes int64
+	BundleBytes      int64
+	MaxSandboxes     int64
+	TTL              time.Duration
+	GitTimeout       time.Duration
 	// HelperMaxAge removes a helper left behind by a crashed manager, because it
 	// may still hold a credential on its tmpfs.
 	HelperMaxAge time.Duration
@@ -181,9 +190,24 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	if config.TmpBytes, err = limit(getenv, "KIONGA_SANDBOX_TMP_BYTES", defaultTmpBytes, maxTmpBytes); err != nil {
 		return Config{}, err
 	}
-	if config.VolumeBytes, err = limit(getenv, "KIONGA_SANDBOX_VOLUME_BYTES", defaultVolumeBytes, maxVolumeBytes); err != nil {
+	diskMB, err := limit(getenv, "KIONGA_SANDBOX_DISK_MB", defaultDiskMB, maxDiskMB)
+	if err != nil {
 		return Config{}, err
 	}
+	config.DiskBytes = diskMB << 20
+	if config.DiskFiles, err = limit(getenv, "KIONGA_SANDBOX_DISK_FILES", defaultDiskFiles, maxDiskFiles); err != nil {
+		return Config{}, err
+	}
+	diskCheck, err := limit(getenv, "KIONGA_SANDBOX_DISK_CHECK_SECONDS", defaultDiskCheck, maxDiskCheck)
+	if err != nil {
+		return Config{}, err
+	}
+	config.DiskCheck = time.Duration(diskCheck) * time.Second
+	minFree, err := limit(getenv, "KIONGA_SANDBOX_MIN_FREE_DISK_MB", defaultMinFreeMB, maxMinFreeMB)
+	if err != nil {
+		return Config{}, err
+	}
+	config.MinFreeDiskBytes = minFree << 20
 	if config.BundleBytes, err = limit(getenv, "KIONGA_SANDBOX_GIT_BUNDLE_BYTES", defaultBundleBytes, maxBundleBytes); err != nil {
 		return Config{}, err
 	}

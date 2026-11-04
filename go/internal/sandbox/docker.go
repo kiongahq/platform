@@ -140,11 +140,15 @@ func createBody(spec ContainerSpec) map[string]any {
 	}
 	mounts := []map[string]any{}
 	if spec.Volume != nil {
-		mounts = append(mounts, map[string]any{"Type": "volume", "Source": spec.Volume.Name, "Target": spec.Volume.Path, "ReadOnly": false})
+		mounts = append(mounts, map[string]any{"Type": "volume", "Source": spec.Volume.Name, "Target": spec.Volume.Path, "ReadOnly": spec.Volume.ReadOnly})
 	}
 	extraHosts := []string{}
 	for _, entry := range spec.ExtraHosts {
 		extraHosts = append(extraHosts, entry.Host+":"+entry.Address)
+	}
+	ulimits := []map[string]any{{"Name": "core", "Soft": 0, "Hard": 0}}
+	if spec.FileSizeBytes > 0 {
+		ulimits = append(ulimits, map[string]any{"Name": "fsize", "Soft": spec.FileSizeBytes, "Hard": spec.FileSizeBytes})
 	}
 	host := map[string]any{
 		"ExtraHosts":      extraHosts,
@@ -164,7 +168,7 @@ func createBody(spec ContainerSpec) map[string]any {
 		"RestartPolicy":   map[string]any{"Name": "no"},
 		"PublishAllPorts": false,
 		"IpcMode":         "private",
-		"Ulimits":         []map[string]any{{"Name": "core", "Soft": 0, "Hard": 0}},
+		"Ulimits":         ulimits,
 	}
 	return map[string]any{
 		"Image":           spec.Image,
@@ -354,6 +358,15 @@ func (d *Docker) ListVolumes(ctx context.Context, labels map[string]string) ([]V
 // container also goes through here, so the engine's restart covers both.
 func (d *Docker) Restart(ctx context.Context, name string) error {
 	_, err := d.do(ctx, http.MethodPost, "/containers/"+url.PathEscape(name)+"/restart?t=0", nil, nil)
+	return err
+}
+
+// Stop kills the container and leaves it and its volume in place.
+func (d *Docker) Stop(ctx context.Context, name string) error {
+	status, err := d.do(ctx, http.MethodPost, "/containers/"+url.PathEscape(name)+"/kill?signal=KILL", nil, nil)
+	if status == http.StatusNotFound || status == http.StatusConflict {
+		return nil // gone or already stopped
+	}
 	return err
 }
 

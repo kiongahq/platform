@@ -47,6 +47,12 @@ type Service struct {
 	checkedAt  time.Time
 	probe      func(context.Context) error
 	resolve    func(context.Context, string) ([]netip.Addr, error)
+
+	// quotaStopped only speeds up the answer during a call. The next call measures again.
+	quotaStopped  sync.Map
+	freeMu        sync.Mutex
+	freeBytes     int64
+	freeCheckedAt time.Time
 }
 
 // NewService builds a Service. The caller starts Run for the background work.
@@ -93,6 +99,8 @@ func (s *Service) hardenedSpec(name, image, role string) ContainerSpec {
 		NanoCPUs:    s.config.NanoCPUs,
 		Pids:        s.config.Pids,
 		Tmpfs:       []TmpfsMount{{Path: "/tmp", SizeBytes: s.config.TmpBytes}},
+
+		FileSizeBytes: s.config.DiskBytes,
 	}
 }
 
@@ -256,12 +264,15 @@ func (s *Service) Create(ctx context.Context, request client.CreateRequest) (cli
 	if int64(len(existing)) >= s.config.MaxSandboxes {
 		return client.Sandbox{}, unavailable("the sandbox limit has been reached")
 	}
+	if err := s.checkFreeDisk(ctx); err != nil {
+		return client.Sandbox{}, err
+	}
 	spec := s.hardenedSpec(name, image, RoleSandbox)
 	spec.Labels[LabelID] = id
 	spec.Labels[LabelRun] = request.RunID
 	spec.Labels[LabelWorker] = request.WorkerID
 	spec.Labels[LabelProject] = projectLabel(request.ProjectID)
-	spec.Volume = &VolumeMount{Name: s.volumeName(id), Path: WorkspacePath, SizeBytes: s.config.VolumeBytes}
+	spec.Volume = &VolumeMount{Name: s.volumeName(id), Path: WorkspacePath, SizeBytes: s.config.DiskBytes}
 	err = s.driver.Create(ctx, spec)
 	if errors.Is(err, ErrExists) {
 		// A concurrent create won. Its creator attests; this one only checks labels.
@@ -368,7 +379,7 @@ func (s *Service) Exec(ctx context.Context, id string, request client.ExecReques
 			return client.ExecResult{}, err
 		}
 	}
-	found, err := s.running(ctx, id)
+	found, err := s.writable(ctx, id)
 	if err != nil {
 		return client.ExecResult{}, err
 	}
@@ -420,6 +431,9 @@ func (s *Service) runUser(ctx context.Context, name string, argv []string, timeo
 		Truncated:  stdout.truncated() || stderr.truncated(),
 		DurationMS: s.now().Sub(started).Milliseconds(),
 	}
+	if quota := s.quotaError(name); quota != nil {
+		return result, quota
+	}
 	if err == nil && !execDidNotStart(code, result.Stdout, result.Stderr) {
 		return result, nil
 	}
@@ -470,6 +484,9 @@ func (s *Service) killAll(name string) {
 }
 
 func (s *Service) restartQuietly(name string) {
+	if s.quotaError(name) != nil {
+		return // stopped on purpose
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()
 	if err := s.driver.Restart(ctx, name); err != nil {
@@ -519,12 +536,13 @@ func (s *Service) ReadPath(ctx context.Context, id, raw string) (client.PathCont
 	if err != nil {
 		return client.PathContent{}, err
 	}
-	found, err := s.running(ctx, id)
+	name, cleanup, err := s.readable(ctx, id)
 	if err != nil {
 		return client.PathContent{}, err
 	}
+	defer cleanup()
 	stdout := &headBuffer{limit: maxFileRead + 1}
-	code, err := s.internalExec(ctx, found.Name, scriptArgv(readScript, target, strconv.Itoa(maxFileRead)), nil, stdout, io.Discard)
+	code, err := s.internalExec(ctx, name, scriptArgv(readScript, target, strconv.Itoa(maxFileRead)), nil, stdout, io.Discard)
 	if err != nil {
 		return client.PathContent{}, err
 	}
@@ -585,7 +603,7 @@ func (s *Service) WriteFile(ctx context.Context, id, raw string, content []byte)
 	if len(content) > maxFileWrite {
 		return client.WriteResult{}, &client.Error{Status: http.StatusRequestEntityTooLarge, Code: client.CodeTooLarge, Message: "the file exceeds the write limit"}
 	}
-	found, err := s.running(ctx, id)
+	found, err := s.writable(ctx, id)
 	if err != nil {
 		return client.WriteResult{}, err
 	}
@@ -606,12 +624,13 @@ func (s *Service) WriteFile(ctx context.Context, id, raw string, content []byte)
 
 // GitDiff shows each repository's changes since it was cloned.
 func (s *Service) GitDiff(ctx context.Context, id string) (client.GitDiffResult, error) {
-	found, err := s.running(ctx, id)
+	name, cleanup, err := s.readable(ctx, id)
 	if err != nil {
 		return client.GitDiffResult{}, err
 	}
+	defer cleanup()
 	stdout := newCapture(outputCap)
-	if _, err := s.internalExec(ctx, found.Name, scriptArgv(diffScript), nil, stdout, io.Discard); err != nil {
+	if _, err := s.internalExec(ctx, name, scriptArgv(diffScript), nil, stdout, io.Discard); err != nil {
 		return client.GitDiffResult{}, err
 	}
 	return client.GitDiffResult{Diff: stdout.String(), Truncated: stdout.truncated()}, nil
@@ -622,16 +641,21 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if !sandboxID.MatchString(id) {
 		return &client.Error{Status: http.StatusNotFound, Code: client.CodeNotFound, Message: "no such sandbox"}
 	}
-	helperLabels := s.roleLabels(RoleGitHelper)
-	helperLabels[LabelID] = id
-	helpers, err := s.driver.List(ctx, helperLabels)
+	// Helpers and meters for this sandbox go first: a meter holding the volume would
+	// stop the volume being removed.
+	attached := s.managedLabels()
+	attached[LabelID] = id
+	others, err := s.driver.List(ctx, attached)
 	if err != nil {
 		s.logger.Printf("sandbox: list helpers of %s failed: %v", id, err)
 		return unavailable("the container engine could not be reached")
 	}
-	for _, helper := range helpers {
-		s.removeQuietly(helper.Name)
+	for _, other := range others {
+		if other.Labels[LabelRole] != RoleSandbox {
+			s.removeQuietly(other.Name)
+		}
 	}
+	s.quotaStopped.Delete(s.containerName(id))
 	if found, err := s.instance(ctx, id); err == nil {
 		if err := s.driver.Remove(ctx, found.Name); err != nil {
 			s.logger.Printf("sandbox: remove %s failed: %v", id, err)
@@ -697,6 +721,8 @@ func (s *Service) Run(ctx context.Context) {
 	defer verify.Stop()
 	reap := time.NewTicker(time.Minute)
 	defer reap.Stop()
+	disk := time.NewTicker(s.config.DiskCheck)
+	defer disk.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -707,6 +733,8 @@ func (s *Service) Run(ctx context.Context) {
 			}
 		case <-reap.C:
 			s.Reap(ctx)
+		case <-disk.C:
+			s.SweepDisk(ctx)
 		}
 	}
 }

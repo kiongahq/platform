@@ -1287,3 +1287,255 @@ func TestAttackPrivateAddressRefusedWithoutTheTestAllowance(t *testing.T) {
 	}
 	assertNoHelpers(t, ctx)
 }
+
+// quotaEnv is a sandbox with a small disk limit and a fast sweep.
+func quotaEnv(t *testing.T, extra map[string]string) *attackEnv {
+	t.Helper()
+	token := "attack-token-" + randomHex(16)
+	values := baseEnv(token)
+	values["KIONGA_SANDBOX_DISK_MB"] = "64"
+	for key, value := range extra {
+		values[key] = value
+	}
+	env := startEnv(t, values, token, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(env.service.config.DiskCheck)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				env.service.SweepDisk(ctx)
+			}
+		}
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+	return env
+}
+
+// TestAttackDiskLimitStopsAWriter is the real thing: many files, so the per-file limit
+// does not save it, written as fast as the sandbox can, until the sweep stops it.
+func TestAttackDiskLimitStopsAWriter(t *testing.T) {
+	const checkSeconds = 2
+	env := quotaEnv(t, map[string]string{"KIONGA_SANDBOX_DISK_CHECK_SECONDS": strconv.Itoa(checkSeconds)})
+	ref := env.sandbox(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	if _, err := env.api.WriteFile(ctx, ref.id, "keep.txt", []byte("kept\n")); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	result, err := env.api.Exec(ctx, ref.id, client.ExecRequest{Command: `python3 - <<'PY'
+import os
+block = os.urandom(1 << 20)
+index = 0
+while True:
+    with open("/workspace/fill-%d" % index, "wb") as out:
+        for _ in range(8):
+            out.write(block)
+        out.flush()
+        os.fsync(out.fileno())
+    index += 1
+PY`, TimeoutSeconds: 120})
+	elapsed := time.Since(started)
+	t.Logf("the writer ended after %s: result %+v, err %v", elapsed.Round(time.Millisecond), result.ExitCode, err)
+	wantCode(t, err, client.CodeQuotaExceeded)
+	if elapsed > 90*time.Second {
+		t.Fatalf("stopping took %s", elapsed)
+	}
+	found, inspectErr := attackDriver.Inspect(ctx, attackPrefix+ref.id)
+	if inspectErr != nil || found.Running {
+		t.Fatalf("the sandbox must be stopped: %+v, %v", found, inspectErr)
+	}
+	usage, measureErr := env.service.measure(ctx, ref.id, env.service.volumeName(ref.id))
+	if measureErr != nil {
+		t.Fatal(measureErr)
+	}
+	limit := env.service.config.DiskBytes
+	over := usage.UsedBytes - limit
+	t.Logf("MEASURED under %s: limit %d MiB, final usage %d MiB, overshoot %d MiB, in %s with a %d s sweep, about %.0f MiB/s",
+		os.Getenv("KIONGA_ATTACK_RUNTIME"), limit>>20, usage.UsedBytes>>20, over>>20, elapsed.Round(time.Millisecond), checkSeconds, float64(usage.UsedBytes>>20)/elapsed.Seconds())
+	if usage.UsedBytes <= limit {
+		t.Fatalf("control failed: the writer never passed the limit: %d", usage.UsedBytes)
+	}
+
+	// Everything that writes or runs is refused, every time, without restarting it.
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err = env.api.Exec(ctx, ref.id, client.ExecRequest{Command: "echo must-not-run > /workspace/ran"})
+		wantCode(t, err, client.CodeQuotaExceeded)
+	}
+	var failure *client.Error
+	if !asClientError(err, &failure) || failure.Status != http.StatusInsufficientStorage {
+		t.Fatalf("want a 507: %v", err)
+	}
+	_, err = env.api.WriteFile(ctx, ref.id, "more", []byte("x"))
+	wantCode(t, err, client.CodeQuotaExceeded)
+	if found, _ := attackDriver.Inspect(ctx, attackPrefix+ref.id); found.Running {
+		t.Fatal("a refused call restarted the sandbox")
+	}
+
+	// Documented recovery: files stay readable, then delete gives a clean sandbox.
+	content, err := env.api.ReadPath(ctx, ref.id, "keep.txt")
+	if err != nil || content.Content != "kept\n" {
+		t.Fatalf("read of a stopped sandbox: %+v, %v", content, err)
+	}
+	listing, err := env.api.ReadPath(ctx, ref.id, ".")
+	if err != nil || !listing.IsDirectory {
+		t.Fatalf("list of a stopped sandbox: %+v, %v", listing, err)
+	}
+	for _, entry := range listing.Entries {
+		if entry.Name == "ran" {
+			t.Fatal("a refused exec ran")
+		}
+	}
+	if found, _ := attackDriver.Inspect(ctx, attackPrefix+ref.id); found.Running {
+		t.Fatal("a read restarted the sandbox")
+	}
+	if err := env.api.Delete(ctx, ref.id); err != nil {
+		t.Fatal(err)
+	}
+	if volumes, _ := attackDriver.ListVolumes(ctx, map[string]string{LabelID: ref.id, LabelPrefix: strings.TrimRight(attackPrefix, "-")}); len(volumes) != 0 {
+		t.Fatalf("delete left the volume: %+v", volumes)
+	}
+	recreated, err := env.api.Create(ctx, client.CreateRequest{RunID: ref.runID, WorkerID: workerOf(ctx, ref), ProjectID: "attack"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		_ = env.api.Delete(cleanup, recreated.ID)
+	})
+	fresh, err := env.api.Exec(ctx, recreated.ID, client.ExecRequest{Command: "ls -A /workspace | wc -l"})
+	if err != nil || strings.TrimSpace(fresh.Stdout) != "0" {
+		t.Fatalf("a new sandbox must start empty: %+v, %v", fresh, err)
+	}
+}
+
+// workerOf returns a fresh worker id; only the run matters to the recovery check.
+func workerOf(context.Context, sandboxRef) string { return "atw-" + randomHex(12) }
+
+func TestAttackPerFileLimitIsHard(t *testing.T) {
+	env := quotaEnv(t, map[string]string{"KIONGA_SANDBOX_DISK_CHECK_SECONDS": "300"})
+	ref := env.sandbox(t)
+	result := env.run(t, ref, `python3 - <<'PY'
+import signal
+signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+written = 0
+block = b"x" * (1 << 20)
+try:
+    with open("/workspace/one", "wb", buffering=0) as out:
+        while written < 200:
+            out.write(block)
+            written += 1
+except OSError as error:
+    print("refused", error)
+print("wrote", written)
+PY
+stat -c %s /workspace/one`, 60)
+	t.Logf("%+v", result)
+	if strings.Contains(result.Stdout, "wrote 200") {
+		t.Fatalf("one file passed the limit: %+v", result)
+	}
+	fields := strings.Fields(result.Stdout)
+	size, _ := strconv.ParseInt(fields[len(fields)-1], 10, 64)
+	if size > env.service.config.DiskBytes {
+		t.Fatalf("the file is %d bytes", size)
+	}
+}
+
+func TestAttackHidingFilesFromTheMeterIsOverTheLimit(t *testing.T) {
+	env := quotaEnv(t, map[string]string{"KIONGA_SANDBOX_DISK_CHECK_SECONDS": "300"})
+	ref := env.sandbox(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	env.ok(t, ref, "mkdir /workspace/hidden && head -c 1048576 /dev/zero > /workspace/hidden/data && chmod 000 /workspace/hidden")
+	_, err := env.api.Exec(ctx, ref.id, client.ExecRequest{Command: "true"})
+	wantCode(t, err, client.CodeQuotaExceeded)
+	if !strings.Contains(err.Error(), "could not be measured") {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestAttackFileCountLimit(t *testing.T) {
+	env := quotaEnv(t, map[string]string{"KIONGA_SANDBOX_DISK_CHECK_SECONDS": "300", "KIONGA_SANDBOX_DISK_FILES": "500"})
+	ref := env.sandbox(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	env.ok(t, ref, "cd /workspace && for i in $(seq 1 600); do : > f$i; done")
+	_, err := env.api.Exec(ctx, ref.id, client.ExecRequest{Command: "true"})
+	wantCode(t, err, client.CodeQuotaExceeded)
+}
+
+func TestAttackFreeDiskFloorRefusesNewSandboxes(t *testing.T) {
+	env := quotaEnv(t, map[string]string{"KIONGA_SANDBOX_DISK_CHECK_SECONDS": "300", "KIONGA_SANDBOX_MIN_FREE_DISK_MB": strconv.FormatInt(maxMinFreeMB, 10)})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	_, err := env.api.Create(ctx, client.CreateRequest{RunID: "atr-" + randomHex(12), WorkerID: "atw-" + randomHex(12), ProjectID: "attack"})
+	wantCode(t, err, client.CodeUnavailable)
+	if !strings.Contains(err.Error(), "free disk") {
+		t.Fatalf("%v", err)
+	}
+	instances, _ := attackDriver.List(ctx, map[string]string{LabelManaged: "true", LabelPrefix: strings.TrimRight(attackPrefix, "-"), LabelRole: RoleSandbox})
+	if len(instances) != 0 {
+		t.Fatalf("a sandbox was created under the floor: %+v", instances)
+	}
+	// The reading is real: a meter under this runtime sees the engine's filesystem.
+	usage, err := env.service.measure(ctx, "", attackPrefix+"disk-floor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("free disk seen from a meter under %s: %d MiB", os.Getenv("KIONGA_ATTACK_RUNTIME"), usage.FreeBytes>>20)
+	if usage.FreeBytes <= 0 {
+		t.Fatal("no free disk reading")
+	}
+	if host, err := exec.Command("df", "-B1", "--output=avail", "/var/lib/docker").Output(); err == nil {
+		fields := strings.Fields(string(host))
+		hostFree, _ := strconv.ParseInt(fields[len(fields)-1], 10, 64)
+		t.Logf("host df says %d MiB free", hostFree>>20)
+		if difference := hostFree - usage.FreeBytes; hostFree > 0 && (difference > hostFree/5 || -difference > hostFree/5) {
+			t.Fatalf("the meter sees %d, the host %d: this is not the engine's disk", usage.FreeBytes, hostFree)
+		}
+	}
+}
+
+// TestAttackEvaluateFixedSizeVolume records whether this engine can make a volume with
+// a real size limit. It asserts nothing: its log is the evidence for the design choice.
+func TestAttackEvaluateFixedSizeVolume(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	values := baseEnv("attack-token-" + randomHex(16))
+	config, err := LoadConfig(func(key string) string { return values[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, options := range map[string]map[string]string{
+		"docker size":   {"size": "32m"},
+		"podman o=size": {"o": "size=32m"},
+		"local tmpfs":   {"type": "tmpfs", "device": "tmpfs", "o": "size=32m"},
+	} {
+		volume := attackPrefix + "eval-" + randomHex(3)
+		labels := map[string]string{LabelManaged: "true", LabelPrefix: strings.TrimRight(attackPrefix, "-")}
+		_, createErr := attackDriver.do(ctx, http.MethodPost, "/volumes/create", map[string]any{"Name": volume, "DriverOpts": options, "Labels": labels}, nil)
+		if createErr != nil {
+			t.Logf("EVALUATION %s: volume create refused: %v", name, createErr)
+			continue
+		}
+		container := volume + "-c"
+		spec := ContainerSpec{Name: container, Image: config.Images[0], Runtime: config.Runtime, Labels: labels, Command: []string{"/bin/sh", "-c", initScript}, Network: NetworkNone, MemoryBytes: 1 << 30, NanoCPUs: 1e9, Pids: 256, Tmpfs: []TmpfsMount{{Path: "/tmp", SizeBytes: 1 << 20}}}
+		spec.Volume = &VolumeMount{Name: volume, Path: WorkspacePath}
+		if err := attackDriver.Create(ctx, spec); err != nil {
+			t.Logf("EVALUATION %s: container start refused: %v", name, err)
+		} else {
+			stdout := &headBuffer{limit: 512}
+			_, err := attackDriver.Exec(ctx, container, ExecRequest{Argv: []string{"/bin/sh", "-c", "head -c 100000000 /dev/zero > /workspace/x; echo write-status $?; stat -c %s /workspace/x"}, Stdout: stdout, Stderr: io.Discard})
+			t.Logf("EVALUATION %s: wrote 100 MB against a 32 MiB limit: %s, err %v", name, strings.Join(strings.Fields(string(stdout.data)), " "), err)
+		}
+		_ = attackDriver.Remove(ctx, container)
+		_ = attackDriver.RemoveVolume(ctx, volume)
+	}
+}

@@ -31,6 +31,9 @@ const (
 	CodeConflict        = "conflict"
 	CodeGitFailed       = "git_failed"
 	CodeInternal        = "internal_error"
+	// CodeQuotaExceeded means the sandbox was stopped for its workspace disk limit. Reads
+	// still work; anything that writes or runs is refused until the sandbox is deleted.
+	CodeQuotaExceeded = "workspace_quota_exceeded"
 )
 
 // Client is what the gateway depends on. HTTP and Fake implement it.
