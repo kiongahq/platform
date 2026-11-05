@@ -11,7 +11,7 @@ import (
 func frontendHandler(files fs.FS) http.Handler {
 	assets := http.FileServer(http.FS(files))
 	pages := map[string]string{"/": "index.html", "/login": "login.html", "/workspace": "workspace.html", "/api-docs": "api-docs.html", "/blog": "blog.html", "/blog/read": "blog/read.html", "/console": "console.html", "/studio": "studio.html"}
-	for _, view := range []string{"projects", "pipelines", "pipeline-editor", "logs", "models", "functions", "agents", "agent-designer", "langflow", "features", "storage", "realtime", "catalog", "platform", "access", "profile", "settings", "blogs"} {
+	for _, view := range []string{"projects", "pipelines", "pipeline-editor", "logs", "models", "functions", "agents", "agent-definitions", "agent-teams", "team-runs", "agent-designer", "langflow", "features", "storage", "realtime", "catalog", "platform", "access", "profile", "settings", "blogs"} {
 		pages["/console/"+view] = "console/" + view + ".html"
 	}
 	for _, view := range []string{"posts", "drafts", "reviews", "media", "authors", "settings", "new", "edit"} {

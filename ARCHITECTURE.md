@@ -88,6 +88,8 @@ a separate Node.js server.
   media.
 - `platform`: the component health grid and discovery catalog, derived from live
   state.
+- `agentteam`: the pure core of Agent Teams: validation, the worker state machine,
+  crash and retry rules, provenance framing, prompt assembly, compaction.
 - `redact`: removes secrets from text before it is stored or exported.
 - `runtimeconfig`: loads `KIONGA_CONFIG_FILE` and `<NAME>_FILE` secrets, and the
   production start-up checks.
@@ -130,6 +132,13 @@ a separate Node.js server.
   one, list its variable in the allowlist, or copy a gateway secret into a variable
   with the scope's prefix and point the record there.
 - **Banned technologies.** CI fails on any reference to excluded products.
+- **A team worker runs under one lease.** The scheduler takes a worker with
+  compare-and-set through `store.UpdateDoc`, and every later write checks the lease
+  token, on every replica. A tool call commits `started_at` before it runs, so a
+  resume never repeats a call that may have happened (see `contracts/agent-team`).
+- **Team token budgets count provider usage.** That includes context re-sent on every
+  turn, which is real cost, so `max_tokens` spends faster than a transcript grows. The
+  defaults are 1,000,000 per worker and 5,000,000 per team.
 - **One schedule slot fires once.** The scheduler holds a lease and claims each
   slot before submitting.
 

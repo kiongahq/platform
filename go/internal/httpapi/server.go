@@ -36,6 +36,12 @@ type Server struct {
 	realtime   map[string]map[string]any
 
 	executions runExecutions
+
+	// Agent Teams dependencies. Nil means the HTTP clients configured from the
+	// environment; tests set fakes.
+	teamRunnerClient  teamRunner
+	teamSandboxClient teamSandbox
+	teamHealth        sandboxHealthCache
 }
 
 func New(data store.Repository, static fs.FS) http.Handler {
