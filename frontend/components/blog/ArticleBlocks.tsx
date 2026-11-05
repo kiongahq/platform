@@ -2,6 +2,14 @@
 import React from "react";
 import {CodeBlock} from "@/components/ui/CodeBlock";
 import { inlineNodes, type Block, type RichNode } from "@/lib/editor-blocks";
+export function isGistURL(source: unknown): boolean {
+  try {
+    const url = new URL(String(source));
+    return url.protocol === "https:" && url.hostname === "gist.github.com";
+  } catch {
+    return false;
+  }
+}
 function Inline({ nodes }: { nodes: RichNode[] }) {
   return (
     <>
@@ -207,7 +215,7 @@ export function ArticleBlocks({ blocks }: { blocks: Block[] }) {
               </div>
             );
           case "embed": {
-            if (/^https:\/\/gist.github.com\//.test(d.source || ""))
+            if (isGistURL(d.source))
               return (
                 <figure key={key}>
                   <a href={d.source} rel="noopener noreferrer">
@@ -243,7 +251,7 @@ export function ArticleBlocks({ blocks }: { blocks: Block[] }) {
                     sandbox="allow-scripts allow-same-origin allow-presentation"
                     allowFullScreen
                   />
-                ) : /^https:\/\/gist.github.com\//.test(d.source || "") ? (
+                ) : isGistURL(d.source) ? (
                   <a href={d.source} rel="noopener noreferrer">
                     View code on GitHub
                   </a>

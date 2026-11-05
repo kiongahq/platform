@@ -29,6 +29,9 @@ import { OperationsView } from "@/features/operations/OperationsView";
 import { LangflowView } from "@/features/langflow/LangflowView";
 import { AgentsView } from "@/features/agents/AgentsView";
 import { AgentDesigner } from "@/features/designer/AgentDesigner";
+import { AgentDefinitionsView } from "@/features/teams/AgentDefinitionsView";
+import { TeamsView } from "@/features/teams/TeamsView";
+import { TeamRunsView } from "@/features/teams/TeamRunsView";
 import { PipelineEditor } from "@/features/pipelines/PipelineEditor";
 const groups = [
   {
@@ -46,6 +49,9 @@ const groups = [
       ["models", "Models"],
       ["agents", "Agents"],
       ["agent-designer", "Agent designer"],
+      ["agent-definitions", "Agent definitions"],
+      ["agent-teams", "Agent teams"],
+      ["team-runs", "Team runs"],
       ["langflow", "Langflow"],
       ["features", "Feature stores"],
       ["storage", "Storage"],
@@ -71,6 +77,9 @@ const titles: Record<string, string> = Object.fromEntries(
 const service = (view: string) =>
   ({
     "agent-designer": "agents",
+    "agent-definitions": "agents",
+    "agent-teams": "agents",
+    "team-runs": "agents",
     "pipeline-editor": "pipelines",
     logs: "pipelines",
   })[view] || view;
@@ -455,6 +464,9 @@ function ConsoleApplication({ view }: { view: string }) {
                   "models",
                   "agents",
                   "agent-designer",
+                  "agent-definitions",
+                  "agent-teams",
+                  "team-runs",
                   "pipeline-editor",
                   "langflow",
                   "logs",
@@ -509,6 +521,12 @@ function ConsoleApplication({ view }: { view: string }) {
                 <AgentsView {...props} />
               ) : view === "agent-designer" ? (
                 <AgentDesigner {...props} />
+              ) : view === "agent-definitions" ? (
+                <AgentDefinitionsView {...props} />
+              ) : view === "agent-teams" ? (
+                <TeamsView {...props} />
+              ) : view === "team-runs" ? (
+                <TeamRunsView {...props} />
               ) : view === "pipeline-editor" ? (
                 <PipelineEditor {...props} />
               ) : (

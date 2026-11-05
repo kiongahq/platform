@@ -25,8 +25,8 @@ on:
   workflow_dispatch:
     inputs:
       runtime_ref:
-        description: kiongahq/agent-runtime ref. Fall back to main once feat/agent-turns merges.
-        default: feat/agent-turns
+        description: kiongahq/agent-runtime ref. Fall back to main once main merges.
+        default: main
         type: string
       scenarios:
         description: Comma-separated scenario numbers. Empty runs them all; a subset reports INCOMPLETE.
@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      RUNTIME_REF: ${{ inputs.runtime_ref || 'feat/agent-turns' }}
+      RUNTIME_REF: ${{ inputs.runtime_ref || 'main' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

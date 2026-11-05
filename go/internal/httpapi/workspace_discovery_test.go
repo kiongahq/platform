@@ -100,6 +100,26 @@ func TestIDEBackendAuthentication(t *testing.T) {
 	}
 }
 
+func TestIDESessionIsNotReusedAfterPasswordRotation(t *testing.T) {
+	calls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.SetCookie(w, &http.Cookie{Name: "code-server-session", Value: r.FormValue("password")})
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer upstream.Close()
+	endpoint, _ := url.Parse(upstream.URL)
+	for _, password := range []string{"first", "first", "rotated"} {
+		cookie, err := ideSession(t.Context(), &workspaceDestination{URL: endpoint, token: password})
+		if err != nil || cookie != "code-server-session="+password {
+			t.Fatalf("password %q: cookie=%q err=%v", password, cookie, err)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("logins = %d, want 2: the repeat reuses its session, the rotation does not", calls)
+	}
+}
+
 // Regression for #105: scaffold jobs authenticate with the workspace's own
 // job-token, never the editor login token, and are unavailable until the
 // operator has generated job-token.

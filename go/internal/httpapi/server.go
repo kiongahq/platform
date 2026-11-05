@@ -595,7 +595,7 @@ func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) {
 // (the SDK step reporter inside each flow).
 func (s *Server) updateRunStep(w http.ResponseWriter, r *http.Request) {
 	var req api.UpdateRunStepRequest
-	if err := decode(r, &req); err != nil {
+	if err := decodeOpen(r, &req); err != nil {
 		writeDecodeError(w, err)
 		return
 	}
@@ -1504,14 +1504,16 @@ func (s *Server) invokeAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	request.Header.Set("Content-Type", "application/json")
 	setAgentRuntimeHeaders(request, agent)
-	// The runtime authenticates the gateway with the shared internal token
-	// (required in production) and trusts the end user only from this
-	// header, never from the request body.
-	if token := os.Getenv("MLAIOPS_INTERNAL_TOKEN"); token != "" {
+	token, err := agentRuntimeToken(r.Context(), agent.ID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "runtime_auth_unavailable", "agent runtime credential is unavailable")
+		return
+	}
+	if token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 	request.Header.Set("X-MLAIOps-User-ID", principal(r).Subject)
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: 120 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "runtime_unreachable", err.Error())
@@ -1558,7 +1560,7 @@ func (s *Server) agentUsage(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) recordTrace(w http.ResponseWriter, r *http.Request) {
 	var req api.RecordTraceRequest
-	if err := decode(r, &req); err != nil {
+	if err := decodeOpen(r, &req); err != nil {
 		writeDecodeError(w, err)
 		return
 	}
@@ -1670,6 +1672,18 @@ func decode(r *http.Request, target any) error {
 	return decoder.Decode(target)
 }
 
+// decodeOpen is decode for the open ingest contracts (contracts
+// ingest/step-report.v1 and ingest/trace.v1, see contracts docs/compatibility.md):
+// unknown fields are ignored so a newer producer can talk to an older gateway,
+// and known fields stay typed. Use decode for everything a user or the console
+// authors.
+func decodeOpen(r *http.Request, target any) error {
+	if err := requireJSON(r); err != nil {
+		return err
+	}
+	return json.NewDecoder(r.Body).Decode(target)
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -1726,7 +1740,8 @@ func logging(next http.Handler) http.Handler {
 		requestCount.WithLabelValues(r.Method, category).Inc()
 		requestDuration.WithLabelValues(category).Observe(time.Since(start).Seconds())
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			log.Printf("method=%s path=%s duration=%s", r.Method, r.URL.Path, time.Since(start))
+			// %q keeps a decoded %0a in the path from forging a log line.
+			log.Printf("method=%s path=%q duration=%s", r.Method, r.URL.Path, time.Since(start))
 		}
 	})
 }
