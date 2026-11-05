@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -188,7 +190,9 @@ func TestInvokeAgentRuntimeDown(t *testing.T) {
 // agent-runtime requires the internal token on /invoke in production and
 // takes the end user only from X-MLAIOps-User-ID.
 func TestInvokeAgentAuthenticatesToRuntimeAndForwardsCaller(t *testing.T) {
-	t.Setenv("MLAIOPS_INTERNAL_TOKEN", "internal-token-for-tests")
+	token := base64.RawURLEncoding.EncodeToString([]byte(rand.Text()))
+	t.Setenv("KIONGA_AGENT_RUNTIME_TOKEN", token)
+	t.Setenv("MLAIOPS_INTERNAL_TOKEN", rand.Text())
 	headers := make(chan http.Header, 1)
 	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
@@ -212,7 +216,7 @@ func TestInvokeAgentAuthenticatesToRuntimeAndForwardsCaller(t *testing.T) {
 		t.Fatalf("invoke: %d %s", response.Code, response.Body.String())
 	}
 	got := <-headers
-	if got.Get("Authorization") != "Bearer internal-token-for-tests" {
+	if got.Get("Authorization") != "Bearer "+token {
 		t.Fatalf("runtime Authorization = %q", got.Get("Authorization"))
 	}
 	if got.Get("X-MLAIOps-User-ID") != "local-dev" {

@@ -54,7 +54,7 @@ func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
 	if deployment.Spec.Template.Spec.Containers[0].ReadinessProbe == nil || deployment.Spec.Template.Spec.Containers[1].LivenessProbe == nil {
 		t.Fatalf("agent and trace proxy must have health probes: %#v", deployment.Spec.Template.Spec.Containers)
 	}
-	// agent-runtime requires the gateway's internal token on /invoke and
+	// agent-runtime requires its per-agent runtime token on /invoke and
 	// /stream; the operator must supply it by Secret reference, never inline.
 	agentEnv := map[string]corev1.EnvVar{}
 	for _, variable := range deployment.Spec.Template.Spec.Containers[0].Env {
@@ -64,8 +64,8 @@ func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
 		t.Fatalf("agent runtime auth must be required: %#v", agentEnv["MLAIOPS_RUNTIME_AUTH"])
 	}
 	token := agentEnv[RuntimeTokenKey]
-	if token.Value != "" || token.ValueFrom == nil || token.ValueFrom.SecretKeyRef == nil || token.ValueFrom.SecretKeyRef.Name != "kionga-gateway" || token.ValueFrom.SecretKeyRef.Key != RuntimeTokenKey {
-		t.Fatalf("internal token must come from the platform Secret: %#v", token)
+	if token.Value != "" || token.ValueFrom == nil || token.ValueFrom.SecretKeyRef == nil || token.ValueFrom.SecretKeyRef.Name != platformapi.AgentRuntimeSecretName(resourceID) || token.ValueFrom.SecretKeyRef.Key != RuntimeTokenKey {
+		t.Fatalf("runtime token must come from the per-agent Secret: %#v", token)
 	}
 	// trace-proxy#40: the agent authenticates to its sidecar with a per-agent
 	// key from a Secret it owns; the sidecar sees only the key's hash and
@@ -246,5 +246,82 @@ func TestAgentControllerMountsNativeVersionAndRejectsOtherModules(t *testing.T) 
 		if len(mounts) != 1 || mounts[0].MountPath != "/app/flows" || !mounts[0].ReadOnly || len(deployment.Spec.Template.Spec.Containers) != 3 {
 			t.Fatalf("native version must be mounted read-only with the API sidecar: %#v", deployment.Spec.Template.Spec)
 		}
+	}
+}
+
+func TestAgentRuntimeTokenLifecycle(t *testing.T) {
+	ctx := context.Background()
+	agent := &mlaiopsv1.KiongaAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "legacy-agent", Namespace: "default", UID: "agent-a"},
+		Spec:       mlaiopsv1.KiongaAgentSpec{Version: "1", Image: "agent:1", GraphModule: "agent:build", Replicas: mlaiopsv1.ReplicaSpec{Min: 1, Max: 1}},
+	}
+	// Simulate the pre-upgrade Deployment referencing the service credential.
+	legacy := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: platformapi.AgentDNSName(agent.Name), Namespace: agent.Namespace}}
+	legacy.Spec.Template.Spec.Containers = []corev1.Container{{Name: "agent", Env: runtimeAuthEnv("kionga-gateway")}}
+	client := fake.NewClientBuilder().WithScheme(pullSecretScheme()).WithStatusSubresource(agent, &appsv1.Deployment{}).WithObjects(agent, legacy).Build()
+	reconciler := &AgentReconciler{Client: client}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: agent.Name, Namespace: agent.Namespace}}
+	var original string
+	var previousHash string
+	for _, step := range []string{"backfill", "stable", "rotate"} {
+		t.Run(step, func(t *testing.T) {
+			key := types.NamespacedName{Name: platformapi.AgentRuntimeSecretName(agent.Name), Namespace: agent.Namespace}
+			if step == "rotate" {
+				var secret corev1.Secret
+				if err := client.Get(ctx, key, &secret); err != nil {
+					t.Fatal(err)
+				}
+				delete(secret.Data, RuntimeTokenKey)
+				if err := client.Update(ctx, &secret); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := reconciler.Reconcile(ctx, request); err != nil {
+				t.Fatal(err)
+			}
+			var secret corev1.Secret
+			if err := client.Get(ctx, key, &secret); err != nil {
+				t.Fatal(err)
+			}
+			token := string(secret.Data[RuntimeTokenKey])
+			if len(token) < 43 || len(secret.OwnerReferences) != 1 || secret.OwnerReferences[0].UID != agent.UID || !*secret.OwnerReferences[0].Controller {
+				t.Fatal("runtime Secret must hold a random token and be owned by the agent")
+			}
+			var deployment appsv1.Deployment
+			if err := client.Get(ctx, types.NamespacedName{Name: platformapi.AgentDNSName(agent.Name), Namespace: agent.Namespace}, &deployment); err != nil {
+				t.Fatal(err)
+			}
+			for _, env := range deployment.Spec.Template.Spec.Containers[0].Env {
+				if env.Name == RuntimeTokenKey && (env.Value != "" || env.ValueFrom == nil || env.ValueFrom.SecretKeyRef == nil || env.ValueFrom.SecretKeyRef.Name != key.Name) {
+					t.Fatal("legacy Deployment still uses shared credential")
+				}
+			}
+			hash := deployment.Spec.Template.Annotations["mlaiops.io/runtime-token-hash"]
+			if hash == "" {
+				t.Fatal("missing rollout hash")
+			}
+			if step == "stable" && (token != original || hash != previousHash) {
+				t.Fatal("reconcile rotated stable credential")
+			}
+			if step == "rotate" && (token == original || hash == previousHash) {
+				t.Fatal("rotation did not update credential and rollout hash")
+			}
+			original, previousHash = token, hash
+		})
+	}
+	other := agent.DeepCopyObject().(*mlaiopsv1.KiongaAgent)
+	other.Name, other.UID, other.ResourceVersion = "agent-b", "agent-b", ""
+	if err := client.Create(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: other.Name, Namespace: other.Namespace}}); err != nil {
+		t.Fatal(err)
+	}
+	var secret corev1.Secret
+	if err := client.Get(ctx, types.NamespacedName{Name: platformapi.AgentRuntimeSecretName(other.Name), Namespace: other.Namespace}, &secret); err != nil {
+		t.Fatal(err)
+	}
+	if string(secret.Data[RuntimeTokenKey]) == original {
+		t.Fatal("agents share runtime tokens")
 	}
 }
