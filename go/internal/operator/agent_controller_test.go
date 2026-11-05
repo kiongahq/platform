@@ -2,6 +2,10 @@ package operator
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	platformapi "github.com/kiongahq/platform/pkg/api"
@@ -50,6 +54,61 @@ func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
 	if deployment.Spec.Template.Spec.Containers[0].ReadinessProbe == nil || deployment.Spec.Template.Spec.Containers[1].LivenessProbe == nil {
 		t.Fatalf("agent and trace proxy must have health probes: %#v", deployment.Spec.Template.Spec.Containers)
 	}
+	// agent-runtime requires its per-agent runtime token on /invoke and
+	// /stream; the operator must supply it by Secret reference, never inline.
+	agentEnv := map[string]corev1.EnvVar{}
+	for _, variable := range deployment.Spec.Template.Spec.Containers[0].Env {
+		agentEnv[variable.Name] = variable
+	}
+	if agentEnv["MLAIOPS_RUNTIME_AUTH"].Value != "required" {
+		t.Fatalf("agent runtime auth must be required: %#v", agentEnv["MLAIOPS_RUNTIME_AUTH"])
+	}
+	token := agentEnv[RuntimeTokenKey]
+	if token.Value != "" || token.ValueFrom == nil || token.ValueFrom.SecretKeyRef == nil || token.ValueFrom.SecretKeyRef.Name != platformapi.AgentRuntimeSecretName(resourceID) || token.ValueFrom.SecretKeyRef.Key != RuntimeTokenKey {
+		t.Fatalf("runtime token must come from the per-agent Secret: %#v", token)
+	}
+	// trace-proxy#40: the agent authenticates to its sidecar with a per-agent
+	// key from a Secret it owns; the sidecar sees only the key's hash and
+	// gets the provider key from the provider Secret.
+	var traceSecret corev1.Secret
+	if err := client.Get(context.Background(), types.NamespacedName{Name: TraceProxySecretName(workloadName), Namespace: "team-a"}, &traceSecret); err != nil {
+		t.Fatal(err)
+	}
+	if len(traceSecret.OwnerReferences) != 1 || traceSecret.OwnerReferences[0].Name != agent.Name || len(traceSecret.Data["key"]) < 32 {
+		t.Fatalf("trace-proxy key Secret must be owned by the agent and hold a generated key: %#v", traceSecret.ObjectMeta)
+	}
+	var keys []map[string]string
+	if err := json.Unmarshal(traceSecret.Data["keys.json"], &keys); err != nil || len(keys) != 1 {
+		t.Fatalf("keys.json: %v %s", err, traceSecret.Data["keys.json"])
+	}
+	sum := sha256.Sum256(traceSecret.Data["key"])
+	if keys[0]["key_sha256"] != hex.EncodeToString(sum[:]) || keys[0]["key_id"] != workloadName || keys[0]["project"] != "team-a" || keys[0]["agent"] != agent.Name || strings.Contains(string(traceSecret.Data["keys.json"]), string(traceSecret.Data["key"])) {
+		t.Fatalf("keys.json must carry only the key hash with its project and agent: %s", traceSecret.Data["keys.json"])
+	}
+	if apiKey := agentEnv["OPENAI_API_KEY"]; apiKey.ValueFrom == nil || apiKey.ValueFrom.SecretKeyRef.Name != traceSecret.Name || apiKey.ValueFrom.SecretKeyRef.Key != "key" {
+		t.Fatalf("agent must use its trace-proxy key as OPENAI_API_KEY: %#v", apiKey)
+	}
+	sidecar := deployment.Spec.Template.Spec.Containers[1]
+	sidecarEnv := map[string]corev1.EnvVar{}
+	for _, variable := range sidecar.Env {
+		sidecarEnv[variable.Name] = variable
+	}
+	provider := sidecarEnv["LLM_UPSTREAM_API_KEY"]
+	if sidecarEnv["TRACE_PROXY_KEYS_FILE"].Value != "/run/secrets/trace-proxy/keys.json" || len(sidecar.VolumeMounts) != 1 || sidecar.VolumeMounts[0].MountPath != "/run/secrets/trace-proxy" || provider.ValueFrom == nil || provider.ValueFrom.SecretKeyRef.Name != "kionga-llm-provider" || provider.ValueFrom.SecretKeyRef.Key != "LLM_UPSTREAM_API_KEY" {
+		t.Fatalf("trace-proxy sidecar wiring: %#v", sidecar)
+	}
+	if _, ok := sidecarEnv["OPENAI_API_KEY"]; ok {
+		t.Fatal("the sidecar must not receive the agent key")
+	}
+	for _, volume := range deployment.Spec.Template.Spec.Volumes {
+		if volume.Secret != nil && (len(volume.Secret.Items) != 1 || volume.Secret.Items[0].Key != "keys.json") {
+			t.Fatalf("only keys.json may be mounted into the sidecar: %#v", volume.Secret)
+		}
+	}
+	firstKey := string(traceSecret.Data["key"])
+	if agentEnv["MLAIOPS_RUNTIME_PORT"].Value != "8080" || deployment.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort != 8080 {
+		t.Fatalf("runtime port and container port disagree: %#v", deployment.Spec.Template.Spec.Containers[0])
+	}
 	// Simulate an HPA scale. An owned Deployment event must not force the
 	// replica count back to the minimum.
 	scaled := int32(4)
@@ -62,6 +121,9 @@ func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
 	}
 	if err := client.Get(context.Background(), types.NamespacedName{Name: workloadName, Namespace: "team-a"}, &deployment); err != nil {
 		t.Fatal(err)
+	}
+	if err := client.Get(context.Background(), types.NamespacedName{Name: TraceProxySecretName(workloadName), Namespace: "team-a"}, &traceSecret); err != nil || string(traceSecret.Data["key"]) != firstKey {
+		t.Fatalf("trace-proxy key must survive reconcile (err %v)", err)
 	}
 	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != scaled {
 		t.Fatalf("controller reset HPA-owned replicas: %#v", deployment.Spec.Replicas)
@@ -128,7 +190,7 @@ func TestAgentControllerMountsPublishedLangflowSnapshot(t *testing.T) {
 	if err := client.Get(context.Background(), types.NamespacedName{Name: name, Namespace: agent.Namespace}, &deployment); err != nil {
 		t.Fatal(err)
 	}
-	if len(deployment.Spec.Template.Spec.Volumes) != 1 || len(deployment.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 {
+	if len(deployment.Spec.Template.Spec.Volumes) != 2 || deployment.Spec.Template.Spec.Volumes[0].Name != "flow" || len(deployment.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 {
 		t.Fatalf("published flow is not mounted: %#v", deployment.Spec.Template.Spec)
 	}
 	var config corev1.ConfigMap
@@ -184,5 +246,82 @@ func TestAgentControllerMountsNativeVersionAndRejectsOtherModules(t *testing.T) 
 		if len(mounts) != 1 || mounts[0].MountPath != "/app/flows" || !mounts[0].ReadOnly || len(deployment.Spec.Template.Spec.Containers) != 3 {
 			t.Fatalf("native version must be mounted read-only with the API sidecar: %#v", deployment.Spec.Template.Spec)
 		}
+	}
+}
+
+func TestAgentRuntimeTokenLifecycle(t *testing.T) {
+	ctx := context.Background()
+	agent := &mlaiopsv1.KiongaAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "legacy-agent", Namespace: "default", UID: "agent-a"},
+		Spec:       mlaiopsv1.KiongaAgentSpec{Version: "1", Image: "agent:1", GraphModule: "agent:build", Replicas: mlaiopsv1.ReplicaSpec{Min: 1, Max: 1}},
+	}
+	// Simulate the pre-upgrade Deployment referencing the service credential.
+	legacy := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: platformapi.AgentDNSName(agent.Name), Namespace: agent.Namespace}}
+	legacy.Spec.Template.Spec.Containers = []corev1.Container{{Name: "agent", Env: runtimeAuthEnv("kionga-gateway")}}
+	client := fake.NewClientBuilder().WithScheme(pullSecretScheme()).WithStatusSubresource(agent, &appsv1.Deployment{}).WithObjects(agent, legacy).Build()
+	reconciler := &AgentReconciler{Client: client}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: agent.Name, Namespace: agent.Namespace}}
+	var original string
+	var previousHash string
+	for _, step := range []string{"backfill", "stable", "rotate"} {
+		t.Run(step, func(t *testing.T) {
+			key := types.NamespacedName{Name: platformapi.AgentRuntimeSecretName(agent.Name), Namespace: agent.Namespace}
+			if step == "rotate" {
+				var secret corev1.Secret
+				if err := client.Get(ctx, key, &secret); err != nil {
+					t.Fatal(err)
+				}
+				delete(secret.Data, RuntimeTokenKey)
+				if err := client.Update(ctx, &secret); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := reconciler.Reconcile(ctx, request); err != nil {
+				t.Fatal(err)
+			}
+			var secret corev1.Secret
+			if err := client.Get(ctx, key, &secret); err != nil {
+				t.Fatal(err)
+			}
+			token := string(secret.Data[RuntimeTokenKey])
+			if len(token) < 43 || len(secret.OwnerReferences) != 1 || secret.OwnerReferences[0].UID != agent.UID || !*secret.OwnerReferences[0].Controller {
+				t.Fatal("runtime Secret must hold a random token and be owned by the agent")
+			}
+			var deployment appsv1.Deployment
+			if err := client.Get(ctx, types.NamespacedName{Name: platformapi.AgentDNSName(agent.Name), Namespace: agent.Namespace}, &deployment); err != nil {
+				t.Fatal(err)
+			}
+			for _, env := range deployment.Spec.Template.Spec.Containers[0].Env {
+				if env.Name == RuntimeTokenKey && (env.Value != "" || env.ValueFrom == nil || env.ValueFrom.SecretKeyRef == nil || env.ValueFrom.SecretKeyRef.Name != key.Name) {
+					t.Fatal("legacy Deployment still uses shared credential")
+				}
+			}
+			hash := deployment.Spec.Template.Annotations["mlaiops.io/runtime-token-hash"]
+			if hash == "" {
+				t.Fatal("missing rollout hash")
+			}
+			if step == "stable" && (token != original || hash != previousHash) {
+				t.Fatal("reconcile rotated stable credential")
+			}
+			if step == "rotate" && (token == original || hash == previousHash) {
+				t.Fatal("rotation did not update credential and rollout hash")
+			}
+			original, previousHash = token, hash
+		})
+	}
+	other := agent.DeepCopyObject().(*mlaiopsv1.KiongaAgent)
+	other.Name, other.UID, other.ResourceVersion = "agent-b", "agent-b", ""
+	if err := client.Create(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: other.Name, Namespace: other.Namespace}}); err != nil {
+		t.Fatal(err)
+	}
+	var secret corev1.Secret
+	if err := client.Get(ctx, types.NamespacedName{Name: platformapi.AgentRuntimeSecretName(other.Name), Namespace: other.Namespace}, &secret); err != nil {
+		t.Fatal(err)
+	}
+	if string(secret.Data[RuntimeTokenKey]) == original {
+		t.Fatal("agents share runtime tokens")
 	}
 }

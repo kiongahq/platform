@@ -27,6 +27,8 @@ type agentApproval struct {
 	ProjectID   string     `json:"project_id"`
 	RunID       string     `json:"run_id,omitempty"`
 	NodeID      string     `json:"node_id"`
+	WorkerID    string     `json:"worker_id,omitempty"`
+	ToolName    string     `json:"tool_name,omitempty"`
 	Message     string     `json:"message"`
 	Source      string     `json:"source"`
 	RequestedBy string     `json:"requested_by"`
@@ -64,7 +66,7 @@ func (s *Server) createApproval(w http.ResponseWriter, r *http.Request) {
 		TimeoutSeconds int    `json:"timeout_seconds"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	source := "deployed_agent"
@@ -170,7 +172,7 @@ func (s *Server) decideApproval(w http.ResponseWriter, r *http.Request) {
 		Comment  string `json:"comment"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	status := map[string]string{"approve": "approved", "reject": "rejected"}[req.Decision]

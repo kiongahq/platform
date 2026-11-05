@@ -156,7 +156,7 @@ func TestOnLoginHookAndMeReportPendingSignup(t *testing.T) {
 	mustPolicy(t, "approval", "").OnLogin(repository)(context.Background(), newcomer("github"))
 	static, _ := fs.Sub(fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ok")}}, ".")
 	server := New(repository, static)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	request := newTestRequest(http.MethodGet, "/api/v1/me", nil)
 	request = request.WithContext(auth.WithPrincipal(request.Context(), newcomer("github")))
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
@@ -178,7 +178,7 @@ func TestOnLoginHookAndMeReportPendingSignup(t *testing.T) {
 	}
 	// Unprovisioned, the newcomer still cannot use any service.
 	projects := httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
+	request = newTestRequest(http.MethodGet, "/api/v1/projects", nil)
 	server.ServeHTTP(projects, request.WithContext(auth.WithPrincipal(request.Context(), newcomer("github"))))
 	if projects.Code != http.StatusForbidden {
 		t.Fatalf("pending newcomer GET /api/v1/projects = %d, want 403", projects.Code)
@@ -192,7 +192,7 @@ func TestMeReportsHowThisCallerSignedInNextToSingleSignOn(t *testing.T) {
 	server := New(store.New(), static)
 	for credential, want := range map[string]string{auth.CredentialLocalSession: "local", auth.CredentialSSOSession: "oidc", auth.CredentialOIDCToken: "oidc"} {
 		principal := auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}, Credential: credential}
-		request := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+		request := newTestRequest(http.MethodGet, "/api/v1/me", nil)
 		response := httptest.NewRecorder()
 		server.ServeHTTP(response, request.WithContext(auth.WithPrincipal(request.Context(), principal)))
 		var me struct {
@@ -239,7 +239,7 @@ func TestAdminsIssueLocalPasswordsOnlyWhileLocalAccountsAreOn(t *testing.T) {
 	static, _ := fs.Sub(fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ok")}}, ".")
 	server := New(repository, static)
 	issue := func() int {
-		request := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/e2e-user/local-password", strings.NewReader(`{"password":"a-long-local-password"}`))
+		request := newTestRequest(http.MethodPut, "/api/v1/admin/users/e2e-user/local-password", strings.NewReader(`{"password":"a-long-local-password"}`))
 		admin := auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}, Credential: auth.CredentialLocalSession}
 		response := httptest.NewRecorder()
 		server.ServeHTTP(response, request.WithContext(auth.WithPrincipal(request.Context(), admin)))

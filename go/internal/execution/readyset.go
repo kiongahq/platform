@@ -30,7 +30,13 @@ func ConditionMet(job api.PipelineJob, parameters map[string]any) bool {
 	return fmt.Sprint(parameters[job.When.Param]) == job.When.Equals
 }
 
-// Run executes jobs and returns outputs plus per-node failures.
+// CancelledMessage is the step message for nodes stopped or never started
+// because the run was cancelled.
+const CancelledMessage = "not run: the run was cancelled"
+
+// Run executes jobs and returns outputs plus per-node failures. Once ctx is
+// cancelled no further node starts; Start must return promptly for nodes in
+// flight.
 func Run(ctx context.Context, jobs []api.PipelineJob, parameters map[string]any, start Start, report Report, maxParallel int) (map[string]any, map[string]error) {
 	if maxParallel <= 0 {
 		maxParallel = 8
@@ -64,6 +70,12 @@ func Run(ctx context.Context, jobs []api.PipelineJob, parameters map[string]any,
 				}
 			}
 			switch {
+			case ctx.Err() != nil:
+				// Cancelled: start nothing new; every node not yet started
+				// is reported skipped while in-flight nodes wind down.
+				blocked[job.Name] = true
+				report(job.Name, "skipped", CancelledMessage)
+				progressed = true
 			case len(upstream) > 0:
 				blocked[job.Name] = true
 				report(job.Name, "skipped", "not run: upstream "+strings.Join(upstream, ", ")+" did not succeed")

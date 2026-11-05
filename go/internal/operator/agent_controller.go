@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -35,6 +37,47 @@ type AgentReconciler struct {
 	// ImagePullSecrets name registry credentials in the agent namespace for
 	// private agent and trace-proxy images (KIONGA_IMAGE_PULL_SECRETS).
 	ImagePullSecrets []corev1.LocalObjectReference
+	// ProviderKeySecret names an optional Secret in the agent namespace whose
+	// LLM_UPSTREAM_API_KEY key the trace-proxy sidecar sends to the model
+	// provider (KIONGA_LLM_PROVIDER_SECRET, default kionga-llm-provider).
+	// Self-hosted upstreams without a key leave it absent.
+	ProviderKeySecret string
+}
+
+const (
+	// traceProxyKeyFile is the sidecar's TRACE_PROXY_KEYS_FILE: a JSON array
+	// of {key_id, key_sha256, project, agent} (kiongahq/trace-proxy#40).
+	traceProxyKeyDir  = "/run/secrets/trace-proxy"
+	traceProxyKeyFile = "keys.json"
+	providerKeyName   = "LLM_UPSTREAM_API_KEY"
+)
+
+// TraceProxySecretName is the per-agent Secret holding the agent's trace
+// proxy key (key) and the hash-only key list the sidecar loads (keys.json).
+func TraceProxySecretName(workload string) string { return workload + "-trace-proxy" }
+
+func (r *AgentReconciler) providerKeySecret() string {
+	if r.ProviderKeySecret != "" {
+		return r.ProviderKeySecret
+	}
+	return "kionga-llm-provider"
+}
+
+// traceProxyKeys renders the sidecar key list for one agent key. Only the
+// SHA-256 hash is written; the raw key reaches the agent container alone.
+func traceProxyKeys(keyID, project, agent string, key []byte) ([]byte, error) {
+	sum := sha256.Sum256(key)
+	return json.Marshal([]map[string]string{{"key_id": keyID, "key_sha256": hex.EncodeToString(sum[:]), "project": project, "agent": agent}})
+}
+
+// RuntimeTokenKey retains the runtime's existing environment contract.
+const RuntimeTokenKey = "MLAIOPS_INTERNAL_TOKEN"
+
+func runtimeAuthEnv(secretName string) []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{Name: "MLAIOPS_RUNTIME_AUTH", Value: "required"},
+		{Name: RuntimeTokenKey, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secretName}, Key: RuntimeTokenKey}}},
+	}
 }
 
 func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
@@ -74,6 +117,25 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 	if err != nil {
 		return r.fail(ctx, &agent, "InvalidResources", err)
 	}
+	// Backfill existing agents on reconcile. Preserve the credential until its
+	// key is removed or replaced, just like workspace job tokens.
+	runtimeSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: platformapi.AgentRuntimeSecretName(resourceID), Namespace: agent.Namespace}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, runtimeSecret, func() error {
+		if runtimeSecret.Data == nil {
+			runtimeSecret.Data = map[string][]byte{}
+		}
+		if len(runtimeSecret.Data[RuntimeTokenKey]) == 0 {
+			token := make([]byte, 32)
+			if _, err := rand.Read(token); err != nil {
+				return err
+			}
+			runtimeSecret.Data[RuntimeTokenKey] = []byte(base64.RawURLEncoding.EncodeToString(token))
+		}
+		return controllerutil.SetControllerReference(&agent, runtimeSecret, r.Scheme())
+	}); err != nil {
+		return ctrl.Result{}, err
+	}
+	runtimeTokenHash := fmt.Sprintf("%x", sha256.Sum256(runtimeSecret.Data[RuntimeTokenKey]))
 	traceProxyImage := r.TraceProxyImage
 	if traceProxyImage == "" {
 		traceProxyImage = plan.Workload.Containers[1].Image
@@ -120,6 +182,34 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 		}
 		agentTokenHash = fmt.Sprintf("%x", sha256.Sum256(apiSecret.Data["api-token"]))
 	}
+	// Every agent pod authenticates to its trace-proxy sidecar with a key of
+	// its own; the provider key stays in the sidecar.
+	project := agent.Spec.ProjectID
+	if project == "" {
+		project = agent.Namespace
+	}
+	traceSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: TraceProxySecretName(plan.Workload.Name), Namespace: agent.Namespace}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, traceSecret, func() error {
+		if traceSecret.Data == nil {
+			traceSecret.Data = map[string][]byte{}
+		}
+		if len(traceSecret.Data["key"]) == 0 {
+			random := make([]byte, 32)
+			if _, err := rand.Read(random); err != nil {
+				return err
+			}
+			traceSecret.Data["key"] = []byte(base64.RawURLEncoding.EncodeToString(random))
+		}
+		keys, err := traceProxyKeys(plan.Workload.Name, project, agent.Name, traceSecret.Data["key"])
+		if err != nil {
+			return err
+		}
+		traceSecret.Data[traceProxyKeyFile] = keys
+		return controllerutil.SetControllerReference(&agent, traceSecret, r.Scheme())
+	}); err != nil {
+		return ctrl.Result{}, err
+	}
+	traceKeyHash := fmt.Sprintf("%x", sha256.Sum256(traceSecret.Data["key"]))
 	deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: plan.Workload.Name, Namespace: agent.Namespace}}
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
 		replicas := int32(plan.Workload.Replicas) // #nosec G115 -- source is an int32 replica count
@@ -135,10 +225,21 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{"mlaiops.io/flow-sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(agent.Spec.FlowJSON))), "mlaiops.io/api-token-hash": agentTokenHash}
 			deployment.Spec.Template.Spec.Volumes = []corev1.Volume{{Name: "flow", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: flowConfigName}}}}}
 		}
+		if deployment.Spec.Template.ObjectMeta.Annotations == nil || agent.Spec.FlowJSON == "" {
+			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+		}
+		deployment.Spec.Template.ObjectMeta.Annotations["mlaiops.io/runtime-token-hash"] = runtimeTokenHash
+		deployment.Spec.Template.ObjectMeta.Annotations["mlaiops.io/trace-proxy-key-hash"] = traceKeyHash
+		if agent.Spec.FlowJSON == "" {
+			deployment.Spec.Template.Spec.Volumes = nil
+		}
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{Name: "trace-proxy-keys", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{
+			SecretName: traceSecret.Name, Items: []corev1.KeyToPath{{Key: traceProxyKeyFile, Path: traceProxyKeyFile}},
+		}}})
 		deployment.Spec.Template.Spec.ImagePullSecrets = r.ImagePullSecrets
 		deployment.Spec.Template.Spec.Containers = []corev1.Container{
-			{Name: "agent", Image: agent.Spec.Image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}, Env: append(envVars(plan.Workload.Containers[0].Env), corev1.EnvVar{Name: "MLAIOPS_AGENT_ID", Value: resourceID}, corev1.EnvVar{Name: "MLAIOPS_RUNTIME_PORT", Value: "8080"}), Resources: resources, ReadinessProbe: httpProbe("/healthz", "http", 2), LivenessProbe: httpProbe("/healthz", "http", 10), SecurityContext: hardenedSecurityContext()},
-			{Name: "trace-proxy", Image: traceProxyImage, Ports: []corev1.ContainerPort{{Name: "proxy", ContainerPort: 8081}}, Env: envVars(plan.Workload.Containers[1].Env), Resources: traceProxyResources(), ReadinessProbe: httpProbe("/healthz", "proxy", 2), LivenessProbe: httpProbe("/healthz", "proxy", 10), SecurityContext: hardenedSecurityContext()},
+			{Name: "agent", Image: agent.Spec.Image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}, Env: append(append(envVars(plan.Workload.Containers[0].Env), corev1.EnvVar{Name: "MLAIOPS_AGENT_ID", Value: resourceID}, corev1.EnvVar{Name: "MLAIOPS_RUNTIME_PORT", Value: "8080"}), append(runtimeAuthEnv(runtimeSecret.Name), r.traceProxyClientEnv(traceSecret.Name))...), Resources: resources, ReadinessProbe: httpProbe("/healthz", "http", 2), LivenessProbe: httpProbe("/healthz", "http", 10), SecurityContext: hardenedSecurityContext()},
+			{Name: "trace-proxy", Image: traceProxyImage, Ports: []corev1.ContainerPort{{Name: "proxy", ContainerPort: 8081}}, Env: append(envVars(plan.Workload.Containers[1].Env), r.traceProxySidecarEnv()...), VolumeMounts: []corev1.VolumeMount{{Name: "trace-proxy-keys", MountPath: traceProxyKeyDir, ReadOnly: true}}, Resources: traceProxyResources(), ReadinessProbe: httpProbe("/healthz", "proxy", 2), LivenessProbe: httpProbe("/healthz", "proxy", 10), SecurityContext: hardenedSecurityContext()},
 		}
 		if agent.Spec.FlowJSON != "" {
 			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{{Name: "flow", MountPath: "/app/flows", ReadOnly: true}}
@@ -288,6 +389,22 @@ func hardenedSecurityContext() *corev1.SecurityContext {
 	nonRoot := true
 	uid := int64(65532)
 	return &corev1.SecurityContext{AllowPrivilegeEscalation: &allow, ReadOnlyRootFilesystem: &readOnly, RunAsNonRoot: &nonRoot, RunAsUser: &uid, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
+}
+
+// traceProxyClientEnv gives the agent its trace-proxy key as the OpenAI
+// client API key; OPENAI_BASE_URL already points at the sidecar.
+func (r *AgentReconciler) traceProxyClientEnv(secret string) corev1.EnvVar {
+	return corev1.EnvVar{Name: "OPENAI_API_KEY", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secret}, Key: "key"}}}
+}
+
+// traceProxySidecarEnv points the sidecar at the hash-only key list and
+// the provider key Secret (optional, for keyless self-hosted upstreams).
+func (r *AgentReconciler) traceProxySidecarEnv() []corev1.EnvVar {
+	optional := true
+	return []corev1.EnvVar{
+		{Name: "TRACE_PROXY_KEYS_FILE", Value: traceProxyKeyDir + "/" + traceProxyKeyFile},
+		{Name: providerKeyName, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: r.providerKeySecret()}, Key: providerKeyName, Optional: &optional}}},
+	}
 }
 
 func intstrFromInt(value int) intstr.IntOrString { return intstr.FromInt(value) }

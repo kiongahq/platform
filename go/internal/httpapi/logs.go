@@ -87,6 +87,12 @@ func (s *Server) reportStep(runID string, req api.UpdateRunStepRequest, actor st
 	if req.At != nil {
 		entry.Timestamp = req.At.UTC()
 	}
+	if run.Status == "cancelled" {
+		entry.Message, entry.Context["post_cancel"] = "post-cancel report: "+entry.Message, true
+		if severity != "error" {
+			entry.Severity = "warn"
+		}
+	}
 	s.appendLogs([]api.LogEntry{entry})
 	return run, nil
 }

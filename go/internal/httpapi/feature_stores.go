@@ -55,13 +55,6 @@ const featureStoreHealthKind = "feature_store_health"
 
 var connectionName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 
-func resolveSecret(ref string) string {
-	if !strings.HasPrefix(ref, "env:") {
-		return ""
-	}
-	return os.Getenv(strings.TrimPrefix(ref, "env:"))
-}
-
 func (s *Server) builtinStore() api.FeatureStoreConnection {
 	online := os.Getenv("MLAIOPS_FEATURE_GATEWAY_URL")
 	offline := os.Getenv("KIONGA_FEATURE_OFFLINE_URI")
@@ -83,7 +76,7 @@ func (s *Server) builtinStore() api.FeatureStoreConnection {
 
 func publicConnection(connection api.FeatureStoreConnection) api.FeatureStoreConnection {
 	if connection.ID != builtinStoreID {
-		connection.SecretPresent = connection.SecretRef != "" && resolveSecret(connection.SecretRef) != ""
+		connection.SecretPresent = connection.SecretRef != "" && featureSecrets.Value(connection.SecretRef) != ""
 	}
 	if connection.Config == nil {
 		connection.Config = map[string]string{}
@@ -157,8 +150,8 @@ func (s *Server) featureStoreFromRequest(r *http.Request, id string) (api.Featur
 	for _, issue := range feature.Validate(req.Provider, req.Config) {
 		issues = append(issues, issue.Field+": "+issue.Message)
 	}
-	if !feature.ValidSecretRef(req.SecretRef) {
-		issues = append(issues, "secret_ref: must be empty or env:VARIABLE_NAME")
+	if !feature.ValidSecretRef(req.SecretRef) || (req.SecretRef != "" && !featureSecrets.Permits(req.SecretRef)) {
+		issues = append(issues, "secret_ref: must be empty or env:KIONGA_FEATURE_SECRET_<NAME>, or a variable listed in KIONGA_FEATURE_SECRET_REFS")
 	}
 	projects, projectIssues := s.validateProjects(req.AllowedProjects)
 	issues = append(issues, projectIssues...)
@@ -180,7 +173,7 @@ func writeValidation(w http.ResponseWriter, issues []string) {
 func (s *Server) createFeatureStore(w http.ResponseWriter, r *http.Request) {
 	connection, issues, err := s.featureStoreFromRequest(r, store.NewResourceID("fs"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if len(issues) > 0 {
@@ -199,7 +192,7 @@ func (s *Server) updateFeatureStore(w http.ResponseWriter, r *http.Request) {
 	}
 	connection, issues, err := s.featureStoreFromRequest(r, id)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if len(issues) > 0 {
@@ -232,11 +225,15 @@ func checkFeatureStore(ctx context.Context, connection api.FeatureStoreConnectio
 		health.State, health.Detail = feature.StateConfigured, "Set MLAIOPS_FEATURE_GATEWAY_URL on the gateway so the internal store can be checked."
 		return health
 	}
-	if connection.SecretRef != "" && resolveSecret(connection.SecretRef) == "" {
+	if connection.SecretRef != "" && !featureSecrets.Permits(connection.SecretRef) {
+		health.State, health.Detail = feature.StateConfigured, "The secret reference "+connection.SecretRef+" is not permitted. Use env:KIONGA_FEATURE_SECRET_<NAME> or list the variable in KIONGA_FEATURE_SECRET_REFS."
+		return health
+	}
+	if connection.SecretRef != "" && featureSecrets.Value(connection.SecretRef) == "" {
 		health.State, health.Detail = feature.StateConfigured, "The secret reference "+connection.SecretRef+" is not set in the gateway environment."
 		return health
 	}
-	adapter, err := feature.New(connection.Provider, feature.Config{Settings: connection.Config, Secret: resolveSecret(connection.SecretRef)})
+	adapter, err := feature.New(connection.Provider, feature.Config{Settings: connection.Config, Secret: featureSecrets.Value(connection.SecretRef)})
 	if err != nil {
 		health.State, health.Detail = feature.StateUnavailable, err.Error()
 		return health
@@ -244,7 +241,7 @@ func checkFeatureStore(ctx context.Context, connection api.FeatureStoreConnectio
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	result := adapter.Health(ctx)
-	health.State, health.Detail = result.State, redactTokens(result.Detail, resolveSecret(connection.SecretRef))
+	health.State, health.Detail = result.State, redactTokens(result.Detail, featureSecrets.Value(connection.SecretRef))
 	return health
 }
 
@@ -410,7 +407,7 @@ func (s *Server) reportFeatureMaterialization(w http.ResponseWriter, r *http.Req
 	}
 	var req api.ReportFeatureMaterializationRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if req.Status == "" {
@@ -455,7 +452,7 @@ func (s *Server) reportFeatureMaterialization(w http.ResponseWriter, r *http.Req
 // ---- external object storage -------------------------------------------------
 
 func publicStorage(connection api.StorageConnection) api.StorageConnection {
-	connection.SecretPresent = resolveSecret(connection.SecretRef) != ""
+	connection.SecretPresent = storageSecrets.Value(connection.SecretRef) != ""
 	if connection.AllowedProjects == nil {
 		connection.AllowedProjects = []string{}
 	}
@@ -486,8 +483,8 @@ func (s *Server) storageFromRequest(r *http.Request, id string) (api.StorageConn
 		issues = append(issues, "name: use 2-63 lowercase letters, digits and hyphens")
 	}
 	issues = append(issues, storage.ValidateBucketTarget(storage.BucketTarget{Endpoint: req.Endpoint, Region: req.Region, Bucket: req.Bucket, PathStyle: req.PathStyle, CABundle: req.CABundle})...)
-	if req.SecretRef == "" || !feature.ValidSecretRef(req.SecretRef) {
-		issues = append(issues, "secret_ref: required as env:VARIABLE_NAME holding ACCESS_KEY_ID:SECRET_ACCESS_KEY")
+	if req.SecretRef == "" || !feature.ValidSecretRef(req.SecretRef) || !storageSecrets.Permits(req.SecretRef) {
+		issues = append(issues, "secret_ref: required as env:KIONGA_STORAGE_SECRET_<NAME>, or a variable listed in KIONGA_STORAGE_SECRET_REFS, holding ACCESS_KEY_ID:SECRET_ACCESS_KEY")
 	}
 	if strings.Contains(req.CABundle, "PRIVATE KEY") {
 		issues = append(issues, "ca_bundle: must contain only public CA certificates")
@@ -507,7 +504,7 @@ func (s *Server) storageFromRequest(r *http.Request, id string) (api.StorageConn
 func (s *Server) createStorageConnection(w http.ResponseWriter, r *http.Request) {
 	connection, issues, err := s.storageFromRequest(r, store.NewResourceID("st"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if len(issues) > 0 {
@@ -521,7 +518,7 @@ func (s *Server) createStorageConnection(w http.ResponseWriter, r *http.Request)
 func (s *Server) updateStorageConnection(w http.ResponseWriter, r *http.Request) {
 	connection, issues, err := s.storageFromRequest(r, r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if len(issues) > 0 {
@@ -551,7 +548,7 @@ func (s *Server) testStorageConnection(w http.ResponseWriter, r *http.Request) {
 		writeMutation(w, connection, err, http.StatusOK)
 		return
 	}
-	secret := resolveSecret(connection.SecretRef)
+	secret := storageSecrets.Value(connection.SecretRef)
 	accessKey, secretKey, _ := strings.Cut(secret, ":")
 	target := storage.BucketTarget{Endpoint: connection.Endpoint, Region: connection.Region, Bucket: connection.Bucket, PathStyle: connection.PathStyle,
 		CABundle: connection.CABundle, AccessKey: accessKey, SecretKey: secretKey}

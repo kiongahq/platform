@@ -33,9 +33,9 @@ var localAdmin = auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin
 
 func call(t *testing.T, handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	request := newTestRequest(method, path, strings.NewReader(body))
 	if body == "" {
-		request = httptest.NewRequest(method, path, nil)
+		request = newTestRequest(method, path, nil)
 	}
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -277,6 +277,7 @@ func TestScaffoldJobAccessAndConcurrency(t *testing.T) {
 	defer close(block)
 	t.Setenv("KIONGA_JUPYTER_UPSTREAM", runner.URL)
 	t.Setenv("KIONGA_JUPYTER_TOKEN", "notebook-secret")
+	t.Setenv("KIONGA_WORKSPACE_JOB_TOKEN", "job-secret")
 	repository := store.New()
 	project := scaffoldProjectFixture(t, repository)
 	admin := domainServer(repository, localAdmin)

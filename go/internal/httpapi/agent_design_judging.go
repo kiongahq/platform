@@ -325,7 +325,7 @@ func (s *Server) reviewCase(w http.ResponseWriter, r *http.Request) {
 		Note   string `json:"note"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if (req.Status != "accepted" && req.Status != "rejected" && req.Status != "needs_changes") || len([]rune(req.Note)) > 1000 {

@@ -50,3 +50,7 @@ func TestFeatureCatalogDocuments(t *testing.T) {
 func TestScaffoldJobDocuments(t *testing.T) {
 	storetest.ScaffoldJobs(t, store.New(filepath.Join(t.TempDir(), "state.json")))
 }
+
+func TestFileStoreRevokesTokensWhenAccessIsWithdrawn(t *testing.T) {
+	storetest.TokenRevocation(t, store.New(filepath.Join(t.TempDir(), "state.json")), "file")
+}

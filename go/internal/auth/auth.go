@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -209,6 +210,23 @@ func RBACWithResolver(next http.Handler, resolve AccessResolver) http.Handler {
 			}
 			r = r.WithContext(WithPrincipal(r.Context(), principal))
 		}
+		if resolve != nil && principal.Credential == "api_token" {
+			// A token never outlives or outreaches its owner: re-read the
+			// owner's profile on every request so suspension and removed
+			// services apply immediately. Owners without a profile are
+			// identity-provider administrators; their token keeps its own
+			// scopes (removing a profile revokes the subject's tokens).
+			if roles, services, _, disabled, found := resolve(principal.Subject); found {
+				if disabled {
+					deny(w, http.StatusForbidden, "the owner of this API token is suspended")
+					return
+				}
+				if !slices.Contains(roles, RoleAdmin) && !slices.Contains(roles, RoleOperator) {
+					principal.Services = intersect(principal.Services, services)
+				}
+				r = r.WithContext(WithPrincipal(r.Context(), principal))
+			}
+		}
 		if resolve != nil && principal.Subject != "" && !hasRole(principal, RoleService) && principal.Credential != "api_token" {
 			if roles, services, projectIDs, disabled, found := resolve(principal.Subject); found {
 				principal.Roles, principal.Services, principal.ProjectIDs = roles, services, projectIDs
@@ -377,7 +395,7 @@ func (v *Verifier) refresh(ctx context.Context) error {
 // engineerWrite lists what the engineer role may mutate: the ML lifecycle,
 // but not platform configuration (connections stay admin/operator-only).
 var engineerWrite = []string{
-	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents", "/api/v1/agent-designs", "/api/v1/agent-versions", "/api/v1/agent-evaluations", "/api/v1/agent-approvals", "/api/v1/langflow-workspaces", "/api/v1/langflow-snapshots", "/api/v1/knowledge-bases", "/api/v1/agent-api-connections",
+	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents", "/api/v1/agent-designs", "/api/v1/agent-versions", "/api/v1/agent-evaluations", "/api/v1/agent-approvals", "/api/v1/agent-definitions", "/api/v1/agent-teams", "/api/v1/team-runs", "/api/v1/langflow-workspaces", "/api/v1/langflow-snapshots", "/api/v1/knowledge-bases", "/api/v1/agent-api-connections",
 	"/api/v1/tools", "/api/v1/features", "/api/v1/traces", "/api/v1/functions",
 	"/api/v1/realtime",
 }
@@ -390,7 +408,7 @@ var serviceWrite = []string{
 }
 
 var userWrite = []string{
-	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agent-designs", "/api/v1/agent-versions", "/api/v1/agent-evaluations", "/api/v1/agent-approvals", "/api/v1/agents", "/api/v1/langflow-workspaces", "/api/v1/knowledge-bases", "/api/v1/agent-api-connections",
+	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agent-designs", "/api/v1/agent-versions", "/api/v1/agent-evaluations", "/api/v1/agent-approvals", "/api/v1/agent-definitions", "/api/v1/agent-teams", "/api/v1/team-runs", "/api/v1/agents", "/api/v1/langflow-workspaces", "/api/v1/knowledge-bases", "/api/v1/agent-api-connections",
 	"/api/v1/tools", "/api/v1/features", "/api/v1/traces", "/api/v1/functions",
 	"/api/v1/realtime",
 }
@@ -399,7 +417,7 @@ func Allowed(principal Principal, method, path string) bool {
 	if principal.Disabled {
 		return false
 	}
-	if (strings.HasPrefix(path, "/api/v1/agent-designs") || strings.HasPrefix(path, "/api/v1/agent-versions") || strings.HasPrefix(path, "/api/v1/agent-evaluations") || strings.HasPrefix(path, "/api/v1/agent-approvals")) && hasRole(principal, RoleService) {
+	if (strings.HasPrefix(path, "/api/v1/agent-designs") || strings.HasPrefix(path, "/api/v1/agent-versions") || strings.HasPrefix(path, "/api/v1/agent-evaluations") || strings.HasPrefix(path, "/api/v1/agent-approvals") || strings.HasPrefix(path, "/api/v1/agent-definitions") || strings.HasPrefix(path, "/api/v1/agent-teams") || strings.HasPrefix(path, "/api/v1/team-runs")) && hasRole(principal, RoleService) {
 		return false
 	}
 	if strings.HasPrefix(path, "/workspaces/") || (strings.HasPrefix(path, "/api/v1/workspaces/") && strings.HasSuffix(path, "/launch")) {
@@ -538,7 +556,7 @@ func serviceForPath(path string) string {
 		return "pipelines"
 	case strings.HasPrefix(path, "/api/v1/models"):
 		return "models"
-	case strings.HasPrefix(path, "/api/v1/agents"), strings.HasPrefix(path, "/api/v1/agent-designs"), strings.HasPrefix(path, "/api/v1/agent-versions"), strings.HasPrefix(path, "/api/v1/agent-evaluations"), strings.HasPrefix(path, "/api/v1/agent-approvals"), strings.HasPrefix(path, "/api/v1/traces"):
+	case strings.HasPrefix(path, "/api/v1/agents"), strings.HasPrefix(path, "/api/v1/agent-designs"), strings.HasPrefix(path, "/api/v1/agent-versions"), strings.HasPrefix(path, "/api/v1/agent-evaluations"), strings.HasPrefix(path, "/api/v1/agent-approvals"), strings.HasPrefix(path, "/api/v1/agent-definitions"), strings.HasPrefix(path, "/api/v1/agent-teams"), strings.HasPrefix(path, "/api/v1/team-runs"), strings.HasPrefix(path, "/api/v1/traces"):
 		return "agents"
 	case strings.HasPrefix(path, "/api/v1/features"):
 		return "features"
@@ -588,4 +606,15 @@ func deny(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": http.StatusText(status), "message": message})
+}
+
+// intersect returns the values of scoped that are also in granted, in order.
+func intersect(scoped, granted []string) []string {
+	result := make([]string, 0, len(scoped))
+	for _, value := range scoped {
+		if slices.Contains(granted, value) {
+			result = append(result, value)
+		}
+	}
+	return result
 }

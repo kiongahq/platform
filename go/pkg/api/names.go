@@ -37,3 +37,9 @@ func AgentAPISecretName(agentName string) string {
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(agentName)))
 	return "kionga-agent-auth-" + digest[:24]
 }
+
+// AgentRuntimeSecretName identifies the invocation credential by immutable agent ID.
+func AgentRuntimeSecretName(agentID string) string {
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(agentID)))
+	return "kionga-agent-runtime-" + digest[:24]
+}

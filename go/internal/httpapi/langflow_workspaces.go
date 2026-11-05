@@ -117,7 +117,7 @@ func (s *Server) createLangflowWorkspace(w http.ResponseWriter, r *http.Request)
 	var req createLangflowRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)

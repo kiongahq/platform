@@ -28,6 +28,11 @@ test('framework selection retains entered fields and deployment posts registered
  fireEvent.change(view.getByLabelText('Name'),{target:{value:'Support'}});fireEvent.change(view.getByLabelText('Image'),{target:{value:'registry/support:1'}});fireEvent.change(view.getByLabelText('Framework'),{target:{value:'agno'}});assert.equal((view.getByLabelText('Name') as HTMLInputElement).value,'Support');
  fireEvent.click(view.getByRole('checkbox',{name:/search/}));fireEvent.click(view.getByRole('button',{name:'Deploy agent'}));await waitFor(()=>assert.equal(deployed,true));assert.equal(calls[0].body.graph_module,'agents.framework_examples:build_agno');assert.deepEqual(calls[0].body.tools,['search']);assert.deepEqual(calls[0].body.autoscaling,{min_replicas:1,max_replicas:1});assert.equal('min_replicas' in calls[0].body,false);
 });
+test('NOOA guidance says the runtime keeps it disabled with no opt-in flag',()=>{
+ api();const view=render(<DeployAgentForm identity={identity} project="p1" projects={projects} tools={[]} existing={[]} onDeployed={()=>{}}/>);
+ fireEvent.change(view.getByLabelText('Framework'),{target:{value:'nooa'}});
+ assert.ok(view.queryByText(/refuses to start it until an isolated code sandbox is available/));assert.equal(view.queryByText(/KIONGA_ALLOW_CODE_EXECUTION/),null);
+});
 test('operations renders recorded series, unavailable latency and exact canary control',async()=>{
  const calls=api({'/api/v1/agents/a1/operations?hours=24':{totals:{requests:7,errors:1,p95_ms:null,input_tokens:35,output_tokens:12,cost_usd:0.012},success_rate:6/7,series:[{start:'2026-11-01T01:00:00Z',requests:7,errors:1,p95_ms:null,input_tokens:35,output_tokens:12,cost_usd:0.012}],siblings:[],timeline:[],recent_traces:[]}});
  const view=render(<AgentOperations agent={{id:'a1',name:'Support',canary_weight:10}} writable/>);await waitFor(()=>assert.equal(view.getAllByRole('img').length,4));assert.ok(view.getAllByText('Unavailable').length);assert.ok(view.getByText('$0.0120'));fireEvent.change(view.getByLabelText('Canary weight (%)'),{target:{value:'35'}});fireEvent.click(view.getByRole('button',{name:'Update canary traffic'}));await waitFor(()=>assert.ok(calls.some(call=>call.method==='PUT')));assert.deepEqual(calls.find(call=>call.method==='PUT'),{url:'/api/v1/agents/a1/traffic',method:'PUT',body:{canary_weight:35}});

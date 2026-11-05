@@ -69,6 +69,25 @@ func TestWorkspaceControllerProvisionsBoundedSharedWorkspace(t *testing.T) {
 		if env["MLAIOPS_URL"].Value != "http://127.0.0.1:8890" || env["KIONGA_GATEWAY_INTERNAL_URL"].Value != "http://gateway:8087" || env["KIONGA_WORKSPACE_API_TOKEN"].ValueFrom.SecretKeyRef.Key != "api-token" {
 			t.Fatalf("%s is missing workspace API identity: %#v", container.Name, env)
 		}
+		// #105: scaffold jobs use a dedicated key, never the login token.
+		login := env["JUPYTER_TOKEN"]
+		if container.Name == "ide" {
+			login = env["PASSWORD"]
+		}
+		job := env["KIONGA_WORKSPACE_JOB_TOKEN"]
+		if job.ValueFrom == nil || job.ValueFrom.SecretKeyRef.Key != "job-token" || login.ValueFrom == nil || login.ValueFrom.SecretKeyRef.Key == job.ValueFrom.SecretKeyRef.Key {
+			t.Fatalf("%s needs KIONGA_WORKSPACE_JOB_TOKEN from job-token, distinct from its login token: job %#v login %#v", container.Name, job, login)
+		}
+	}
+	firstJobToken := string(secret.Data["job-token"])
+	if len(secret.Data["job-token"]) < 32 || firstJobToken == firstWorkbenchToken {
+		t.Fatalf("job-token must be a separate credential of at least 32 bytes: %d", len(secret.Data["job-token"]))
+	}
+	if _, err := reconciler.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Get(context.Background(), types.NamespacedName{Name: workspace.Name + "-auth", Namespace: workspace.Namespace}, &secret); err != nil || string(secret.Data["job-token"]) != firstJobToken {
+		t.Fatalf("job-token must survive reconcile (err %v)", err)
 	}
 
 	if err := client.Get(context.Background(), request.NamespacedName, workspace); err != nil {
@@ -101,7 +120,7 @@ func TestWorkspaceControllerProvisionsBoundedSharedWorkspace(t *testing.T) {
 	if err := client.Get(context.Background(), types.NamespacedName{Name: workspace.Name + "-auth", Namespace: workspace.Namespace}, &secret); err != nil {
 		t.Fatal(err)
 	}
-	if string(secret.Data["api-token"]) == firstAPIToken || string(secret.Data["token"]) == firstWorkbenchToken || secret.Annotations["mlaiops.io/subject"] != "user-2" {
+	if string(secret.Data["api-token"]) == firstAPIToken || string(secret.Data["token"]) == firstWorkbenchToken || string(secret.Data["job-token"]) == firstJobToken || secret.Annotations["mlaiops.io/subject"] != "user-2" {
 		t.Fatal("all workspace credentials must rotate when its owner changes")
 	}
 }
@@ -143,8 +162,8 @@ func TestLangflowWorkspaceHasIndependentVolumeAndScopedSidecar(t *testing.T) {
 		t.Fatal("restart annotation did not propagate")
 	}
 	for _, item := range containers[0].Env {
-		if item.Name == "KIONGA_WORKSPACE_API_TOKEN" {
-			t.Fatal("Langflow can read the workspace API credential")
+		if item.Name == "KIONGA_WORKSPACE_API_TOKEN" || item.Name == "KIONGA_WORKSPACE_JOB_TOKEN" {
+			t.Fatalf("Langflow can read %s", item.Name)
 		}
 	}
 	if containers[1].Env[2].ValueFrom.SecretKeyRef.Key != "api-token" {

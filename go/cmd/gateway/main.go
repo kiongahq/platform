@@ -79,7 +79,11 @@ func main() {
 		if dataPath == "" {
 			dataPath = "data/platform.json"
 		}
-		repository = store.New(dataPath)
+		fileStore, err := store.Open(dataPath)
+		if err != nil {
+			log.Fatalf("file repository: %v", err)
+		}
+		repository = fileStore
 		log.Printf("using local file repository at %s", dataPath)
 	}
 	handler := httpapi.New(repository, static)
@@ -114,6 +118,8 @@ func main() {
 	httpapi.StartScheduler(ctx, repository)
 	httpapi.StartLogRetention(ctx, repository)
 	httpapi.StartEditorialPublisher(ctx, repository)
+	httpapi.StartTeamRuns(ctx, repository)
+	httpapi.LogRefusedSecretRefs(repository)
 	// Sign-in: single sign-on through an OIDC broker (Dex: LDAP, SAML,
 	// GitHub, Google, Microsoft, ...), local accounts, or both. Local
 	// accounts next to SSO are break-glass access and need an explicit

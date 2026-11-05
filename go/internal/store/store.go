@@ -71,12 +71,18 @@ func (s *Store) UpsertUserAccess(subject string, req api.UpsertUserAccessRequest
 			access.CreatedAt = s.data.UserAccess[i].CreatedAt
 			s.data.UserAccess[i] = access
 			s.record("access.updated", "user_access", subject, actor, nil)
+			if access.Disabled {
+				s.revokeSubjectTokens(subject, actor, "owner_suspended")
+			}
 			return access, s.persist()
 		}
 	}
 	access.CreatedAt = now
 	s.data.UserAccess = append([]api.UserAccess{access}, s.data.UserAccess...)
 	s.record("access.created", "user_access", subject, actor, nil)
+	if access.Disabled {
+		s.revokeSubjectTokens(subject, actor, "owner_suspended")
+	}
 	return access, s.persist()
 }
 
@@ -87,6 +93,7 @@ func (s *Store) DeleteUserAccess(subject, actor string) error {
 		if s.data.UserAccess[i].Subject == subject {
 			s.data.UserAccess = append(s.data.UserAccess[:i], s.data.UserAccess[i+1:]...)
 			s.record("access.deleted", "user_access", subject, actor, nil)
+			s.revokeSubjectTokens(subject, actor, "owner_removed")
 			return s.persist()
 		}
 	}
@@ -101,21 +108,44 @@ type Store struct {
 	logBuffer memoryLogs
 }
 
+// New returns a store. With no path (or "") it is in-memory and seeded with
+// the demo project. With a path it behaves like Open and panics when the
+// data file exists but cannot be read, so a test or tool can never replace a
+// user's data with the seed. The gateway uses Open and fails startup instead.
 func New(path ...string) *Store {
-	s := &Store{}
+	file := ""
 	if len(path) > 0 {
-		s.path = path[0]
+		file = path[0]
 	}
+	s, err := Open(file)
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+// Open loads the file store at path. A missing file starts a new store with
+// the demo project. Any other read or parse failure is returned and the file
+// is left untouched: the store never seeds over data it could not load.
+func Open(path string) (*Store, error) {
+	s := &Store{path: path}
+	seed := true
 	if s.path != "" {
-		_ = s.load()
+		existed, err := s.load()
+		if err != nil {
+			return nil, fmt.Errorf("load file store %s: %w (the file was left unchanged; restore it or its .bak copy, or move it aside to start empty)", s.path, err)
+		}
+		seed = !existed
 	}
-	if len(s.data.Projects) == 0 {
+	if seed {
 		now := time.Now().UTC()
 		s.data.Projects = []api.Project{{ID: "prj-demo", Name: "Fraud detection starter", Description: "A guided tabular ML project", Template: "tabular-classification", Namespace: "team-demo", Status: "ready", CreatedAt: now}}
 		s.data.Runs = []api.PipelineRun{{ID: "run-demo", ProjectID: "prj-demo", Name: "training-pipeline", Status: "succeeded", Progress: 100, CreatedAt: now, UpdatedAt: now, Steps: defaultSteps("succeeded")}}
-		_ = s.persist()
+		if err := s.persist(); err != nil {
+			return nil, fmt.Errorf("initialise file store %s: %w", s.path, err)
+		}
 	}
-	return s
+	return s, nil
 }
 
 func (s *Store) Projects() []api.Project {
@@ -339,7 +369,13 @@ func recordStepReport(run *api.PipelineRun, req api.UpdateRunStepRequest, now ti
 	if req.Status == "failed" {
 		level = "error"
 	}
-	run.Logs = appendBoundedLog(run.Logs, api.RunLog{Timestamp: now, Step: req.Step, Level: level, Message: stepMessage(req)})
+	message := stepMessage(req)
+	if run.Status == "cancelled" {
+		// Workloads wind down after a cancel; their reports are kept for the
+		// record but never move the run out of cancelled.
+		level, message = "warning", "post-cancel report: "+message
+	}
+	run.Logs = appendBoundedLog(run.Logs, api.RunLog{Timestamp: now, Step: req.Step, Level: level, Message: message})
 	applyStepTransition(run, req, now)
 	run.UpdatedAt = now
 }
@@ -771,28 +807,43 @@ func (s *Store) CreateConnection(req api.CreateConnectionRequest, actor string) 
 	return c, s.persist()
 }
 
-func (s *Store) load() error {
+// load reads the data file. existed is false only when the file does not
+// exist; every other failure (permissions, truncation, corrupt JSON) is an
+// error so the caller never mistakes an unreadable store for an empty one.
+func (s *Store) load() (existed bool, err error) {
 	raw, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		return false, nil
 	}
 	if err != nil {
-		return err
+		return true, err
 	}
-	if err := json.Unmarshal(raw, &s.data); err != nil {
-		return err
+	var data state
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return true, err
 	}
+	s.data = data
 	for i := range s.data.Agents {
 		NormalizeAgentRecord(&s.data.Agents[i])
 	}
-	return nil
+	return true, nil
 }
 
+// syncFile flushes a file to stable storage; tests replace it to assert that
+// persist syncs before it renames.
+var syncFile = func(file *os.File) error { return file.Sync() }
+
+// persist replaces the data file atomically and durably: the new contents are
+// written and fsynced to a temp file, the previous version is kept as
+// <path>.bak, the temp file is renamed over the data file, and the directory
+// is fsynced so the rename survives power loss. A crash at any point leaves
+// either the old or the new complete file, never a truncated one.
 func (s *Store) persist() error {
 	if s.path == "" {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o750); err != nil {
+	dir := filepath.Dir(s.path)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 	raw, err := json.MarshalIndent(s.data, "", "  ")
@@ -800,10 +851,66 @@ func (s *Store) persist() error {
 		return err
 	}
 	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+	if err := writeSynced(tmp, raw); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	if err := keepBackup(s.path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, s.path); err != nil {
+		return err
+	}
+	return syncDir(dir)
+}
+
+func writeSynced(path string, raw []byte) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) // #nosec G304 -- the operator-configured data path
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(raw); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := syncFile(file); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
+}
+
+// keepBackup hard-links the current data file to <path>.bak so the previous
+// version survives the rename. Where hard links are unsupported it copies.
+func keepBackup(path string) error {
+	backup := path + ".bak"
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err := os.Remove(backup); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Link(path, backup); err == nil {
+		return nil
+	}
+	raw, err := os.ReadFile(path) // #nosec G304 -- the operator-configured data path
+	if err != nil {
+		return err
+	}
+	return writeSynced(backup, raw)
+}
+
+func syncDir(dir string) error {
+	handle, err := os.Open(dir) // #nosec G304 -- the directory of the operator-configured data path
+	if err != nil {
+		return err
+	}
+	defer handle.Close()
+	if err := syncFile(handle); err != nil && !errors.Is(err, os.ErrInvalid) {
+		return err
+	}
+	return nil
 }
 
 func (s *Store) record(action, resource, resourceID, actor string, metadata map[string]any) {

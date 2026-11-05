@@ -52,7 +52,7 @@ func (s *Server) authorizedStorageBrowser(w http.ResponseWriter, r *http.Request
 		writeError(w, 404, "not_found", "Storage connection not found")
 		return nil, "", false
 	}
-	secret := resolveSecret(item.SecretRef)
+	secret := storageSecrets.Value(item.SecretRef)
 	accessKey, secretKey, valid := strings.Cut(secret, ":")
 	if !valid || accessKey == "" || secretKey == "" {
 		writeError(w, 503, "connection_unavailable", "Storage connection credentials are unavailable")

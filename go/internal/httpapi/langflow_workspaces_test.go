@@ -30,14 +30,14 @@ func TestLocalLangflowWorkspaceIsOnlyForBootstrapAdmin(t *testing.T) {
 	t.Setenv("KIONGA_LANGFLOW_UPSTREAM", "http://langflow:7860")
 	t.Setenv("OIDC_ISSUER", "")
 	server, _ := accessServer(t)
-	admin := httptest.NewRequest("GET", "/api/v1/langflow-workspaces", nil)
+	admin := newTestRequest("GET", "/api/v1/langflow-workspaces", nil)
 	admin = admin.WithContext(auth.WithPrincipal(admin.Context(), auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}}))
 	result := httptest.NewRecorder()
 	server.ServeHTTP(result, admin)
 	if result.Code != 200 || !strings.Contains(result.Body.String(), `"id":"local"`) {
 		t.Fatalf("admin workspace: %d %s", result.Code, result.Body.String())
 	}
-	other := httptest.NewRequest("GET", "/api/v1/langflow-workspaces", nil)
+	other := newTestRequest("GET", "/api/v1/langflow-workspaces", nil)
 	other = other.WithContext(auth.WithPrincipal(other.Context(), auth.Principal{Subject: "alice", Roles: []string{auth.RoleAdmin}}))
 	result = httptest.NewRecorder()
 	server.ServeHTTP(result, other)

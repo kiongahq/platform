@@ -210,7 +210,7 @@ func (s *Server) createDesignRun(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
 	var req runRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	graph, revision, found := designRevisionGraph(design, req.Revision)

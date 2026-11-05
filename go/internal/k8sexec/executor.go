@@ -16,6 +16,7 @@ package k8sexec
 import (
 	"context"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -198,6 +199,9 @@ func (e *Executor) runNode(ctx context.Context, run api.PipelineRun, job api.Pip
 	attempts := job.Retries + 1
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
+		if ctx.Err() != nil {
+			return nil, e.cancelled(ctx, job, attempt, "", reporter)
+		}
 		spec, err := e.JobFor(run, job, attempt, env)
 		if err != nil {
 			reporter.Step(api.UpdateRunStepRequest{Step: job.Name, Status: "failed", Message: err.Error(), Attempt: attempt})
@@ -208,6 +212,12 @@ func (e *Executor) runNode(ctx context.Context, run api.PipelineRun, job api.Pip
 			created, err = e.Client.BatchV1().Jobs(spec.Namespace).Get(ctx, spec.Name, metav1.GetOptions{})
 		}
 		if err != nil {
+			if ctx.Err() != nil {
+				// The run was cancelled while the Job was being created; make
+				// sure a Job that did get created does not keep running.
+				e.deleteJob(spec.Namespace, spec.Name)
+				return nil, e.cancelled(ctx, job, attempt, spec.Namespace+"/"+spec.Name, reporter)
+			}
 			reporter.Step(api.UpdateRunStepRequest{Step: job.Name, Status: "failed", Message: "Kubernetes rejected the Job: " + err.Error(), Attempt: attempt, WorkloadKind: "k8s-job", WorkloadID: spec.Name})
 			return nil, err
 		}
@@ -217,15 +227,43 @@ func (e *Executor) runNode(ctx context.Context, run api.PipelineRun, job api.Pip
 			reporter.Step(api.UpdateRunStepRequest{Step: job.Name, Status: "succeeded", Message: outcome, Attempt: attempt, WorkloadKind: "k8s-job", WorkloadID: created.Namespace + "/" + created.Name, ExitCode: intPtr(0)})
 			return nil, nil
 		}
+		if ctx.Err() != nil {
+			return nil, e.cancelled(ctx, job, attempt, created.Namespace+"/"+created.Name, reporter)
+		}
 		lastErr = err
 		if attempt < attempts && job.RetryBackoffSeconds > 0 {
 			if e.sleep(ctx, time.Duration(job.RetryBackoffSeconds)*time.Second) != nil {
-				break
+				return nil, e.cancelled(ctx, job, attempt, "", reporter)
 			}
 		}
 	}
 	reporter.Step(api.UpdateRunStepRequest{Step: job.Name, Status: "failed", Message: lastErr.Error(), Attempt: attempts, WorkloadKind: "k8s-job", WorkloadID: e.Namespace(run.ProjectID) + "/" + JobName(run.ID, job.Name, attempts), ExitCode: exitCode(lastErr)})
 	return nil, lastErr
+}
+
+// cancelled reports a node stopped by run cancellation as skipped (the run
+// itself is already cancelled) and returns the context error.
+func (e *Executor) cancelled(ctx context.Context, job api.PipelineJob, attempt int, workload string, reporter Reporter) error {
+	request := api.UpdateRunStepRequest{Step: job.Name, Status: "skipped", Message: execution.CancelledMessage, Attempt: attempt}
+	if workload != "" {
+		request.Message, request.WorkloadKind, request.WorkloadID = "stopped: the run was cancelled and Job "+workload+" was deleted", "k8s-job", workload
+	}
+	reporter.Step(request)
+	return ctx.Err()
+}
+
+// deleteJob removes a Job and, with background propagation, its pods. A
+// delete without a propagation policy orphans the pods, which keeps GPUs
+// and CPUs busy after cancellation. It uses its own context because the
+// run's context is already cancelled.
+func (e *Executor) deleteJob(namespace, name string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	background := metav1.DeletePropagationBackground
+	err := e.Client.BatchV1().Jobs(namespace).Delete(ctx, name, metav1.DeleteOptions{PropagationPolicy: &background})
+	if err != nil && !apierrors.IsNotFound(err) {
+		log.Printf("delete Job %s/%s after cancellation: %v", namespace, name, err)
+	}
 }
 
 func intPtr(value int) *int { return &value }
@@ -255,6 +293,10 @@ func (e *Executor) wait(ctx context.Context, run api.PipelineRun, job api.Pipeli
 	for {
 		current, err := e.Client.BatchV1().Jobs(created.Namespace).Get(ctx, created.Name, metav1.GetOptions{})
 		if err != nil {
+			if ctx.Err() != nil {
+				e.deleteJob(created.Namespace, created.Name)
+				return "", ctx.Err()
+			}
 			return "", fmt.Errorf("lost Job %s/%s: %w", created.Namespace, created.Name, err)
 		}
 		pods, _ := e.Client.CoreV1().Pods(created.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "job-name=" + created.Name})
@@ -272,7 +314,7 @@ func (e *Executor) wait(ctx context.Context, run api.PipelineRun, job api.Pipeli
 			}
 		}
 		if err := e.sleep(ctx, poll); err != nil {
-			_ = e.Client.BatchV1().Jobs(created.Namespace).Delete(context.Background(), created.Name, metav1.DeleteOptions{})
+			e.deleteJob(created.Namespace, created.Name)
 			return "", err
 		}
 	}

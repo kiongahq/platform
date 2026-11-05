@@ -42,7 +42,7 @@ var (
 func init() {
 	httpRegistry.MustRegister(editorialSaves, editorialTransitions, editorialUploads, editorialScheduled)
 	registerRoutes(func(s *Server, mux *http.ServeMux) {
-		e := &editorialAPI{server: s, svc: &editorial.Service{Docs: s.store, Media: editorial.MediaStoreFromEnv()}}
+		e := &editorialAPI{server: s, svc: &editorial.Service{Docs: s.store, Media: editorial.MediaStoreFromEnv()}, origin: newCrossOriginProtection()}
 		if migrated, err := e.svc.MigrateLegacy(s.store.BlogPosts()); err != nil {
 			log.Printf("editorial migration: %v", err)
 		} else if migrated > 0 {
@@ -86,6 +86,9 @@ func init() {
 type editorialAPI struct {
 	server *Server
 	svc    *editorial.Service
+	// origin rejects editorial writes that are not same-origin or from
+	// MLAIOPS_ALLOWED_ORIGIN, including same-site workspace hosts.
+	origin *http.CrossOriginProtection
 }
 
 // StartEditorialPublisher runs the scheduled publisher and media sweeper
@@ -126,7 +129,7 @@ func sessionToken(r *http.Request) string {
 // it must be the same subject that opened the session.
 func (e *editorialAPI) member(next memberHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+		if e.origin.Check(r) != nil {
 			writeError(w, http.StatusForbidden, "cross_site", "Editorial changes must come from the editorial workspace.")
 			return
 		}
@@ -176,6 +179,10 @@ func (e *editorialAPI) bootstrap(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		DisplayName string `json:"display_name"`
+	}
+	if err := requireJSON(r); err != nil {
+		writeDecodeError(w, err)
+		return
 	}
 	_ = decode(r, &body)
 	member, err := e.svc.Bootstrap(api.EditorialMember{Subject: value.Subject, Email: value.Email, DisplayName: body.DisplayName}, actor(r))
@@ -276,7 +283,7 @@ func (e *editorialAPI) listPosts(w http.ResponseWriter, r *http.Request, member 
 func (e *editorialAPI) createPost(w http.ResponseWriter, r *http.Request, member api.EditorialMember) {
 	var request api.SavePostRequest
 	if err := decode(r, &request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	post, err := e.svc.CreatePost(member, request)
@@ -310,7 +317,7 @@ func (e *editorialAPI) savePost(w http.ResponseWriter, r *http.Request, member a
 	}
 	var request api.SavePostRequest
 	if err := decode(r, &request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	post, wrote, err := e.svc.SavePost(member, r.PathValue("id"), request)
@@ -338,7 +345,7 @@ func (e *editorialAPI) transition(w http.ResponseWriter, r *http.Request, member
 	}
 	var request api.TransitionRequest
 	if err := decode(r, &request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	post, err := e.svc.Transition(member, r.PathValue("id"), request)
@@ -406,7 +413,7 @@ func (e *editorialAPI) restore(w http.ResponseWriter, r *http.Request, member ap
 		BaseRevision int `json:"base_revision"`
 	}
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	restored, err := e.svc.Restore(member, post.ID, number, body.BaseRevision)
@@ -452,7 +459,7 @@ func (e *editorialAPI) importMarkdown(w http.ResponseWriter, r *http.Request, _ 
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	blocks, err := editorial.NormalizeBlocks(editorial.FromMarkdown(body.Markdown))
@@ -474,7 +481,7 @@ func (e *editorialAPI) preview(w http.ResponseWriter, r *http.Request, _ api.Edi
 	var body api.SavePostRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 8<<20)
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	blocks, err := editorial.NormalizeBlocks(body.Blocks)
@@ -553,7 +560,7 @@ func (e *editorialAPI) updateMedia(w http.ResponseWriter, r *http.Request, membe
 		Attribution *string `json:"attribution"`
 	}
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	media, err := e.svc.UpdateMedia(member, r.PathValue("id"), body.Alt, body.Caption, body.Attribution)
@@ -619,7 +626,7 @@ func (e *editorialAPI) listMembers(w http.ResponseWriter, _ *http.Request, membe
 func (e *editorialAPI) putMember(w http.ResponseWriter, r *http.Request, member api.EditorialMember) {
 	var body api.EditorialMember
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	body.Subject = r.PathValue("subject")
@@ -664,7 +671,7 @@ func (e *editorialAPI) putSettings(w http.ResponseWriter, r *http.Request, membe
 	}
 	var body blogSettings
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	body.Title = strings.TrimSpace(editorial.PlainText(body.Title))

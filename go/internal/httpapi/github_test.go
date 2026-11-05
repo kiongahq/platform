@@ -132,7 +132,7 @@ func TestGitHubOAuthStateIsBoundToThePlatformSubject(t *testing.T) {
 		t.Fatal("missing protected state cookie")
 	}
 	callback := func(subject, state string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest("GET", "/api/v1/settings/github/callback?code=valid-code&state="+state, nil)
+		req := newTestRequest("GET", "/api/v1/settings/github/callback?code=valid-code&state="+state, nil)
 		req.AddCookie(cookies[0])
 		req = req.WithContext(auth.WithPrincipal(req.Context(), auth.Principal{Subject: subject, Roles: []string{"admin"}}))
 		out := httptest.NewRecorder()

@@ -263,7 +263,7 @@ func (s *Server) agentDesign(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createAgentDesign(w http.ResponseWriter, r *http.Request) {
 	var req saveDesignRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if !projectAllowed(s.store, principal(r), req.ProjectID) || req.ProjectID == "" {
@@ -307,7 +307,7 @@ func (s *Server) saveAgentDesign(w http.ResponseWriter, r *http.Request) {
 	}
 	var req saveDesignRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if req.ProjectID != existing.ProjectID {

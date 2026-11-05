@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -96,5 +97,70 @@ func TestIDEBackendAuthentication(t *testing.T) {
 				t.Fatal("backend session was not reused")
 			}
 		})
+	}
+}
+
+func TestIDESessionIsNotReusedAfterPasswordRotation(t *testing.T) {
+	calls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.SetCookie(w, &http.Cookie{Name: "code-server-session", Value: r.FormValue("password")})
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer upstream.Close()
+	endpoint, _ := url.Parse(upstream.URL)
+	for _, password := range []string{"first", "first", "rotated"} {
+		cookie, err := ideSession(t.Context(), &workspaceDestination{URL: endpoint, token: password})
+		if err != nil || cookie != "code-server-session="+password {
+			t.Fatalf("password %q: cookie=%q err=%v", password, cookie, err)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("logins = %d, want 2: the repeat reuses its session, the rotation does not", calls)
+	}
+}
+
+// Regression for #105: scaffold jobs authenticate with the workspace's own
+// job-token, never the editor login token, and are unavailable until the
+// operator has generated job-token.
+func TestScaffoldJobTokenNeverReusesTheLoginToken(t *testing.T) {
+	t.Setenv("KIONGA_WORKSPACE_JOB_TOKEN", "")
+	workspace := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "mlaiops.io/v1alpha1", "kind": "KiongaWorkspace",
+		"metadata": map[string]any{"name": "alice-workspace", "namespace": "default"},
+		"spec":     map[string]any{"subject": "alice", "services": []any{"workbench"}},
+	}}
+	gvr := schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: "kiongaworkspaces"}
+	encode := func(value string) string { return base64.StdEncoding.EncodeToString([]byte(value)) }
+	for _, tc := range []struct {
+		name string
+		data map[string]any
+		want string
+	}{
+		{"dedicated job token", map[string]any{"token": encode("login"), "job-token": encode("job-secret")}, "job-secret"},
+		{"secret predating job-token", map[string]any{"token": encode("login")}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			secret := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "v1", "kind": "Secret",
+				"metadata": map[string]any{"name": "alice-workspace-auth", "namespace": "default"},
+				"data":     tc.data,
+			}}
+			client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "KiongaWorkspaceList"}, workspace.DeepCopy(), secret)
+			target, err := discoverWorkspace(t.Context(), client, "default", "alice", "workbench")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if target.token != "login" {
+				t.Fatalf("login token = %q", target.token)
+			}
+			if got := workspaceJobToken(target); got != tc.want {
+				t.Fatalf("job token = %q, want %q (the login token must never be used)", got, tc.want)
+			}
+		})
+	}
+	static := &workspaceDestination{token: "login"}
+	if got := workspaceJobToken(static); got != "" {
+		t.Fatalf("a configured workspace without KIONGA_WORKSPACE_JOB_TOKEN must not fall back to its login token, got %q", got)
 	}
 }

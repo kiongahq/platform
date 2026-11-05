@@ -384,7 +384,7 @@ func TestOtherTenantsCannotSeeRunsOrVersions(t *testing.T) {
 	s.waitRun(design.ID, run.ID)
 	version := decodeInto[agentVersion](t, s.do("POST", "/api/v1/agent-designs/"+design.ID+"/publish", `{"revision":1}`))
 	outsider := func(method, path string) int {
-		request := httptest.NewRequest(method, path, strings.NewReader(`{"input":"x","revision":1}`))
+		request := newTestRequest(method, path, strings.NewReader(`{"input":"x","revision":1}`))
 		request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "user-2", Roles: []string{auth.RoleUser}, Provisioned: true, Services: []string{"agents"}, ProjectIDs: []string{"prj-other"}}))
 		recorder := httptest.NewRecorder()
 		s.api.ServeHTTP(recorder, request)
@@ -625,12 +625,12 @@ func TestEvaluationRetentionKeepsCitedAndNewest(t *testing.T) {
 // (re-read on every call) still wins so revocation applies mid-run.
 func TestRunCredentialKeepsProfilelessAdministratorRole(t *testing.T) {
 	s := newStudio(t)
-	request := httptest.NewRequest("POST", "/api/v1/agent-designs", strings.NewReader(runnableDesign))
+	request := newTestRequest("POST", "/api/v1/agent-designs", strings.NewReader(runnableDesign))
 	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "sso-admin", Roles: []string{auth.RoleAdmin}}))
 	created := httptest.NewRecorder()
 	s.api.ServeHTTP(created, request)
 	design := decodeInto[agentDesign](t, created)
-	start := httptest.NewRequest("POST", "/api/v1/agent-designs/"+design.ID+"/runs", strings.NewReader(`{"input":"hello"}`))
+	start := newTestRequest("POST", "/api/v1/agent-designs/"+design.ID+"/runs", strings.NewReader(`{"input":"hello"}`))
 	start = start.WithContext(auth.WithPrincipal(start.Context(), auth.Principal{Subject: "sso-admin", Roles: []string{auth.RoleAdmin}}))
 	started := httptest.NewRecorder()
 	s.api.ServeHTTP(started, start)
@@ -784,7 +784,7 @@ func TestApprovalLifecycleAndAuthority(t *testing.T) {
 	if late := s.do("POST", "/api/v1/agent-approvals/"+expired.ID+"/decision", `{"decision":"approve"}`); late.Code != 409 {
 		t.Fatalf("an expired request was approved: %d", late.Code)
 	}
-	outsider := httptest.NewRequest("GET", "/api/v1/agent-approvals/"+created.ID, nil)
+	outsider := newTestRequest("GET", "/api/v1/agent-approvals/"+created.ID, nil)
 	outsider = outsider.WithContext(auth.WithPrincipal(outsider.Context(), auth.Principal{Subject: "user-2", Roles: []string{auth.RoleUser}, Provisioned: true, Services: []string{"agents"}, ProjectIDs: []string{"prj-other"}}))
 	recorder := httptest.NewRecorder()
 	s.api.ServeHTTP(recorder, outsider)
@@ -982,7 +982,7 @@ func TestAgentOperationsDashboardFromRecordedTraces(t *testing.T) {
 	if bad := s.do("GET", "/api/v1/agents/"+current.ID+"/operations?hours=999", ""); bad.Code != 422 {
 		t.Fatalf("window: %d", bad.Code)
 	}
-	outsider := httptest.NewRequest("GET", "/api/v1/agents/"+current.ID+"/operations", nil)
+	outsider := newTestRequest("GET", "/api/v1/agents/"+current.ID+"/operations", nil)
 	outsider = outsider.WithContext(auth.WithPrincipal(outsider.Context(), auth.Principal{Subject: "user-2", Roles: []string{auth.RoleUser}, Provisioned: true, Services: []string{"agents"}, ProjectIDs: []string{"prj-other"}}))
 	recorder := httptest.NewRecorder()
 	s.api.ServeHTTP(recorder, outsider)

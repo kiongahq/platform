@@ -30,19 +30,27 @@ import (
 // workspace is available only to the local development administrator.
 type workspaceDestination struct {
 	*url.URL
+	// token is the proxy login credential (JUPYTER_TOKEN/PASSWORD) only.
 	token string
-	name  string
+	// jobToken authorizes scaffold jobs on a discovered workspace's sidecar
+	// (the job-token key); empty until the operator has generated it.
+	jobToken string
+	name     string
 }
 
 type edgeContextKey struct{}
 
+// ideSessionKey caches one backend session per destination and credential, so
+// a rotated password never reuses a session opened with the old one.
+type ideSessionKey struct{ target, password string }
+
 var ideSessions = struct {
 	sync.Mutex
-	values map[string]struct {
+	values map[ideSessionKey]struct {
 		cookie  string
 		expires time.Time
 	}
-}{values: make(map[string]struct {
+}{values: make(map[ideSessionKey]struct {
 	cookie  string
 	expires time.Time
 })}
@@ -51,7 +59,7 @@ func ideSession(ctx context.Context, target *workspaceDestination) (string, erro
 	if target.token == "" {
 		return "", nil
 	}
-	key := fmt.Sprintf("%x", sha256.Sum256([]byte(target.String()+target.token)))
+	key := ideSessionKey{target: target.String(), password: target.token}
 	ideSessions.Lock()
 	cached := ideSessions.values[key]
 	ideSessions.Unlock()
@@ -203,8 +211,14 @@ func discoverWorkspaceNamed(ctx context.Context, client dynamic.Interface, names
 	if port == "" {
 		return nil, fmt.Errorf("Unknown workspace")
 	}
+	jobToken := ""
+	if encodedJob, _, _ := unstructured.NestedString(secret.Object, "data", "job-token"); encodedJob != "" {
+		if decoded, decodeErr := base64.StdEncoding.DecodeString(encodedJob); decodeErr == nil {
+			jobToken = string(decoded)
+		}
+	}
 	target, _ := url.Parse("http://" + match.GetName() + "." + namespace + ".svc:" + port)
-	return &workspaceDestination{URL: target, token: string(token), name: match.GetName()}, nil
+	return &workspaceDestination{URL: target, token: string(token), jobToken: jobToken, name: match.GetName()}, nil
 }
 
 func (s *Server) projectOptions(w http.ResponseWriter, r *http.Request) {
@@ -485,7 +499,7 @@ func (s *Server) launchWorkspace(w http.ResponseWriter, r *http.Request) {
 		ProjectID string `json:"project_id"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	destination := "/workspaces/" + kind + "/"

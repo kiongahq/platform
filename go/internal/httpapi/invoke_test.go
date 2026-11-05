@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -17,14 +19,14 @@ import (
 // the agent id.
 func deployTestAgent(t *testing.T, server http.Handler) string {
 	t.Helper()
-	create := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"Support workspace","template":"rag-agent"}`))
+	create := newTestRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"Support workspace","template":"rag-agent"}`))
 	created := httptest.NewRecorder()
 	server.ServeHTTP(created, create)
 	if created.Code != http.StatusCreated {
 		t.Fatalf("project create failed: %d %s", created.Code, created.Body.String())
 	}
 	projectID := strings.Split(strings.Split(created.Body.String(), `"id":"`)[1], `"`)[0]
-	deploy := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"project_id":"`+projectID+`","name":"support","version":"1.0","image":"registry/agents/support:1.0","graph_module":"agents.customer_support.graph:build"}`))
+	deploy := newTestRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"project_id":"`+projectID+`","name":"support","version":"1.0","image":"registry/agents/support:1.0","graph_module":"agents.customer_support.graph:build"}`))
 	deployed := httptest.NewRecorder()
 	server.ServeHTTP(deployed, deploy)
 	if deployed.Code != http.StatusAccepted {
@@ -55,7 +57,7 @@ func TestInvokeAgentProxiesToRuntime(t *testing.T) {
 
 	server := testServer()
 	agentID := deployTestAgent(t, server)
-	invoke := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+agentID+"/invoke", strings.NewReader(`{"message":"hi","user_id":"u123"}`))
+	invoke := newTestRequest(http.MethodPost, "/api/v1/agents/"+agentID+"/invoke", strings.NewReader(`{"message":"hi","user_id":"u123"}`))
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, invoke)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"reply":"hello"`) {
@@ -92,7 +94,7 @@ func TestAgentListReportsLiveComposeRuntime(t *testing.T) {
 	server := testServer()
 	agentID := deployTestAgent(t, server)
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/agents", nil))
+	server.ServeHTTP(response, newTestRequest(http.MethodGet, "/api/v1/agents", nil))
 	if response.Code != http.StatusOK {
 		t.Fatalf("agent list failed: %d %s", response.Code, response.Body.String())
 	}
@@ -145,7 +147,7 @@ func TestInvokeAgentGatesUnavailableRuntime(t *testing.T) {
 	t.Setenv("AGENT_RUNTIME_URL", runtime.URL)
 	server := testServer()
 	agentID := deployTestAgent(t, server)
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+agentID+"/invoke", strings.NewReader(`{"message":"hi"}`))
+	request := newTestRequest(http.MethodPost, "/api/v1/agents/"+agentID+"/invoke", strings.NewReader(`{"message":"hi"}`))
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "agent_not_ready") || invoked {
@@ -154,7 +156,7 @@ func TestInvokeAgentGatesUnavailableRuntime(t *testing.T) {
 }
 
 func TestInvokeAgentUnknownAgent(t *testing.T) {
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/agents/agt-missing/invoke", strings.NewReader(`{"message":"hi"}`))
+	request := newTestRequest(http.MethodPost, "/api/v1/agents/agt-missing/invoke", strings.NewReader(`{"message":"hi"}`))
 	response := httptest.NewRecorder()
 	testServer().ServeHTTP(response, request)
 	if response.Code != http.StatusNotFound {
@@ -165,7 +167,7 @@ func TestInvokeAgentUnknownAgent(t *testing.T) {
 func TestInvokeAgentRequiresMessage(t *testing.T) {
 	server := testServer()
 	agentID := deployTestAgent(t, server)
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+agentID+"/invoke", strings.NewReader(`{"message":"  "}`))
+	request := newTestRequest(http.MethodPost, "/api/v1/agents/"+agentID+"/invoke", strings.NewReader(`{"message":"  "}`))
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
 	if response.Code != http.StatusUnprocessableEntity {
@@ -177,10 +179,47 @@ func TestInvokeAgentRuntimeDown(t *testing.T) {
 	t.Setenv("AGENT_RUNTIME_URL", "http://127.0.0.1:1")
 	server := testServer()
 	agentID := deployTestAgent(t, server)
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+agentID+"/invoke", strings.NewReader(`{"message":"hi"}`))
+	request := newTestRequest(http.MethodPost, "/api/v1/agents/"+agentID+"/invoke", strings.NewReader(`{"message":"hi"}`))
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d %s", response.Code, response.Body.String())
+	}
+}
+
+// agent-runtime requires the internal token on /invoke in production and
+// takes the end user only from X-MLAIOps-User-ID.
+func TestInvokeAgentAuthenticatesToRuntimeAndForwardsCaller(t *testing.T) {
+	token := base64.RawURLEncoding.EncodeToString([]byte(rand.Text()))
+	t.Setenv("KIONGA_AGENT_RUNTIME_TOKEN", token)
+	t.Setenv("MLAIOPS_INTERNAL_TOKEN", rand.Text())
+	headers := make(chan http.Header, 1)
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			if r.Header.Get("Authorization") != "" {
+				t.Errorf("the health probe must not carry the internal token")
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		headers <- r.Header.Clone()
+		_, _ = w.Write([]byte(`{"reply":"hello"}`))
+	}))
+	defer runtime.Close()
+	t.Setenv("AGENT_RUNTIME_URL", runtime.URL)
+	server := testServer()
+	agentID := deployTestAgent(t, server)
+	request := newTestRequest(http.MethodPost, "/api/v1/agents/"+agentID+"/invoke", strings.NewReader(`{"message":"hi","user_id":"spoofed"}`))
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("invoke: %d %s", response.Code, response.Body.String())
+	}
+	got := <-headers
+	if got.Get("Authorization") != "Bearer "+token {
+		t.Fatalf("runtime Authorization = %q", got.Get("Authorization"))
+	}
+	if got.Get("X-MLAIOps-User-ID") != "local-dev" {
+		t.Fatalf("runtime caller = %q, want the authenticated principal", got.Get("X-MLAIOps-User-ID"))
 	}
 }

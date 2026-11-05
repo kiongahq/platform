@@ -186,7 +186,7 @@ func TestFeatureVersionsLineageAndFreshness(t *testing.T) {
 	admin := domainServer(repository, localAdmin)
 	apply := func(body string) {
 		response := httptest.NewRecorder()
-		server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/features", strings.NewReader(body)))
+		server.ServeHTTP(response, newTestRequest(http.MethodPost, "/api/v1/features", strings.NewReader(body)))
 		if response.Code != http.StatusCreated {
 			t.Fatalf("apply: %d %s", response.Code, response.Body.String())
 		}
@@ -277,11 +277,11 @@ func TestStorageConnectionsValidateTestAndHideCredentials(t *testing.T) {
 	}
 	for name, body := range map[string]string{
 		"no secret":     `{"name":"lake-2","endpoint":"https://s3.example.com","bucket":"lake","path_style":true}`,
-		"inline creds":  `{"name":"lake-2","endpoint":"https://AKIA:secret@s3.example.com","bucket":"lake","secret_ref":"env:X"}`,
-		"bad bucket":    `{"name":"lake-2","endpoint":"https://s3.example.com","bucket":"../x","secret_ref":"env:X"}`,
-		"private key":   `{"name":"lake-2","endpoint":"https://s3.example.com","bucket":"lake","secret_ref":"env:X","ca_bundle":"-----BEGIN PRIVATE KEY-----"}`,
-		"duplicate":     `{"name":"team-lake","endpoint":"https://s3.example.com","bucket":"lake","secret_ref":"env:X"}`,
-		"unknown field": `{"name":"lake-2","endpoint":"https://s3.example.com","bucket":"lake","secret_ref":"env:X","secret_access_key":"x"}`,
+		"inline creds":  `{"name":"lake-2","endpoint":"https://AKIA:secret@s3.example.com","bucket":"lake","secret_ref":"env:KIONGA_STORAGE_SECRET_X"}`,
+		"bad bucket":    `{"name":"lake-2","endpoint":"https://s3.example.com","bucket":"../x","secret_ref":"env:KIONGA_STORAGE_SECRET_X"}`,
+		"private key":   `{"name":"lake-2","endpoint":"https://s3.example.com","bucket":"lake","secret_ref":"env:KIONGA_STORAGE_SECRET_X","ca_bundle":"-----BEGIN PRIVATE KEY-----"}`,
+		"duplicate":     `{"name":"team-lake","endpoint":"https://s3.example.com","bucket":"lake","secret_ref":"env:KIONGA_STORAGE_SECRET_X"}`,
+		"unknown field": `{"name":"lake-2","endpoint":"https://s3.example.com","bucket":"lake","secret_ref":"env:KIONGA_STORAGE_SECRET_X","secret_access_key":"x"}`,
 	} {
 		response := call(t, admin, http.MethodPost, "/api/v1/admin/storage-connections", body)
 		if response.Code != http.StatusUnprocessableEntity && response.Code != http.StatusBadRequest {

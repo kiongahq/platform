@@ -5,6 +5,7 @@ import {
   blocksToDoc,
   docToBlocks,
   inlineNodes,
+  stripTags,
   type Block,
 } from "../lib/editor-blocks";
 const doc = new JSDOM("").window.document;
@@ -117,4 +118,18 @@ test("unsafe inline nodes and link protocols are removed", () => {
   assert.equal(nodes.map((n) => n.text).join(""), "unsafesafe");
   assert.equal(nodes[0].marks?.length, 0);
   assert.equal(nodes[1].marks?.[0].attrs?.href, "https://example.com");
+});
+
+test("the no-DOM fallback never leaves a tag behind", () => {
+  for (const [html, want] of [
+    ["<b>bold</b> text", "bold text"],
+    ["<script>x</script>safe", "xsafe"],
+    ["<scr<script>ipt>alert(1)</script>", "iptalert(1)"],
+    ["<<script>script>", "script"],
+    ["<script", ""],
+    ["plain", "plain"],
+  ]) {
+    assert.equal(stripTags(html), want);
+    assert.ok(!/[<>]/.test(stripTags(html)));
+  }
 });

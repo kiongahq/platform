@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/kiongahq/platform/internal/auth"
@@ -42,14 +43,14 @@ func TestPgvectorKnowledgeRoundTrip(t *testing.T) {
 	query := target.Query()
 	query.Set("search_path", schema+",public")
 	target.RawQuery = query.Encode()
-	t.Setenv("KIONGA_TEST_PGVECTOR_DSN", target.String())
+	t.Setenv("KIONGA_KB_SECRET_TEST_DSN", target.String())
 	repository := store.New()
 	project, err := repository.CreateProject(api.CreateProjectRequest{Name: "pgvector project"}, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := domainServer(repository, auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}})
-	body := `{"project_id":"` + project.ID + `","name":"pgvector-docs","backend":"pgvector","dimensions":3,"dsn_ref":"env:KIONGA_TEST_PGVECTOR_DSN"}`
+	body := `{"project_id":"` + project.ID + `","name":"pgvector-docs","backend":"pgvector","dimensions":3,"dsn_ref":"env:KIONGA_KB_SECRET_TEST_DSN"}`
 	created := call(t, server, http.MethodPost, "/api/v1/admin/knowledge-bases", body)
 	if created.Code != 201 {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())
@@ -99,7 +100,7 @@ func TestQdrantKnowledgeRoundTrip(t *testing.T) {
 }
 
 func TestQdrantKnowledgeIsProjectScopedAndCredentialsStayServerSide(t *testing.T) {
-	t.Setenv("KIONGA_QDRANT_TEST_KEY", "qdrant-secret-value")
+	t.Setenv("KIONGA_KB_SECRET_QDRANT_TEST", "qdrant-secret-value")
 	var requests []string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("api-key") != "qdrant-secret-value" {
@@ -133,7 +134,7 @@ func TestQdrantKnowledgeIsProjectScopedAndCredentialsStayServerSide(t *testing.T
 		t.Fatal(err)
 	}
 	adminServer := domainServer(repository, auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}})
-	body := `{"project_id":"` + project.ID + `","name":"support-docs","backend":"qdrant","dimensions":3,"endpoint":"` + upstream.URL + `","secret_ref":"env:KIONGA_QDRANT_TEST_KEY"}`
+	body := `{"project_id":"` + project.ID + `","name":"support-docs","backend":"qdrant","dimensions":3,"endpoint":"` + upstream.URL + `","secret_ref":"env:KIONGA_KB_SECRET_QDRANT_TEST"}`
 	created := call(t, adminServer, http.MethodPost, "/api/v1/admin/knowledge-bases", body)
 	if created.Code != 201 {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())
@@ -183,5 +184,41 @@ func TestKnowledgeConfigurationRejectsInlineCredentials(t *testing.T) {
 	result := call(t, server, http.MethodPost, "/api/v1/admin/knowledge-bases", body)
 	if result.Code != 422 {
 		t.Fatalf("inline credential accepted: %d %s", result.Code, result.Body.String())
+	}
+}
+
+func TestKnowledgeBackendCannotReachMetadataServices(t *testing.T) {
+	for address, forbidden := range map[string]bool{
+		"169.254.169.254": true, "[fe80::1]": true, "[fd00:ec2::254]": true, "168.63.129.16": true,
+		"100.100.100.200": true, "0.0.0.0": true, "[::]": true, "224.0.0.1": true, "[::ffff:169.254.169.254]": true,
+		"10.0.0.5": false, "192.168.1.20": false, "127.0.0.1": false, "[fd12:3456::1]": false,
+	} {
+		err := refuseMetadataDial("tcp", address+":6333", nil)
+		if (err != nil) != forbidden {
+			t.Errorf("dial %s: error %v, forbidden %v", address, err, forbidden)
+		}
+	}
+	// The real client refuses before any packet leaves, even when a hostname
+	// would only resolve to such an address at request time.
+	response, err := knowledgeHTTP.Get("http://169.254.169.254/latest/meta-data/")
+	if err == nil {
+		_ = response.Body.Close()
+		t.Fatal("the knowledge client reached a metadata address")
+	}
+	if !strings.Contains(err.Error(), "is not allowed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	repository := store.New()
+	project, err := repository.CreateProject(api.CreateProjectRequest{Name: "Metadata"}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := New(repository, fstest.MapFS{})
+	created := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/knowledge-bases", strings.NewReader(`{"project_id":"`+project.ID+`","name":"meta-docs","backend":"qdrant","dimensions":3,"endpoint":"http://169.254.169.254","secret_ref":"none"}`))
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(created, request)
+	if created.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("metadata endpoint registration = %d %s", created.Code, created.Body.String())
 	}
 }
