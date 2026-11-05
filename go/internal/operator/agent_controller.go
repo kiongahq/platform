@@ -37,11 +37,6 @@ type AgentReconciler struct {
 	// ImagePullSecrets name registry credentials in the agent namespace for
 	// private agent and trace-proxy images (KIONGA_IMAGE_PULL_SECRETS).
 	ImagePullSecrets []corev1.LocalObjectReference
-	// RuntimeTokenSecret names the Secret in the agent namespace whose
-	// MLAIOPS_INTERNAL_TOKEN key the runtime uses to authenticate the gateway
-	// (KIONGA_AGENT_RUNTIME_TOKEN_SECRET, default the platform secret
-	// kionga-gateway). The value never appears in the pod spec.
-	RuntimeTokenSecret string
 	// ProviderKeySecret names an optional Secret in the agent namespace whose
 	// LLM_UPSTREAM_API_KEY key the trace-proxy sidecar sends to the model
 	// provider (KIONGA_LLM_PROVIDER_SECRET, default kionga-llm-provider).
@@ -75,23 +70,13 @@ func traceProxyKeys(keyID, project, agent string, key []byte) ([]byte, error) {
 	return json.Marshal([]map[string]string{{"key_id": keyID, "key_sha256": hex.EncodeToString(sum[:]), "project": project, "agent": agent}})
 }
 
-// RuntimeTokenKey is the key of the shared internal token in the runtime
-// token Secret.
+// RuntimeTokenKey retains the runtime's existing environment contract.
 const RuntimeTokenKey = "MLAIOPS_INTERNAL_TOKEN"
 
-func (r *AgentReconciler) runtimeTokenSecret() string {
-	if r.RuntimeTokenSecret != "" {
-		return r.RuntimeTokenSecret
-	}
-	return "kionga-gateway"
-}
-
-// runtimeAuthEnv makes the agent runtime require the gateway's internal
-// token on /invoke and /stream, read from a Secret reference.
-func (r *AgentReconciler) runtimeAuthEnv() []corev1.EnvVar {
+func runtimeAuthEnv(secretName string) []corev1.EnvVar {
 	return []corev1.EnvVar{
 		{Name: "MLAIOPS_RUNTIME_AUTH", Value: "required"},
-		{Name: RuntimeTokenKey, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: r.runtimeTokenSecret()}, Key: RuntimeTokenKey}}},
+		{Name: RuntimeTokenKey, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secretName}, Key: RuntimeTokenKey}}},
 	}
 }
 
@@ -132,6 +117,25 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 	if err != nil {
 		return r.fail(ctx, &agent, "InvalidResources", err)
 	}
+	// Backfill existing agents on reconcile. Preserve the credential until its
+	// key is removed or replaced, just like workspace job tokens.
+	runtimeSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: platformapi.AgentRuntimeSecretName(resourceID), Namespace: agent.Namespace}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, runtimeSecret, func() error {
+		if runtimeSecret.Data == nil {
+			runtimeSecret.Data = map[string][]byte{}
+		}
+		if len(runtimeSecret.Data[RuntimeTokenKey]) == 0 {
+			token := make([]byte, 32)
+			if _, err := rand.Read(token); err != nil {
+				return err
+			}
+			runtimeSecret.Data[RuntimeTokenKey] = []byte(base64.RawURLEncoding.EncodeToString(token))
+		}
+		return controllerutil.SetControllerReference(&agent, runtimeSecret, r.Scheme())
+	}); err != nil {
+		return ctrl.Result{}, err
+	}
+	runtimeTokenHash := fmt.Sprintf("%x", sha256.Sum256(runtimeSecret.Data[RuntimeTokenKey]))
 	traceProxyImage := r.TraceProxyImage
 	if traceProxyImage == "" {
 		traceProxyImage = plan.Workload.Containers[1].Image
@@ -224,6 +228,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 		if deployment.Spec.Template.ObjectMeta.Annotations == nil || agent.Spec.FlowJSON == "" {
 			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 		}
+		deployment.Spec.Template.ObjectMeta.Annotations["mlaiops.io/runtime-token-hash"] = runtimeTokenHash
 		deployment.Spec.Template.ObjectMeta.Annotations["mlaiops.io/trace-proxy-key-hash"] = traceKeyHash
 		if agent.Spec.FlowJSON == "" {
 			deployment.Spec.Template.Spec.Volumes = nil
@@ -233,7 +238,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 		}}})
 		deployment.Spec.Template.Spec.ImagePullSecrets = r.ImagePullSecrets
 		deployment.Spec.Template.Spec.Containers = []corev1.Container{
-			{Name: "agent", Image: agent.Spec.Image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}, Env: append(append(envVars(plan.Workload.Containers[0].Env), corev1.EnvVar{Name: "MLAIOPS_AGENT_ID", Value: resourceID}, corev1.EnvVar{Name: "MLAIOPS_RUNTIME_PORT", Value: "8080"}), append(r.runtimeAuthEnv(), r.traceProxyClientEnv(traceSecret.Name))...), Resources: resources, ReadinessProbe: httpProbe("/healthz", "http", 2), LivenessProbe: httpProbe("/healthz", "http", 10), SecurityContext: hardenedSecurityContext()},
+			{Name: "agent", Image: agent.Spec.Image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}, Env: append(append(envVars(plan.Workload.Containers[0].Env), corev1.EnvVar{Name: "MLAIOPS_AGENT_ID", Value: resourceID}, corev1.EnvVar{Name: "MLAIOPS_RUNTIME_PORT", Value: "8080"}), append(runtimeAuthEnv(runtimeSecret.Name), r.traceProxyClientEnv(traceSecret.Name))...), Resources: resources, ReadinessProbe: httpProbe("/healthz", "http", 2), LivenessProbe: httpProbe("/healthz", "http", 10), SecurityContext: hardenedSecurityContext()},
 			{Name: "trace-proxy", Image: traceProxyImage, Ports: []corev1.ContainerPort{{Name: "proxy", ContainerPort: 8081}}, Env: append(envVars(plan.Workload.Containers[1].Env), r.traceProxySidecarEnv()...), VolumeMounts: []corev1.VolumeMount{{Name: "trace-proxy-keys", MountPath: traceProxyKeyDir, ReadOnly: true}}, Resources: traceProxyResources(), ReadinessProbe: httpProbe("/healthz", "proxy", 2), LivenessProbe: httpProbe("/healthz", "proxy", 10), SecurityContext: hardenedSecurityContext()},
 		}
 		if agent.Spec.FlowJSON != "" {

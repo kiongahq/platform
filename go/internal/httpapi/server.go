@@ -1504,14 +1504,16 @@ func (s *Server) invokeAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	request.Header.Set("Content-Type", "application/json")
 	setAgentRuntimeHeaders(request, agent)
-	// The runtime authenticates the gateway with the shared internal token
-	// (required in production) and trusts the end user only from this
-	// header, never from the request body.
-	if token := os.Getenv("MLAIOPS_INTERNAL_TOKEN"); token != "" {
+	token, err := agentRuntimeToken(r.Context(), agent.ID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "runtime_auth_unavailable", "agent runtime credential is unavailable")
+		return
+	}
+	if token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 	request.Header.Set("X-MLAIOps-User-ID", principal(r).Subject)
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: 120 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "runtime_unreachable", err.Error())
