@@ -580,18 +580,18 @@ func TestTeamConcurrencyLimitHoldsWorkersBack(t *testing.T) {
 		body["limits"] = map[string]any{"max_workers_total": 2, "max_concurrent_workers": 1}
 	})
 	runID := h.spawnOne(team, false)
-	slotted := h.engine.acquireSlot(h.run(runID), "atw-held")
+	slotted := h.engine.acquireSlot(h.run(runID), "atw-held", "held-token")
 	if !slotted {
 		t.Fatal("first slot refused")
 	}
-	if h.engine.acquireSlot(h.run(runID), h.workerNamed(runID, "one").ID) {
+	if h.engine.acquireSlot(h.run(runID), h.workerNamed(runID, "one").ID, "one-token") {
 		t.Fatal("slot over the limit")
 	}
-	if h.engine.acquireSlot(h.run(runID), "atw-held") {
+	if h.engine.acquireSlot(h.run(runID), "atw-held", "held-token") {
 		t.Fatal("a held slot was shared")
 	}
 	h.clock.advance(2 * teamLeaseTTL)
-	if !h.engine.acquireSlot(h.run(runID), h.workerNamed(runID, "one").ID) {
+	if !h.engine.acquireSlot(h.run(runID), h.workerNamed(runID, "one").ID, "one-token") {
 		t.Fatal("expired slot did not free")
 	}
 }
@@ -1690,6 +1690,49 @@ func TestTeamSandboxUnavailableReachesTheModel(t *testing.T) {
 	}
 	if !strings.Contains(h.workerNamed(runID, "one").Report, agentteam.ErrSandboxUnavailable) || len(h.sandbox.execs) != 0 {
 		t.Fatalf("%s", h.workerNamed(runID, "one").Report)
+	}
+}
+
+// Found by the end-to-end smoke: a search blocked until its timeout told the model
+// {"matches":""}, which reads as "not there".
+func TestTeamSearchFailureIsNotAnEmptyResult(t *testing.T) {
+	for _, item := range []struct {
+		name    string
+		out     sandboxExecResponse
+		want    string
+		failed  bool
+		notWant string
+	}{
+		{name: "timeout", out: sandboxExecResponse{ExitCode: 137, TimedOut: true}, want: sandboxSearchFailed, failed: true},
+		{name: "bad pattern", out: sandboxExecResponse{ExitCode: 2, Stderr: "grep: Unmatched ("}, want: "Unmatched (", failed: true},
+		{name: "matches with an unreadable file", out: sandboxExecResponse{ExitCode: 2, Stdout: "a.txt:1:hit", Stderr: "grep: b.txt: Permission denied"}, want: "b.txt: Permission denied", notWant: sandboxSearchFailed},
+		{name: "no match", out: sandboxExecResponse{ExitCode: 1}, want: `"matches":""`, notWant: sandboxSearchFailed},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			h := newTeamHarness(t, store.New())
+			h.sandbox.execHook = func(context.Context) (sandboxExecResponse, error) { return item.out, nil }
+			team := h.team([]string{h.definition("one", sandboxMember(sandboxGrant))}, nil)
+			result := ""
+			h.runner.set(workerScript("one", func(_ context.Context, request turnRequest) (turnResponse, error) {
+				if request.Turn == 1 {
+					return reply("", toolCall(agentteam.ToolSearchFiles, map[string]any{"pattern": "hit"})), nil
+				}
+				if request.Turn == 2 {
+					result = lastMessage(request)
+				}
+				return reply("", finishCall("done")), nil
+			}))
+			h.drive(h.start(team, false))
+			if !strings.Contains(result, item.want) {
+				t.Errorf("want %q in %q", item.want, result)
+			}
+			if item.failed != strings.Contains(result, `"error":"`+sandboxSearchFailed) {
+				t.Errorf("failed=%v, result %q", item.failed, result)
+			}
+			if item.notWant != "" && strings.Contains(result, item.notWant) {
+				t.Errorf("did not want %q in %q", item.notWant, result)
+			}
+		})
 	}
 }
 
