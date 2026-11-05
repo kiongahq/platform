@@ -69,7 +69,7 @@ func (s *Server) submitScheduledRun(ctx context.Context, definition api.Pipeline
 	if !decision.Allowed {
 		return "", errors.New("schedule owner may not run this pipeline: " + decision.Reason)
 	}
-	if err := enforceRunQuota(s.store, owner); err != nil {
+	if err := s.enforceRunQuota(owner); err != nil {
 		return "", err
 	}
 	run, err := s.store.SubmitPipeline(api.SubmitPipelineRequest{ProjectID: definition.ProjectID, DefinitionID: definition.ID, Trigger: "schedule", ScheduledFor: &slot}, owner.Subject)

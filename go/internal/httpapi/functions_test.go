@@ -38,7 +38,7 @@ func fakeOpenFaaS(t *testing.T) *httptest.Server {
 func TestFunctionsReportUnconfiguredHonestly(t *testing.T) {
 	t.Setenv("OPENFAAS_URL", "")
 	response := httptest.NewRecorder()
-	testServer().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/functions", nil))
+	testServer().ServeHTTP(response, newTestRequest(http.MethodGet, "/api/v1/functions", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"configured":false`) {
 		t.Fatalf("unexpected: %d %s", response.Code, response.Body.String())
 	}
@@ -52,7 +52,7 @@ func TestFunctionDeployListInvoke(t *testing.T) {
 	t.Setenv("OPENFAAS_PASSWORD", "secret")
 	server := testServer()
 
-	deploy := httptest.NewRequest(http.MethodPost, "/api/v1/functions", strings.NewReader(`{"name":"sentiment-fn","image":"registry/fn:1"}`))
+	deploy := newTestRequest(http.MethodPost, "/api/v1/functions", strings.NewReader(`{"name":"sentiment-fn","image":"registry/fn:1"}`))
 	deployed := httptest.NewRecorder()
 	server.ServeHTTP(deployed, deploy)
 	if deployed.Code != http.StatusAccepted {
@@ -60,19 +60,19 @@ func TestFunctionDeployListInvoke(t *testing.T) {
 	}
 
 	listed := httptest.NewRecorder()
-	server.ServeHTTP(listed, httptest.NewRequest(http.MethodGet, "/api/v1/functions", nil))
+	server.ServeHTTP(listed, newTestRequest(http.MethodGet, "/api/v1/functions", nil))
 	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), `"sentiment-fn"`) {
 		t.Fatalf("list failed: %d %s", listed.Code, listed.Body.String())
 	}
 
 	invoked := httptest.NewRecorder()
-	server.ServeHTTP(invoked, httptest.NewRequest(http.MethodPost, "/api/v1/functions/sentiment-fn/invoke", strings.NewReader(`{"text":"great"}`)))
+	server.ServeHTTP(invoked, newTestRequest(http.MethodPost, "/api/v1/functions/sentiment-fn/invoke", strings.NewReader(`{"text":"great"}`)))
 	if invoked.Code != http.StatusOK || !strings.Contains(invoked.Body.String(), "positive") {
 		t.Fatalf("invoke failed: %d %s", invoked.Code, invoked.Body.String())
 	}
 
 	queued := httptest.NewRecorder()
-	server.ServeHTTP(queued, httptest.NewRequest(http.MethodPost, "/api/v1/functions/sentiment-fn/invoke-async", strings.NewReader(`{"text":"later"}`)))
+	server.ServeHTTP(queued, newTestRequest(http.MethodPost, "/api/v1/functions/sentiment-fn/invoke-async", strings.NewReader(`{"text":"later"}`)))
 	if queued.Code != http.StatusAccepted || !strings.Contains(queued.Body.String(), `"call_id":"call-123"`) {
 		t.Fatalf("async invoke failed: %d %s", queued.Code, queued.Body.String())
 	}
@@ -83,7 +83,7 @@ func TestFunctionDeployValidatesEventTrigger(t *testing.T) {
 	defer upstream.Close()
 	t.Setenv("OPENFAAS_URL", upstream.URL)
 	response := httptest.NewRecorder()
-	testServer().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/functions", strings.NewReader(`{"name":"sentiment-fn","image":"registry/fn:1","annotations":{"topic":"cron-function","schedule":"not cron"}}`)))
+	testServer().ServeHTTP(response, newTestRequest(http.MethodPost, "/api/v1/functions", strings.NewReader(`{"name":"sentiment-fn","image":"registry/fn:1","annotations":{"topic":"cron-function","schedule":"not cron"}}`)))
 	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "five-field") {
 		t.Fatalf("expected trigger validation failure, got %d %s", response.Code, response.Body.String())
 	}
@@ -92,7 +92,7 @@ func TestFunctionDeployValidatesEventTrigger(t *testing.T) {
 func TestFunctionDeployWithoutConfigIsConflict(t *testing.T) {
 	t.Setenv("OPENFAAS_URL", "")
 	response := httptest.NewRecorder()
-	testServer().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/functions", strings.NewReader(`{"name":"x","image":"y"}`)))
+	testServer().ServeHTTP(response, newTestRequest(http.MethodPost, "/api/v1/functions", strings.NewReader(`{"name":"x","image":"y"}`)))
 	if response.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d", response.Code)
 	}

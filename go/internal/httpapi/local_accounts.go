@@ -72,7 +72,7 @@ func (s *Server) setLocalPassword(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if err := store.SetLocalPassword(s.store, subject, body.Password, actor(r)); err != nil {

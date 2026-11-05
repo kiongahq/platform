@@ -10,7 +10,7 @@ import (
 
 func createTestProject(t *testing.T, server http.Handler) string {
 	t.Helper()
-	create := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"Engine project"}`))
+	create := newTestRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"Engine project"}`))
 	created := httptest.NewRecorder()
 	server.ServeHTTP(created, create)
 	if created.Code != http.StatusCreated {
@@ -41,7 +41,7 @@ func TestSubmitPipelineCreatesPrefectFlowRun(t *testing.T) {
 
 	server := testServer()
 	projectID := createTestProject(t, server)
-	submit := httptest.NewRequest(http.MethodPost, "/api/v1/pipelines/submit", strings.NewReader(`{"project_id":"`+projectID+`","name":"nightly-churn"}`))
+	submit := newTestRequest(http.MethodPost, "/api/v1/pipelines/submit", strings.NewReader(`{"project_id":"`+projectID+`","name":"nightly-churn"}`))
 	submitted := httptest.NewRecorder()
 	server.ServeHTTP(submitted, submit)
 	if submitted.Code != http.StatusAccepted || !strings.Contains(submitted.Body.String(), `"engine_run_id":"fr-77"`) {
@@ -81,7 +81,7 @@ func TestDefinitionBackedPipelineUsesGenericPrefectDeployment(t *testing.T) {
 	definitionBody := `{"project_id":"` + projectID + `","name":"feature-train","version":"1","execution_mode":"prefect","jobs":[{"name":"features","kind":"container","image":"feature:sha","command":["python","features.py"],"environment":{"MODE":"batch"},"resources":{"cpu":"500m","memory":"512Mi"},"retries":1},{"name":"train","kind":"container","image":"train:sha","command":["python","train.py"],"depends_on":["features"],"resources":{"cpu":"2","memory":"2Gi"},"retries":2}]}`
 	server.ServeHTTP(
 		definitionResponse,
-		httptest.NewRequest(http.MethodPost, "/api/v1/pipelines/definitions", strings.NewReader(definitionBody)),
+		newTestRequest(http.MethodPost, "/api/v1/pipelines/definitions", strings.NewReader(definitionBody)),
 	)
 	if definitionResponse.Code != http.StatusCreated {
 		t.Fatalf("definition create failed: %d %s", definitionResponse.Code, definitionResponse.Body.String())
@@ -96,7 +96,7 @@ func TestDefinitionBackedPipelineUsesGenericPrefectDeployment(t *testing.T) {
 	submitBody := `{"project_id":"` + projectID + `","definition_id":"` + definitionID + `","parameters":{"window":"2026-08"}}`
 	server.ServeHTTP(
 		submitted,
-		httptest.NewRequest(http.MethodPost, "/api/v1/pipelines/submit", strings.NewReader(submitBody)),
+		newTestRequest(http.MethodPost, "/api/v1/pipelines/submit", strings.NewReader(submitBody)),
 	)
 	if submitted.Code != http.StatusAccepted || !strings.Contains(submitted.Body.String(), `"engine_run_id":"definition-flow-run"`) {
 		t.Fatalf("definition run not linked: %d %s", submitted.Code, submitted.Body.String())
@@ -128,7 +128,7 @@ func TestSubmitPipelineFailsClosedWhenEngineRejects(t *testing.T) {
 
 	server := testServer()
 	projectID := createTestProject(t, server)
-	submit := httptest.NewRequest(http.MethodPost, "/api/v1/pipelines/submit", strings.NewReader(`{"project_id":"`+projectID+`","name":"training-pipeline"}`))
+	submit := newTestRequest(http.MethodPost, "/api/v1/pipelines/submit", strings.NewReader(`{"project_id":"`+projectID+`","name":"training-pipeline"}`))
 	submitted := httptest.NewRecorder()
 	server.ServeHTTP(submitted, submit)
 	if submitted.Code != http.StatusAccepted || !strings.Contains(submitted.Body.String(), `"status":"failed"`) {
@@ -148,12 +148,12 @@ func TestStepReportEndpoint(t *testing.T) {
 	t.Setenv("PREFECT_API_URL", prefect.URL)
 	server := testServer()
 	projectID := createTestProject(t, server)
-	submit := httptest.NewRequest(http.MethodPost, "/api/v1/pipelines/submit", strings.NewReader(`{"project_id":"`+projectID+`"}`))
+	submit := newTestRequest(http.MethodPost, "/api/v1/pipelines/submit", strings.NewReader(`{"project_id":"`+projectID+`"}`))
 	submitted := httptest.NewRecorder()
 	server.ServeHTTP(submitted, submit)
 	runID := strings.Split(strings.Split(submitted.Body.String(), `"id":"`)[1], `"`)[0]
 
-	report := httptest.NewRequest(http.MethodPost, "/api/v1/pipelines/runs/"+runID+"/steps", strings.NewReader(`{"step":"validate-data","status":"running","message":"loading rows"}`))
+	report := newTestRequest(http.MethodPost, "/api/v1/pipelines/runs/"+runID+"/steps", strings.NewReader(`{"step":"validate-data","status":"running","message":"loading rows"}`))
 	reported := httptest.NewRecorder()
 	server.ServeHTTP(reported, report)
 	if reported.Code != http.StatusOK || !strings.Contains(reported.Body.String(), `"status":"running"`) {

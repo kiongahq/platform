@@ -26,7 +26,7 @@ func TestFrontendRoutes(t *testing.T) {
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			handler.ServeHTTP(w, newTestRequest(http.MethodGet, tc.path, nil))
 			if w.Code != tc.status || w.Header().Get("Location") != tc.location {
 				t.Fatalf("got %d %s", w.Code, w.Header().Get("Location"))
 			}

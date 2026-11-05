@@ -21,7 +21,7 @@ func workbenchReadiness(t *testing.T, upstream http.HandlerFunc) map[string]any 
 	t.Setenv("KIONGA_JUPYTER_TOKEN", "notebook-secret")
 	t.Setenv("KIONGA_IDE_UPSTREAM", "http://127.0.0.1:1")
 	s := &Server{store: store.New()}
-	request := httptest.NewRequest("GET", "/api/v1/workspaces", nil)
+	request := newTestRequest("GET", "/api/v1/workspaces", nil)
 	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}}))
 	response := httptest.NewRecorder()
 	s.workspaces(response, request)
@@ -116,7 +116,7 @@ func TestWorkspaceReadinessOffline(t *testing.T) {
 	t.Setenv("KIONGA_JUPYTER_UPSTREAM", "http://127.0.0.1:1")
 	t.Setenv("KIONGA_IDE_UPSTREAM", "http://127.0.0.1:1")
 	s := &Server{store: store.New()}
-	request := httptest.NewRequest("GET", "/api/v1/workspaces", nil)
+	request := newTestRequest("GET", "/api/v1/workspaces", nil)
 	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}}))
 	response := httptest.NewRecorder()
 	s.workspaces(response, request)
@@ -141,7 +141,7 @@ func TestWorkspaceProxyPresentsUpstreamOrigin(t *testing.T) {
 	t.Setenv("KIONGA_JUPYTER_UPSTREAM", upstream.URL)
 	t.Setenv("KIONGA_JUPYTER_TOKEN", "notebook-secret")
 	s := &Server{store: store.New()}
-	request := httptest.NewRequest("GET", "http://localhost:18080/workspaces/workbench/api/collaboration/room/x", nil)
+	request := newTestRequest("GET", "http://localhost:18080/workspaces/workbench/api/collaboration/room/x", nil)
 	request.SetPathValue("kind", "workbench")
 	request.Header.Set("Origin", "http://localhost:18080")
 	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}}))
@@ -168,7 +168,7 @@ func TestIDEProxyPreservesValidatedBrowserOrigin(t *testing.T) {
 	t.Setenv("KIONGA_IDE_UPSTREAM", upstream.URL)
 	t.Setenv("KIONGA_IDE_PASSWORD", "")
 	s := &Server{store: store.New()}
-	request := httptest.NewRequest("GET", "http://localhost:18080/workspaces/ide/stable/socket", nil)
+	request := newTestRequest("GET", "http://localhost:18080/workspaces/ide/stable/socket", nil)
 	request.SetPathValue("kind", "ide")
 	request.Header.Set("Origin", "http://localhost:18080")
 	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}}))

@@ -30,7 +30,7 @@ func TestLangflowSnapshotVersionsAndRejectsEmbeddedSecrets(t *testing.T) {
 	t.Setenv("KIONGA_LANGFLOW_UPSTREAM", upstream.URL)
 	server, repository := accessServer(t)
 	request := func(method, path, body string) *http.Request {
-		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r := newTestRequest(method, path, strings.NewReader(body))
 		p := auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}}
 		return r.WithContext(auth.WithPrincipal(r.Context(), p))
 	}

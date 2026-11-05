@@ -86,7 +86,7 @@ func (s *Server) preflight(principal auth.Principal, req api.SubmitPipelineReque
 		return result
 	}
 	result.add("project access", "pass", "You can run pipelines in this project.")
-	if err := enforceRunQuota(s.store, principal); err != nil {
+	if err := s.enforceRunQuota(principal); err != nil {
 		result.add("concurrent runs", "fail", err.Error())
 	} else {
 		result.add("concurrent runs", "pass", "Within your concurrent run quota.")

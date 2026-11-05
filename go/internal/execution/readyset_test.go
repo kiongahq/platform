@@ -107,3 +107,31 @@ func TestReadySetConditionsAndParallelismBound(t *testing.T) {
 		t.Fatalf("peak parallelism %d, want 3", peak)
 	}
 }
+
+// Regression for #34: after cancellation the engine starts no further node
+// and reports every unstarted node skipped.
+func TestCancelStopsSchedulingDownstreamNodes(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var started []string
+	var mu sync.Mutex
+	start := func(ctx context.Context, job api.PipelineJob, _ map[string]any) (any, error) {
+		mu.Lock()
+		started = append(started, job.Name)
+		mu.Unlock()
+		if job.Name == "first" {
+			cancel()
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return nil, nil
+	}
+	reports := map[string]string{}
+	jobs := dag([]string{"first"}, []string{"second", "first"}, []string{"third", "second"})
+	Run(ctx, jobs, nil, start, func(step, status, message string) { reports[step] = status + ":" + message }, 8)
+	if len(started) != 1 || started[0] != "first" {
+		t.Fatalf("started %v after cancel, want only first", started)
+	}
+	if reports["second"] != "skipped:"+CancelledMessage || reports["third"] != "skipped:"+CancelledMessage {
+		t.Fatalf("unstarted nodes must be skipped as cancelled: %v", reports)
+	}
+}

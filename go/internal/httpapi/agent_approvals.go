@@ -64,7 +64,7 @@ func (s *Server) createApproval(w http.ResponseWriter, r *http.Request) {
 		TimeoutSeconds int    `json:"timeout_seconds"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	source := "deployed_agent"
@@ -170,7 +170,7 @@ func (s *Server) decideApproval(w http.ResponseWriter, r *http.Request) {
 		Comment  string `json:"comment"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	status := map[string]string{"approve": "approved", "reject": "rejected"}[req.Decision]

@@ -274,7 +274,57 @@ func (p *Postgres) UpsertUserAccess(subject string, req api.UpsertUserAccessRequ
 	} else {
 		access.CreatedAt = now
 	}
-	return access, p.write("user_access", subject, access, "access.upserted", actor, nil)
+	ctx := context.Background()
+	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return api.UserAccess{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := p.writeTx(ctx, tx, "user_access", subject, access, "access.upserted", actor, nil); err != nil {
+		return api.UserAccess{}, err
+	}
+	if access.Disabled {
+		if err := p.revokeSubjectTokensTx(ctx, tx, subject, actor, "owner_suspended"); err != nil {
+			return api.UserAccess{}, err
+		}
+	}
+	return access, tx.Commit(ctx)
+}
+
+// revokeSubjectTokensTx revokes every live API token of subject inside tx,
+// writing an api_token.revoked audit event for each, so suspension or
+// removal and the revocation commit together.
+func (p *Postgres) revokeSubjectTokensTx(ctx context.Context, tx pgx.Tx, subject, actor, reason string) error {
+	rows, err := tx.Query(ctx, `SELECT payload FROM platform_resources WHERE tenant_id=$1 AND kind='api_token' AND payload->>'subject'=$2 AND payload->>'revoked_at' IS NULL FOR UPDATE`, p.tenant, subject)
+	if err != nil {
+		return err
+	}
+	tokens := []api.APIToken{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			rows.Close()
+			return err
+		}
+		token, err := decodeStoredValue[api.APIToken](raw)
+		if err != nil {
+			rows.Close()
+			return err
+		}
+		tokens = append(tokens, token)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for _, token := range tokens {
+		token.RevokedAt = &now
+		if err := p.writeTx(ctx, tx, "api_token", token.ID, token, "api_token.revoked", actor, map[string]any{"subject": subject, "reason": reason}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (p *Postgres) DeleteUserAccess(subject, actor string) error {
@@ -290,6 +340,9 @@ func (p *Postgres) DeleteUserAccess(subject, actor string) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+	if err := p.revokeSubjectTokensTx(ctx, tx, subject, actor, "owner_removed"); err != nil {
+		return err
 	}
 	event := api.AuditEvent{ID: id("evt"), Action: "access.deleted", Resource: "user_access", ResourceID: subject, Actor: actorOrAnonymous(actor), CreatedAt: time.Now().UTC()}
 	_, err = tx.Exec(ctx, `INSERT INTO audit_events (tenant_id,id,action,resource,resource_id,actor,metadata,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,

@@ -18,7 +18,7 @@ func TestConnectionChecksRejectHTTPFailuresAndRedirects(t *testing.T) {
 		t.Run(http.StatusText(code), func(t *testing.T) {
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(code) }))
 			defer upstream.Close()
-			err := checkConnection(httptest.NewRequest("GET", "/", nil), api.Connection{Type: "mlflow", Endpoint: upstream.URL, SecretRef: "none"})
+			err := checkConnection(newTestRequest("GET", "/", nil), api.Connection{Type: "mlflow", Endpoint: upstream.URL, SecretRef: "none"})
 			if (err == nil) != (code == 200) {
 				t.Fatalf("status %d: %v", code, err)
 			}
@@ -55,7 +55,7 @@ func TestActivatedPrefectPersistsAndDrivesRuntime(t *testing.T) {
 	}
 	server := New(repository, fstest.MapFS{})
 	activated := httptest.NewRecorder()
-	server.ServeHTTP(activated, httptest.NewRequest("POST", "/api/v1/connections/"+connection.ID+"/activate", strings.NewReader("{}")))
+	server.ServeHTTP(activated, newTestRequest("POST", "/api/v1/connections/"+connection.ID+"/activate", strings.NewReader("{}")))
 	if activated.Code != 200 {
 		t.Fatalf("activate: %d %s", activated.Code, activated.Body.String())
 	}
@@ -94,7 +94,7 @@ func TestWorkspaceProxyChecksIdentityAndStripsCredentials(t *testing.T) {
 	t.Setenv("KIONGA_JUPYTER_UPSTREAM", upstream.URL)
 	t.Setenv("KIONGA_JUPYTER_TOKEN", "notebook-secret")
 	s := &Server{store: store.New()}
-	request := httptest.NewRequest("GET", "/workspaces/workbench/api", nil)
+	request := newTestRequest("GET", "/workspaces/workbench/api", nil)
 	request.SetPathValue("kind", "workbench")
 	request.Header.Set("Cookie", "kionga_local_session=private")
 	request.Header.Set("Authorization", "Bearer private")
@@ -119,7 +119,7 @@ func TestWorkspaceProxyChecksIdentityAndStripsCredentials(t *testing.T) {
 
 func TestWorkspaceUserCannotUseSharedAdminUpstream(t *testing.T) {
 	t.Setenv("KIONGA_IDE_UPSTREAM", "http://ide:8080")
-	request := httptest.NewRequest("GET", "/workspaces/ide/", nil)
+	request := newTestRequest("GET", "/workspaces/ide/", nil)
 	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "user-1", Roles: []string{auth.RoleUser}, Provisioned: true, Services: []string{"ide"}}))
 	if _, err := workspaceTarget("ide", request); err == nil {
 		t.Fatal("shared admin workspace exposed to normal user")
@@ -154,7 +154,7 @@ func TestWorkspaceLaunchPreparesAssignedProjectFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Server{store: repository}
-	request := httptest.NewRequest("POST", "/api/v1/workspaces/ide/launch", strings.NewReader(`{"project_id":"`+project.ID+`"}`))
+	request := newTestRequest("POST", "/api/v1/workspaces/ide/launch", strings.NewReader(`{"project_id":"`+project.ID+`"}`))
 	request.SetPathValue("kind", "ide")
 	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}}))
 	response := httptest.NewRecorder()
@@ -174,7 +174,7 @@ func TestProjectOptionsExposeOnlyAssignedMinimalMetadata(t *testing.T) {
 	one, _ := repository.CreateProject(api.CreateProjectRequest{Name: "Assigned project", Template: "blank"}, "owner")
 	repository.CreateProject(api.CreateProjectRequest{Name: "Other project", Template: "blank"}, "other")
 	s := &Server{store: repository}
-	request := httptest.NewRequest("GET", "/api/v1/project-options", nil)
+	request := newTestRequest("GET", "/api/v1/project-options", nil)
 	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "user", Roles: []string{auth.RoleUser}, ProjectIDs: []string{one.ID}}))
 	response := httptest.NewRecorder()
 	s.projectOptions(response, request)

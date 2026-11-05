@@ -58,7 +58,7 @@ func TestWorkspaceHostIsolationAndRevocation(t *testing.T) {
 	workspaceHost := "workbench-" + workspaceSlug("ws-alice") + ".workspaces.example.test"
 	otherHost := "workbench-" + workspaceSlug("ws-other") + ".workspaces.example.test"
 	request := func(host, path, cookie string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(http.MethodGet, "https://"+host+path, nil)
+		r := newTestRequest(http.MethodGet, "https://"+host+path, nil)
 		if cookie != "" {
 			r.AddCookie(&http.Cookie{Name: edgeCookieName, Value: cookie})
 		}
@@ -68,7 +68,7 @@ func TestWorkspaceHostIsolationAndRevocation(t *testing.T) {
 	}
 	redeem := func(next string) *httptest.ResponseRecorder {
 		body := url.Values{"ticket": {"one-use"}, "next": {next}}.Encode()
-		r := httptest.NewRequest(http.MethodPost, "https://"+workspaceHost+"/_kionga/redeem", strings.NewReader(body))
+		r := newTestRequest(http.MethodPost, "https://"+workspaceHost+"/_kionga/redeem", strings.NewReader(body))
 		r.Header.Set("Origin", "https://console.example.test")
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		w := httptest.NewRecorder()

@@ -13,7 +13,7 @@ import (
 const validDesign = `{"project_id":"prj-demo","name":"Support agent","revision":0,"nodes":[{"id":"input","kind":"input","name":"Input","x":10,"y":20},{"id":"output","kind":"output","name":"Output","x":300,"y":20}],"edges":[{"from":"input","to":"output"}]}`
 
 func designRequest(method, path, body, role string) *http.Request {
-	r := httptest.NewRequest(method, path, strings.NewReader(body))
+	r := newTestRequest(method, path, strings.NewReader(body))
 	return r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{Subject: "user-1", Roles: []string{role}, Provisioned: true, Services: []string{"agents"}, ProjectIDs: []string{"prj-demo"}}))
 }
 func TestAgentDesignCRUDAndRevisionConflict(t *testing.T) {

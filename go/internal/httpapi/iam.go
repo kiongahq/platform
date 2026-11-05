@@ -263,7 +263,7 @@ func (s *Server) iamGroup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) iamSaveGroup(w http.ResponseWriter, r *http.Request) {
 	var req groupRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	create := r.PathValue("id") == ""
@@ -386,7 +386,7 @@ func (s *Server) iamPolicy(w http.ResponseWriter, r *http.Request) {
 func (s *Server) iamSavePolicy(w http.ResponseWriter, r *http.Request) {
 	var req policyRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	create := r.PathValue("id") == ""
@@ -501,7 +501,7 @@ func (s *Server) iamAttachments(w http.ResponseWriter, r *http.Request) {
 func (s *Server) iamAttach(w http.ResponseWriter, r *http.Request) {
 	var req attachRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	req.PolicyID, req.PrincipalID = strings.TrimSpace(req.PolicyID), strings.TrimSpace(req.PrincipalID)

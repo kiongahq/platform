@@ -80,7 +80,7 @@ func (f *iamFixture) provision(subject, role string, projects []string, services
 // roles with the subject's access profile when one exists.
 func (f *iamFixture) as(subject string, roles []string, method, path, body string) *httptest.ResponseRecorder {
 	f.t.Helper()
-	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	request := newTestRequest(method, path, strings.NewReader(body))
 	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: subject, Roles: roles}))
 	response := httptest.NewRecorder()
 	f.handler.ServeHTTP(response, request)
@@ -203,7 +203,7 @@ func TestScopedEngineerAndRunStepProjectCheck(t *testing.T) {
 	}
 	// Services may still report steps for any run.
 	t.Setenv("MLAIOPS_INTERNAL_TOKEN", "svc-token")
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/pipelines/runs/"+f.run2+"/steps", strings.NewReader(step))
+	request := newTestRequest(http.MethodPost, "/api/v1/pipelines/runs/"+f.run2+"/steps", strings.NewReader(step))
 	request.Header.Set("Authorization", "Bearer svc-token")
 	response := httptest.NewRecorder()
 	f.handler.ServeHTTP(response, request)
@@ -431,7 +431,7 @@ func TestEventsDigestReflectsOnlyReadableProjects(t *testing.T) {
 	read := func(subject string, roles []string) map[string]any {
 		ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 		defer cancel()
-		request := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(auth.WithPrincipal(ctx, auth.Principal{Subject: subject, Roles: roles}))
+		request := newTestRequest(http.MethodGet, "/api/v1/events", nil).WithContext(auth.WithPrincipal(ctx, auth.Principal{Subject: subject, Roles: roles}))
 		response := httptest.NewRecorder()
 		f.handler.ServeHTTP(response, request)
 		line, _, _ := strings.Cut(strings.TrimPrefix(response.Body.String(), "data: "), "\n")

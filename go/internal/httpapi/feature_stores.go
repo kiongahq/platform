@@ -180,7 +180,7 @@ func writeValidation(w http.ResponseWriter, issues []string) {
 func (s *Server) createFeatureStore(w http.ResponseWriter, r *http.Request) {
 	connection, issues, err := s.featureStoreFromRequest(r, store.NewResourceID("fs"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if len(issues) > 0 {
@@ -199,7 +199,7 @@ func (s *Server) updateFeatureStore(w http.ResponseWriter, r *http.Request) {
 	}
 	connection, issues, err := s.featureStoreFromRequest(r, id)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if len(issues) > 0 {
@@ -410,7 +410,7 @@ func (s *Server) reportFeatureMaterialization(w http.ResponseWriter, r *http.Req
 	}
 	var req api.ReportFeatureMaterializationRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if req.Status == "" {
@@ -507,7 +507,7 @@ func (s *Server) storageFromRequest(r *http.Request, id string) (api.StorageConn
 func (s *Server) createStorageConnection(w http.ResponseWriter, r *http.Request) {
 	connection, issues, err := s.storageFromRequest(r, store.NewResourceID("st"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if len(issues) > 0 {
@@ -521,7 +521,7 @@ func (s *Server) createStorageConnection(w http.ResponseWriter, r *http.Request)
 func (s *Server) updateStorageConnection(w http.ResponseWriter, r *http.Request) {
 	connection, issues, err := s.storageFromRequest(r, r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if len(issues) > 0 {

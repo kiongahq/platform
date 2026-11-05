@@ -125,6 +125,10 @@ func (s *Server) huggingFaceAccount(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Token string `json:"token"`
 		}
+		if err := requireJSON(r); err != nil {
+			writeDecodeError(w, err)
+			return
+		}
 		if decode(r, &req) != nil || !strings.HasPrefix(req.Token, "hf_") || len(req.Token) > 1024 {
 			writeError(w, 400, "invalid_token", "Enter a Hugging Face read or fine-grained token")
 			return
@@ -198,6 +202,10 @@ func (s *Server) importHuggingFaceModel(w http.ResponseWriter, r *http.Request) 
 		ProjectID string `json:"project_id"`
 		RepoID    string `json:"repo_id"`
 		Revision  string `json:"revision"`
+	}
+	if err := requireJSON(r); err != nil {
+		writeDecodeError(w, err)
+		return
 	}
 	if decode(r, &req) != nil || !hubRepo.MatchString(req.RepoID) || strings.Contains(req.RepoID, "..") || len(req.Revision) > 200 {
 		writeError(w, 400, "invalid_request", "Provide a project, Hugging Face repository ID and valid revision")

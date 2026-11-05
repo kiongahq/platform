@@ -49,7 +49,7 @@ func (s *Server) createAgentAPIConnection(w http.ResponseWriter, r *http.Request
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 	var connection agentAPIConnection
 	if err := decode(r, &connection); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	target, err := url.Parse(connection.Endpoint)
@@ -97,6 +97,10 @@ func (s *Server) invokeAgentAPIConnection(w http.ResponseWriter, r *http.Request
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 32<<10)
 	var payload json.RawMessage
+	if err := requireJSON(r); err != nil {
+		writeDecodeError(w, err)
+		return
+	}
 	if err := decode(r, &payload); err != nil || !json.Valid(payload) {
 		writeError(w, 400, "invalid_request", "Provide a JSON request body")
 		return
