@@ -42,7 +42,8 @@ concurrency:
 
 jobs:
   smoke:
-    # The integration branch is proved by its push, so its pull request adds no second run.
+    # The integration branch is proved by its push, so its pull request adds no second run
+    # and shows "skipped". Read the push run for that branch.
     if: github.event_name != 'pull_request' || github.head_ref != 'test/agent-teams-smoke'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -85,6 +86,11 @@ jobs:
           sudo systemctl start postgresql
           sudo -u postgres psql -c "CREATE USER kionga_smoke PASSWORD 'kionga-smoke-local' CREATEDB"
           sudo -u postgres psql -c "CREATE DATABASE kionga_smoke OWNER kionga_smoke"
+      - name: Show what is under test
+        run: |
+          echo "platform $(git rev-parse HEAD) from ${GITHUB_EVENT_NAME}"
+          echo "contracts $(git -C contracts rev-parse HEAD)"
+          echo "agent-runtime $(git -C .smoke/agent-runtime rev-parse HEAD) (${RUNTIME_REF})"
       - name: Agent Teams smoke
         env:
           AGENT_RUNTIME_DIR: .smoke/agent-runtime

@@ -484,6 +484,7 @@ def scenario_2(s: Smoke) -> None:
         call("git_clone", repository=url),
         call("list_files", path=f"/workspace/{repo}"),
         call("search_files", pattern="value", path=repo),
+        call("search_files", pattern="(", path=repo),  # a bad pattern must not read as no matches
         call("edit_file", path=f"/workspace/{repo}/README.md", old="value = old", new="value = new"),
         call("git_diff"),
         call("exec", command=f"cd /workspace/{repo} && {GIT_IDENTITY} commit -qam '{subject}' && git rev-parse HEAD"),
@@ -495,7 +496,10 @@ def scenario_2(s: Smoke) -> None:
     s.wait_run(run_id)
     worker = s.worker(run_id, dev)
     failed = [r for r in s.tool_results(worker) if r["status"] == "error"]
-    check(not failed, f"tool errors: {failed}")
+    check([r["name"] for r in failed] == ["search_files"], f"tool errors: {failed}")
+    bad_search = json.loads(failed[0]["content"])
+    check(bad_search["error"] == "search_failed", f"bad pattern: {bad_search}")
+    s.say(f"a bad search pattern returns {bad_search['error']!r}, not an empty result")
 
     written = json.loads(s.one_result(worker, "write_file")["content"])
     check(written["bytes_written"] == len("hello from the worker\n"), f"write_file: {written}")
@@ -511,7 +515,7 @@ def scenario_2(s: Smoke) -> None:
     cloned = json.loads(s.one_result(worker, "git_clone")["content"])
     check(cloned["commit"] == seed and cloned["path"] == f"/workspace/{repo}", f"git_clone: {cloned} seed {seed}")
     check("README.md" in s.one_result(worker, "list_files")["content"], "list_files")
-    check("value = old" in s.one_result(worker, "search_files")["content"], "search_files")
+    check("value = old" in s.tool_results(worker, "search_files")[0]["content"], "search_files")
     check("+value = new" in s.one_result(worker, "git_diff")["content"], "git_diff shows no change")
 
     commit = json.loads(execs[1]["content"])
