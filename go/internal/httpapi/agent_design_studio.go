@@ -157,7 +157,7 @@ func (s *Server) validateUnsavedDesign(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
 	var req validateDesignRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if req.ProjectID == "" || !projectAllowed(s.store, principal(r), req.ProjectID) {
@@ -293,7 +293,7 @@ func (s *Server) publishDesign(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 	var req publishRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if req.Revision != design.Revision {
@@ -396,7 +396,7 @@ func (s *Server) deployVersion(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	var req deployVersionRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if req.RequireEvaluation && (version.Evaluation == nil || !version.Evaluation.Passed) {
@@ -470,7 +470,7 @@ func (s *Server) runVersion(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
 	var req runRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	req.StopAfter = ""
@@ -509,7 +509,7 @@ func (s *Server) saveDesignFixtures(w http.ResponseWriter, r *http.Request) {
 		Cases    []fixtureCase `json:"cases"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeError(w, 400, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if issues := validateFixtureCases(req.Cases); len(issues) > 0 {

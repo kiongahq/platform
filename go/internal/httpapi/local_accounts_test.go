@@ -15,7 +15,7 @@ func TestAdminSetsLocalPasswordOnlyForProvisionedUsersInLocalMode(t *testing.T) 
 	data := store.New()
 	s := &Server{store: data}
 	put := func(subject, body string) int {
-		request := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/"+subject+"/local-password", strings.NewReader(body))
+		request := newTestRequest(http.MethodPut, "/api/v1/admin/users/"+subject+"/local-password", strings.NewReader(body))
 		request.SetPathValue("subject", subject)
 		// Handlers authorize the resolved principal; RBAC middleware sets it.
 		request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}}))

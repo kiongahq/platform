@@ -35,7 +35,7 @@ func TestWorkspaceIdentityLocal(t *testing.T) {
 		{"non-api", "secret-value", "/auth/logout", 403},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			r := httptest.NewRequest("GET", test.path, nil)
+			r := newTestRequest("GET", test.path, nil)
 			r.Header.Set("X-Kionga-Workspace-Name", "local")
 			r.Header.Set("X-Kionga-Workspace-Token", test.token)
 			w := httptest.NewRecorder()
@@ -46,7 +46,7 @@ func TestWorkspaceIdentityLocal(t *testing.T) {
 		})
 	}
 	t.Setenv("KIONGA_ENVIRONMENT", "production")
-	r := httptest.NewRequest("GET", "/api/v1/projects", nil)
+	r := newTestRequest("GET", "/api/v1/projects", nil)
 	r.Header.Set("X-Kionga-Workspace-Name", "local")
 	r.Header.Set("X-Kionga-Workspace-Token", "secret-value")
 	w := httptest.NewRecorder()
@@ -55,7 +55,7 @@ func TestWorkspaceIdentityLocal(t *testing.T) {
 		t.Fatalf("local workspace identity accepted in production: %d", w.Code)
 	}
 	t.Setenv("KIONGA_ENVIRONMENT", "local")
-	r = httptest.NewRequest("GET", "/api/v1/projects", nil)
+	r = newTestRequest("GET", "/api/v1/projects", nil)
 	r.Header.Set("X-Kionga-Workspace-Name", "local")
 	r.Header.Set("X-Kionga-Workspace-Token", "secret-value")
 	r.Header.Set("Authorization", "Bearer external-key")
@@ -79,7 +79,7 @@ func TestWorkspaceIdentityKubernetes(t *testing.T) {
 		w.WriteHeader(200)
 	}), client, "workspaces", "", "")
 	request := func(token string) int {
-		r := httptest.NewRequest("GET", "/api/v1/projects", nil)
+		r := newTestRequest("GET", "/api/v1/projects", nil)
 		r.Header.Set("X-Kionga-Workspace-Name", "alice-ws")
 		r.Header.Set("X-Kionga-Workspace-Token", token)
 		w := httptest.NewRecorder()
@@ -115,7 +115,7 @@ func TestWorkspaceIdentityPublishedAgent(t *testing.T) {
 		w.WriteHeader(200)
 	}), client, "workspaces", "", "")
 	request := func(value string) int {
-		r := httptest.NewRequest("GET", "/api/v1/models", nil)
+		r := newTestRequest("GET", "/api/v1/models", nil)
 		r.Header.Set("X-Kionga-Workspace-Name", name)
 		r.Header.Set("X-Kionga-Workspace-Token", value)
 		response := httptest.NewRecorder()

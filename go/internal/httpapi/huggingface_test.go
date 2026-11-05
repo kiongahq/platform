@@ -33,7 +33,7 @@ func mockHub(t *testing.T, f func(*http.Request) (int, string)) {
 	t.Setenv("KIONGA_CREDENTIAL_KEY", base64.StdEncoding.EncodeToString(make([]byte, 32)))
 }
 func hubCall(handler http.Handler, subject, method, path, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req := newTestRequest(method, path, strings.NewReader(body))
 	req = req.WithContext(auth.WithPrincipal(req.Context(), auth.Principal{Subject: subject, Roles: []string{"admin"}}))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -146,7 +146,7 @@ func TestHubRBAC(t *testing.T) {
 func TestHubImportRejectsUnassignedProjectBeforeContactingHub(t *testing.T) {
 	mockHub(t, func(r *http.Request) (int, string) { t.Fatal("unassigned import contacted Hub"); return 500, "{}" })
 	server := &Server{store: store.New()}
-	r := httptest.NewRequest("POST", "/api/v1/models/huggingface/import", strings.NewReader(`{"project_id":"prj-demo","repo_id":"org/model"}`))
+	r := newTestRequest("POST", "/api/v1/models/huggingface/import", strings.NewReader(`{"project_id":"prj-demo","repo_id":"org/model"}`))
 	r = r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{Subject: "alice", Roles: []string{"user"}, Provisioned: true, Services: []string{"models"}, ProjectIDs: []string{"another-project"}}))
 	w := httptest.NewRecorder()
 	server.importHuggingFaceModel(w, r)

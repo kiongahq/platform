@@ -66,7 +66,7 @@ func allowedProjectIDs(repository store.Repository, value auth.Principal) map[st
 		allowed[id] = true
 	}
 	if value.Credential == "api_token" {
-		return allowed
+		return tokenOwnerProjects(repository, value.Subject, allowed)
 	}
 	for _, project := range repository.Projects() {
 		if project.OwnerSubject == value.Subject {
@@ -74,6 +74,35 @@ func allowedProjectIDs(repository store.Repository, value auth.Principal) map[st
 		}
 	}
 	return allowed
+}
+
+// tokenOwnerProjects narrows the projects frozen into an API token to those
+// its owner can still reach: projects in the owner's current profile or owned
+// by them. Administrators and operators keep the token's own list; owners
+// without a profile (identity-provider administrators) do too.
+func tokenOwnerProjects(repository store.Repository, owner string, scoped map[string]bool) map[string]bool {
+	access, err := repository.AccessFor(owner)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && (access.Role == auth.RoleAdmin || access.Role == auth.RoleOperator)) {
+		return scoped
+	}
+	if err != nil {
+		return map[string]bool{}
+	}
+	current := make(map[string]bool, len(access.ProjectIDs))
+	for _, id := range access.ProjectIDs {
+		current[id] = true
+	}
+	for _, project := range repository.Projects() {
+		if project.OwnerSubject == owner {
+			current[project.ID] = true
+		}
+	}
+	for id := range scoped {
+		if !current[id] {
+			delete(scoped, id)
+		}
+	}
+	return scoped
 }
 
 func projectAllowed(repository store.Repository, value auth.Principal, projectID string) bool {
@@ -511,7 +540,11 @@ func pipelineQuantity(value, kind string) (int64, error) {
 	return parsed * multiplier, nil
 }
 
-func enforceRunQuota(repository store.Repository, value auth.Principal) error {
+// enforceRunQuota counts queued and running runs, plus cancelled runs whose
+// workloads this process is still stopping, so cancel-and-resubmit cannot
+// exceed the concurrency grant while the old Jobs still hold resources.
+func (s *Server) enforceRunQuota(value auth.Principal) error {
+	repository := s.store
 	if privileged(value) || !slices.Contains(value.Roles, auth.RoleUser) {
 		return nil
 	}
@@ -521,7 +554,7 @@ func enforceRunQuota(repository store.Repository, value auth.Principal) error {
 	}
 	active, allowed := 0, allowedProjectIDs(repository, value)
 	for _, run := range repository.Runs() {
-		if allowed[run.ProjectID] && (run.Status == "queued" || run.Status == "running") {
+		if allowed[run.ProjectID] && (run.Status == "queued" || run.Status == "running" || (run.Status == "cancelled" && s.runExecuting(run.ID))) {
 			active++
 		}
 	}

@@ -21,12 +21,12 @@ func TestSeedEngineeringBlogIsPublic(t *testing.T) {
 	t.Setenv("KIONGA_BLOG_MEDIA_DIR", t.TempDir())
 	server := testServer()
 	list := httptest.NewRecorder()
-	server.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/v1/blogs", nil))
+	server.ServeHTTP(list, newTestRequest(http.MethodGet, "/api/v1/blogs", nil))
 	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), "mounting-s3-as-a-filesystem-in-jupyter") || strings.Contains(list.Body.String(), "rendered_html") {
 		t.Fatalf("blog list: %d %s", list.Code, list.Body.String())
 	}
 	post := httptest.NewRecorder()
-	server.ServeHTTP(post, httptest.NewRequest(http.MethodGet, "/api/v1/blogs/mounting-s3-as-a-filesystem-in-jupyter", nil))
+	server.ServeHTTP(post, newTestRequest(http.MethodGet, "/api/v1/blogs/mounting-s3-as-a-filesystem-in-jupyter", nil))
 	var body api.PublicBlogPost
 	_ = json.Unmarshal(post.Body.Bytes(), &body)
 	if post.Code != http.StatusOK || !strings.Contains(body.RenderedHTML, `id="production-checklist"`) || len(body.Blocks) < 20 || !strings.Contains(body.Content, "## Production checklist") || body.Author != "Kionga Engineering" || body.PublishedAt == nil {
@@ -42,7 +42,7 @@ func TestLegacyAdminBlogEndpointsAreGone(t *testing.T) {
 	server := testServer()
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
 		response := httptest.NewRecorder()
-		server.ServeHTTP(response, httptest.NewRequest(method, "/api/v1/admin/blogs", strings.NewReader(`{}`)))
+		server.ServeHTTP(response, newTestRequest(method, "/api/v1/admin/blogs", strings.NewReader(`{}`)))
 		if response.Code != http.StatusNotFound && response.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("%s legacy endpoint still served: %d", method, response.Code)
 		}
@@ -70,7 +70,7 @@ func (c *editorialClient) do(method, path string, body any, contentType ...strin
 		raw, _ := json.Marshal(value)
 		reader = bytes.NewReader(raw)
 	}
-	request := httptest.NewRequest(method, path, reader)
+	request := newTestRequest(method, path, reader)
 	if len(contentType) > 0 {
 		request.Header.Set("Content-Type", contentType[0])
 	}
@@ -269,7 +269,7 @@ func TestEditorialSessionSeparationAndWorkflow(t *testing.T) {
 		t.Fatalf("removed member kept access: %d", response.Code)
 	}
 	// Cross-site mutation attempts are refused even with a cookie.
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/editorial/posts", strings.NewReader(`{}`))
+	request := newTestRequest(http.MethodPost, "/api/v1/editorial/posts", strings.NewReader(`{}`))
 	request.Header.Set("Sec-Fetch-Site", "cross-site")
 	request.AddCookie(ana.cookie)
 	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "ana", Roles: []string{auth.RoleUser}}))

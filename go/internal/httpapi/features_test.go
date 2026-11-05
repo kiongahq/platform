@@ -10,7 +10,7 @@ import (
 func TestFeatureViewApplyListMaterialize(t *testing.T) {
 	server := testServer()
 
-	apply := httptest.NewRequest(http.MethodPost, "/api/v1/features", strings.NewReader(
+	apply := newTestRequest(http.MethodPost, "/api/v1/features", strings.NewReader(
 		`{"name":"customer_profile","entity":"user_id","fields":[{"name":"plan","type":"string"}],"tags":["demo"],"source":"s3://mlaiops-features/customer_profile","ttl_seconds":3600}`))
 	applied := httptest.NewRecorder()
 	server.ServeHTTP(applied, apply)
@@ -19,7 +19,7 @@ func TestFeatureViewApplyListMaterialize(t *testing.T) {
 	}
 
 	// Re-apply upserts instead of duplicating.
-	reapply := httptest.NewRequest(http.MethodPost, "/api/v1/features", strings.NewReader(
+	reapply := newTestRequest(http.MethodPost, "/api/v1/features", strings.NewReader(
 		`{"name":"customer_profile","entity":"user_id","fields":[{"name":"plan","type":"string"},{"name":"csat","type":"float"}]}`))
 	reapplied := httptest.NewRecorder()
 	server.ServeHTTP(reapplied, reapply)
@@ -27,7 +27,7 @@ func TestFeatureViewApplyListMaterialize(t *testing.T) {
 		t.Fatalf("re-apply failed: %d %s", reapplied.Code, reapplied.Body.String())
 	}
 
-	list := httptest.NewRequest(http.MethodGet, "/api/v1/features", nil)
+	list := newTestRequest(http.MethodGet, "/api/v1/features", nil)
 	listed := httptest.NewRecorder()
 	server.ServeHTTP(listed, list)
 	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), `"total":1`) {
@@ -37,7 +37,7 @@ func TestFeatureViewApplyListMaterialize(t *testing.T) {
 		t.Fatalf("re-apply did not update fields: %s", listed.Body.String())
 	}
 
-	materialize := httptest.NewRequest(http.MethodPost, "/api/v1/features/customer_profile/materialized", strings.NewReader(`{"entity_count":42}`))
+	materialize := newTestRequest(http.MethodPost, "/api/v1/features/customer_profile/materialized", strings.NewReader(`{"entity_count":42}`))
 	materialized := httptest.NewRecorder()
 	server.ServeHTTP(materialized, materialize)
 	if materialized.Code != http.StatusOK || !strings.Contains(materialized.Body.String(), `"online_entity_count":42`) {
@@ -52,7 +52,7 @@ func TestEmptyListsSerializeAsArrays(t *testing.T) {
 	server := testServer()
 	for _, path := range []string{"/api/v1/features", "/api/v1/models", "/api/v1/tools", "/api/v1/connections"} {
 		response := httptest.NewRecorder()
-		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		server.ServeHTTP(response, newTestRequest(http.MethodGet, path, nil))
 		if strings.Contains(response.Body.String(), `"items":null`) {
 			t.Fatalf("%s serializes empty list as null: %s", path, response.Body.String())
 		}
@@ -60,7 +60,7 @@ func TestEmptyListsSerializeAsArrays(t *testing.T) {
 }
 
 func TestMaterializeUnknownViewIs404(t *testing.T) {
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/features/missing/materialized", strings.NewReader(`{"entity_count":1}`))
+	request := newTestRequest(http.MethodPost, "/api/v1/features/missing/materialized", strings.NewReader(`{"entity_count":1}`))
 	response := httptest.NewRecorder()
 	testServer().ServeHTTP(response, request)
 	if response.Code != http.StatusNotFound {
@@ -69,7 +69,7 @@ func TestMaterializeUnknownViewIs404(t *testing.T) {
 }
 
 func TestApplyFeatureViewValidation(t *testing.T) {
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/features", strings.NewReader(`{"name":"x"}`))
+	request := newTestRequest(http.MethodPost, "/api/v1/features", strings.NewReader(`{"name":"x"}`))
 	response := httptest.NewRecorder()
 	testServer().ServeHTTP(response, request)
 	if response.Code != http.StatusUnprocessableEntity {
@@ -96,12 +96,12 @@ func TestStorageEndpointsProxyToStorageProxy(t *testing.T) {
 
 	server := testServer()
 	buckets := httptest.NewRecorder()
-	server.ServeHTTP(buckets, httptest.NewRequest(http.MethodGet, "/api/v1/storage/buckets", nil))
+	server.ServeHTTP(buckets, newTestRequest(http.MethodGet, "/api/v1/storage/buckets", nil))
 	if buckets.Code != http.StatusOK || !strings.Contains(buckets.Body.String(), "mlaiops-models") {
 		t.Fatalf("bucket proxy failed: %d %s", buckets.Code, buckets.Body.String())
 	}
 	objects := httptest.NewRecorder()
-	server.ServeHTTP(objects, httptest.NewRequest(http.MethodGet, "/api/v1/storage/objects?bucket=mlaiops-models&prefix=churn/", nil))
+	server.ServeHTTP(objects, newTestRequest(http.MethodGet, "/api/v1/storage/objects?bucket=mlaiops-models&prefix=churn/", nil))
 	if objects.Code != http.StatusOK {
 		t.Fatalf("object proxy failed: %d %s", objects.Code, objects.Body.String())
 	}
@@ -110,7 +110,7 @@ func TestStorageEndpointsProxyToStorageProxy(t *testing.T) {
 func TestPromptsReportsUnconfiguredHonestly(t *testing.T) {
 	t.Setenv("LANGFUSE_URL", "")
 	response := httptest.NewRecorder()
-	testServer().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/prompts", nil))
+	testServer().ServeHTTP(response, newTestRequest(http.MethodGet, "/api/v1/prompts", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"configured":false`) {
 		t.Fatalf("unexpected prompts response: %d %s", response.Code, response.Body.String())
 	}
@@ -128,7 +128,7 @@ func TestPromptsProxiesLangfuse(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk")
 	response := httptest.NewRecorder()
-	testServer().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/prompts", nil))
+	testServer().ServeHTTP(response, newTestRequest(http.MethodGet, "/api/v1/prompts", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "support-v3") {
 		t.Fatalf("langfuse proxy failed: %d %s", response.Code, response.Body.String())
 	}

@@ -29,7 +29,7 @@ func logFixture(t *testing.T) (http.Handler, *store.Store, api.PipelineRun, api.
 }
 
 func as(principal auth.Principal, method, path, body string, handler http.Handler) *httptest.ResponseRecorder {
-	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	request := newTestRequest(method, path, strings.NewReader(body))
 	request = request.WithContext(auth.WithPrincipal(request.Context(), principal))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)

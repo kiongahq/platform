@@ -107,6 +107,20 @@ func (s *Store) RevokeAPIToken(subject, tokenID string) error {
 	return ErrNotFound
 }
 
+// revokeSubjectTokens revokes every live API token of subject, with an
+// api_token.revoked audit event each, in the same persisted change as the
+// access update that triggered it. The caller holds s.mu.
+func (s *Store) revokeSubjectTokens(subject, actor, reason string) {
+	now := time.Now().UTC()
+	for i := range s.data.APITokens {
+		token := &s.data.APITokens[i]
+		if token.Subject == subject && token.RevokedAt == nil {
+			token.RevokedAt = &now
+			s.record("api_token.revoked", "api_token", token.ID, actor, map[string]any{"subject": subject, "reason": reason})
+		}
+	}
+}
+
 func (s *Store) ResolveAPIToken(secret string) (api.APIToken, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

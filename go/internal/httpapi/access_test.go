@@ -32,7 +32,7 @@ func accessServer(t *testing.T) (http.Handler, *store.Store) {
 }
 
 func userRequest(method, path, body string) *http.Request {
-	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	request := newTestRequest(method, path, strings.NewReader(body))
 	principal := auth.Principal{Subject: "user-1", Email: "user@example.com", Roles: []string{auth.RoleUser}}
 	return request.WithContext(auth.WithPrincipal(request.Context(), principal))
 }
@@ -276,14 +276,14 @@ func TestDisabledUserIsDeniedEvenForAssignedService(t *testing.T) {
 func TestAdminCanProvisionAndRevokeUser(t *testing.T) {
 	server := testServer()
 	put := httptest.NewRecorder()
-	server.ServeHTTP(put, httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/new-user", strings.NewReader(
+	server.ServeHTTP(put, newTestRequest(http.MethodPut, "/api/v1/admin/users/new-user", strings.NewReader(
 		`{"email":"new@example.com","role":"user","services":["projects"],"storage":{"size_gb":5},"compute":{"vcpus":1,"memory_gb":2,"max_projects":1}}`,
 	)))
 	if put.Code != http.StatusOK {
 		t.Fatalf("provision failed: %d %s", put.Code, put.Body.String())
 	}
 	remove := httptest.NewRecorder()
-	server.ServeHTTP(remove, httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/new-user", nil))
+	server.ServeHTTP(remove, newTestRequest(http.MethodDelete, "/api/v1/admin/users/new-user", nil))
 	if remove.Code != http.StatusNoContent {
 		t.Fatalf("revoke failed: %d %s", remove.Code, remove.Body.String())
 	}
@@ -306,7 +306,7 @@ func TestUserCanRequestAccessAndAdminCanReview(t *testing.T) {
 		t.Fatalf("own requests missing: %d %s", mine.Code, mine.Body.String())
 	}
 	review := httptest.NewRecorder()
-	server.ServeHTTP(review, httptest.NewRequest(http.MethodPatch, "/api/v1/admin/access-requests/"+created.ID, strings.NewReader(`{"status":"approved","note":"Capacity confirmed"}`)))
+	server.ServeHTTP(review, newTestRequest(http.MethodPatch, "/api/v1/admin/access-requests/"+created.ID, strings.NewReader(`{"status":"approved","note":"Capacity confirmed"}`)))
 	if review.Code != http.StatusOK || !strings.Contains(review.Body.String(), `"status":"approved"`) {
 		t.Fatalf("review failed: %d %s", review.Code, review.Body.String())
 	}
@@ -315,7 +315,7 @@ func TestUserCanRequestAccessAndAdminCanReview(t *testing.T) {
 func TestPersonalAPITokenAPIHidesHashAndRevokes(t *testing.T) {
 	server := testServer()
 	create := httptest.NewRecorder()
-	server.ServeHTTP(create, httptest.NewRequest(http.MethodPost, "/api/v1/settings/tokens", strings.NewReader(
+	server.ServeHTTP(create, newTestRequest(http.MethodPost, "/api/v1/settings/tokens", strings.NewReader(
 		`{"name":"laptop CLI","services":["projects"],"project_ids":["prj-demo"],"expires_in_days":30}`,
 	)))
 	if create.Code != http.StatusCreated || !strings.Contains(create.Body.String(), `"secret":"nxs_`) ||
@@ -327,13 +327,55 @@ func TestPersonalAPITokenAPIHidesHashAndRevokes(t *testing.T) {
 		t.Fatal(err)
 	}
 	list := httptest.NewRecorder()
-	server.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/v1/settings/tokens", nil))
+	server.ServeHTTP(list, newTestRequest(http.MethodGet, "/api/v1/settings/tokens", nil))
 	if list.Code != http.StatusOK || strings.Contains(list.Body.String(), "secret_hash") {
 		t.Fatalf("list token: %d %s", list.Code, list.Body.String())
 	}
 	revoke := httptest.NewRecorder()
-	server.ServeHTTP(revoke, httptest.NewRequest(http.MethodDelete, "/api/v1/settings/tokens/"+created.Token.ID, nil))
+	server.ServeHTTP(revoke, newTestRequest(http.MethodDelete, "/api/v1/settings/tokens/"+created.Token.ID, nil))
 	if revoke.Code != http.StatusNoContent {
 		t.Fatalf("revoke token: %d %s", revoke.Code, revoke.Body.String())
+	}
+}
+
+// Regression for #33: a personal API token must lose reach as soon as its
+// owner does. Removing a project or service from the owner applies to the
+// token immediately, and suspension stops it.
+func TestAPITokenFollowsOwnerAccessThenStopsOnSuspension(t *testing.T) {
+	server, repository := accessServer(t)
+	handler := auth.APITokenMiddleware(repository.ResolveAPIToken, server)
+	created, err := repository.CreateAPIToken("user-1", api.CreateAPITokenRequest{Name: "laptop CLI", Services: []string{"projects", "pipelines"}, ProjectIDs: []string{"prj-demo"}, ExpiresInDays: 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(path string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer "+created.Secret)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	if response := call("/api/v1/projects/prj-demo"); response.Code != http.StatusOK {
+		t.Fatalf("token before any change = %d: %s", response.Code, response.Body.String())
+	}
+	grant := api.UpsertUserAccessRequest{
+		Email: "user@example.com", Role: "user", Services: []string{"overview", "projects"},
+		Compute: api.ComputeGrant{VCPUs: 2, MemoryGB: 4, MaxVMs: 1, MaxProjects: 1, MaxRuns: 1},
+	}
+	if _, err := repository.UpsertUserAccess("user-1", grant, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if response := call("/api/v1/projects/prj-demo"); response.Code != http.StatusNotFound && response.Code != http.StatusForbidden {
+		t.Fatalf("token still reaches a project removed from its owner: %d %s", response.Code, response.Body.String())
+	}
+	if response := call("/api/v1/pipelines/runs"); response.Code != http.StatusForbidden {
+		t.Fatalf("token still reaches a service removed from its owner: %d %s", response.Code, response.Body.String())
+	}
+	grant.Disabled = true
+	if _, err := repository.UpsertUserAccess("user-1", grant, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if response := call("/api/v1/projects"); response.Code != http.StatusForbidden && response.Code != http.StatusUnauthorized {
+		t.Fatalf("suspended owner's token still works: %d %s", response.Code, response.Body.String())
 	}
 }

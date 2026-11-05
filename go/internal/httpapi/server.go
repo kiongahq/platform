@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,8 @@ type Server struct {
 
 	realtimeMu sync.RWMutex
 	realtime   map[string]map[string]any
+
+	executions runExecutions
 }
 
 func New(data store.Repository, static fs.FS) http.Handler {
@@ -154,7 +157,7 @@ func New(data store.Repository, static fs.FS) http.Handler {
 		}
 		return []string{access.Role}, access.Services, access.ProjectIDs, access.Disabled, true
 	}
-	return logging(securityHeaders(cors(auth.RBACWithResolver(mux, resolver))))
+	return logging(securityHeaders(cors(crossOriginGuard(auth.RBACWithResolver(mux, resolver)))))
 }
 
 // me reports the caller's identity and effective permissions so the console
@@ -218,7 +221,7 @@ func (s *Server) resourceProfiles(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) upsertUserAccess(w http.ResponseWriter, r *http.Request) {
 	var req api.UpsertUserAccessRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if decision := s.authorize(r, policy.UserManage, policy.UserResource(r.PathValue("subject"))); !decision.Allowed {
@@ -269,7 +272,7 @@ func (s *Server) myAccessRequests(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createAccessRequest(w http.ResponseWriter, r *http.Request) {
 	var req api.CreateAccessRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	value := principal(r)
@@ -285,7 +288,7 @@ func (s *Server) accessRequests(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) reviewAccessRequest(w http.ResponseWriter, r *http.Request) {
 	var req api.ReviewAccessRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	for _, pending := range s.store.AccessRequests() {
@@ -311,7 +314,7 @@ func (s *Server) apiTokens(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createAPIToken(w http.ResponseWriter, r *http.Request) {
 	var req api.CreateAPITokenRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	value := principal(r)
@@ -444,7 +447,7 @@ func (s *Server) setProjectRepository(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.SetProjectRepositoryRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	item, err := s.store.SetProjectRepository(projectID, req, actor(r))
@@ -481,7 +484,7 @@ func (s *Server) pipelineDefinition(w http.ResponseWriter, r *http.Request) {
 func (s *Server) upsertPipelineDefinition(w http.ResponseWriter, r *http.Request) {
 	var req api.UpsertPipelineDefinitionRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	normalized, issues := pipelinespec.Validate(req)
@@ -499,7 +502,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.CreateProjectRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if _, err := api.NormalizeProjectRequest(&req); err != nil {
@@ -567,6 +570,9 @@ func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := s.store.CancelRun(r.PathValue("id"), actor(r))
+	if err == nil && s.stopRunExecution(item.ID) {
+		log.Printf("run %s cancelled: stopping its in-process workloads", item.ID)
+	}
 	if err == nil && item.EngineRunID != "" && s.prefectConfigured() {
 		// Best effort: the control-plane cancellation is authoritative; the
 		// engine cancellation stops the actual execution.
@@ -583,7 +589,7 @@ func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) {
 func (s *Server) updateRunStep(w http.ResponseWriter, r *http.Request) {
 	var req api.UpdateRunStepRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	// Executing pipelines report as the service identity. Anyone else must
@@ -600,7 +606,7 @@ func (s *Server) retryRun(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.runFor(w, r, policy.PipelineRun); !ok {
 		return
 	}
-	if err := enforceRunQuota(s.store, principal(r)); err != nil {
+	if err := s.enforceRunQuota(principal(r)); err != nil {
 		writeError(w, http.StatusForbidden, "quota_exceeded", err.Error())
 		return
 	}
@@ -614,7 +620,7 @@ func (s *Server) retryRun(w http.ResponseWriter, r *http.Request) {
 func (s *Server) submitPipeline(w http.ResponseWriter, r *http.Request) {
 	var req api.SubmitPipelineRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	// Policy first (who may run this pipeline, and which overrides), then
@@ -704,7 +710,7 @@ func (s *Server) features(w http.ResponseWriter, r *http.Request) {
 func (s *Server) applyFeatureView(w http.ResponseWriter, r *http.Request) {
 	var req api.ApplyFeatureViewRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if decision := s.authorize(r, policy.FeatureWrite, policy.FeatureResource(req.Name)); !decision.Allowed {
@@ -721,7 +727,7 @@ func (s *Server) applyFeatureView(w http.ResponseWriter, r *http.Request) {
 func (s *Server) reportMaterialization(w http.ResponseWriter, r *http.Request) {
 	var req api.MaterializationReport
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if decision := s.authorize(r, policy.FeatureWrite, policy.FeatureResource(r.PathValue("name"))); !decision.Allowed {
@@ -945,7 +951,7 @@ func (s *Server) reportRealtime(w http.ResponseWriter, r *http.Request) {
 	demo := r.PathValue("demo")
 	var payload map[string]any
 	if err := decode(r, &payload); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	payload["updated_at"] = time.Now().UTC().Format(time.RFC3339)
@@ -1019,7 +1025,7 @@ func (s *Server) deployFunction(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.DeployFunctionRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if req.ProjectID == "" && privileged(principal(r)) {
@@ -1137,7 +1143,7 @@ func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 func (s *Server) registerModel(w http.ResponseWriter, r *http.Request) {
 	var req api.RegisterModelRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if !projectAllowed(s.store, principal(r), req.ProjectID) {
@@ -1155,7 +1161,7 @@ func (s *Server) promoteModel(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.PromoteModelRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	item, err := s.store.PromoteModel(r.PathValue("id"), req.Stage, actor(r))
@@ -1168,7 +1174,7 @@ func (s *Server) deployModel(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.DeployModelRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	item, err := s.store.DeployModel(r.PathValue("id"), req.CanaryWeight, actor(r))
@@ -1180,6 +1186,9 @@ func (s *Server) deployModel(w http.ResponseWriter, r *http.Request) {
 	// container starts and the live endpoint is recorded. Fail closed when the
 	// serving manager rejects it.
 	if managerURL := os.Getenv("SERVING_MANAGER_URL"); managerURL != "" {
+		// The serving manager answers once the model server is ready, which
+		// can take longer than the listener's 30s write timeout.
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(servingRequestTimeout() + 10*time.Second))
 		endpoint, deployErr := s.requestServing(r, managerURL, item)
 		if deployErr != nil {
 			item, _ = s.store.SetModelEndpoint(item.ID, "", "failed")
@@ -1191,6 +1200,27 @@ func (s *Server) deployModel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusAccepted, item)
+}
+
+// defaultServingRequestTimeout stays above the serving manager's own
+// readiness wait (SERVE_READY_TIMEOUT_SECONDS, default 80), so the manager,
+// not the gateway, reports a model server that never became ready.
+const defaultServingRequestTimeout = 90 * time.Second
+
+// servingRequestTimeout is KIONGA_SERVING_REQUEST_TIMEOUT_SECONDS, the
+// gateway's wait for the serving manager. Keep it above the manager's
+// SERVE_READY_TIMEOUT_SECONDS; invalid values fall back to 90s.
+func servingRequestTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("KIONGA_SERVING_REQUEST_TIMEOUT_SECONDS"))
+	if raw == "" {
+		return defaultServingRequestTimeout
+	}
+	seconds, err := strconv.Atoi(raw)
+	if err != nil || seconds < 1 || seconds > 3600 {
+		log.Printf("KIONGA_SERVING_REQUEST_TIMEOUT_SECONDS=%q is not 1-3600 seconds; using %s", raw, defaultServingRequestTimeout)
+		return defaultServingRequestTimeout
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func (s *Server) requestServing(r *http.Request, managerURL string, model api.Model) (string, error) {
@@ -1207,7 +1237,7 @@ func (s *Server) requestServing(r *http.Request, managerURL string, model api.Mo
 	if token := os.Getenv("MLAIOPS_INTERNAL_TOKEN"); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
-	client := &http.Client{Timeout: 90 * time.Second}
+	client := &http.Client{Timeout: servingRequestTimeout()}
 	response, err := client.Do(request) // #nosec G704 -- host is operator config (STORAGE_PROXY_URL, LANGFUSE_URL, SERVING_MANAGER_URL); paths are fixed or escaped
 	if err != nil {
 		return "", err
@@ -1306,7 +1336,7 @@ func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deployAgent(w http.ResponseWriter, r *http.Request) {
 	var req api.DeployAgentRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if !projectAllowed(s.store, principal(r), req.ProjectID) {
@@ -1343,7 +1373,7 @@ func (s *Server) agentTraffic(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.TrafficRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	item, err := s.store.SetAgentTraffic(r.PathValue("id"), req.CanaryWeight, actor(r))
@@ -1447,7 +1477,7 @@ func (s *Server) invokeAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.InvokeAgentRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if strings.TrimSpace(req.Message) == "" {
@@ -1467,6 +1497,13 @@ func (s *Server) invokeAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	request.Header.Set("Content-Type", "application/json")
 	setAgentRuntimeHeaders(request, agent)
+	// The runtime authenticates the gateway with the shared internal token
+	// (required in production) and trusts the end user only from this
+	// header, never from the request body.
+	if token := os.Getenv("MLAIOPS_INTERNAL_TOKEN"); token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	request.Header.Set("X-MLAIOps-User-ID", principal(r).Subject)
 	client := &http.Client{Timeout: 120 * time.Second}
 	response, err := client.Do(request)
 	if err != nil {
@@ -1515,7 +1552,7 @@ func (s *Server) agentUsage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) recordTrace(w http.ResponseWriter, r *http.Request) {
 	var req api.RecordTraceRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	item, err := s.store.RecordTrace(req)
@@ -1530,7 +1567,7 @@ func (s *Server) tools(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) registerTool(w http.ResponseWriter, r *http.Request) {
 	var req api.RegisterToolRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	item, err := s.store.RegisterTool(req, actor(r))
@@ -1545,7 +1582,7 @@ func (s *Server) connections(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) createConnection(w http.ResponseWriter, r *http.Request) {
 	var req api.CreateConnectionRequest
 	if err := decode(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeDecodeError(w, err)
 		return
 	}
 	if decision := s.authorize(r, policy.InfraProvision, policy.ConnectionResource("*")); !decision.Allowed {
@@ -1614,6 +1651,9 @@ func actor(r *http.Request) string {
 }
 
 func decode(r *http.Request, target any) error {
+	if err := requireJSON(r); err != nil {
+		return err
+	}
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	return decoder.Decode(target)

@@ -131,7 +131,11 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 			}
 			return run
 		}
-		go s.executeFunctionPipeline(context.Background(), run, definition) // #nosec G118 -- the run outlives the request by design
+		runCtx, done := s.startRunExecution(run.ID)
+		go func() {
+			defer done()
+			s.executeFunctionPipeline(runCtx, run, definition)
+		}()
 		return run
 	}
 	if run.DefinitionID != "" && kubernetesExecutorEnabled() {
@@ -199,11 +203,21 @@ func (s *Server) executeFunctionPipeline(ctx context.Context, run api.PipelineRu
 		var raw []byte
 		var err error
 		attempts := job.Retries + 1
+		cancelled := func(attempt int) (any, error) {
+			report(api.UpdateRunStepRequest{Step: job.Name, Status: "skipped", Message: execution.CancelledMessage, Attempt: attempt, WorkloadKind: "openfaas-call", WorkloadID: job.Function})
+			return nil, ctx.Err()
+		}
 		for attempt := 1; attempt <= attempts; attempt++ {
+			if ctx.Err() != nil {
+				return cancelled(attempt)
+			}
 			report(api.UpdateRunStepRequest{Step: job.Name, Status: "running", Message: fmt.Sprintf("invoking function %s attempt %d/%d", job.Function, attempt, attempts), Attempt: attempt, WorkloadKind: "openfaas-call", WorkloadID: job.Function})
 			invocation, cancel := context.WithTimeout(ctx, timeout)
 			raw, err = client.Invoke(invocation, job.Function, payload)
 			cancel()
+			if err != nil && ctx.Err() != nil {
+				return cancelled(attempt)
+			}
 			if err == nil {
 				var output any
 				if json.Unmarshal(raw, &output) != nil {
@@ -215,7 +229,7 @@ func (s *Server) executeFunctionPipeline(ctx context.Context, run api.PipelineRu
 			if attempt < attempts && job.RetryBackoffSeconds > 0 {
 				select {
 				case <-ctx.Done():
-					return nil, ctx.Err()
+					return cancelled(attempt)
 				case <-time.After(time.Duration(job.RetryBackoffSeconds) * time.Second):
 				}
 			}

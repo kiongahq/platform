@@ -63,3 +63,14 @@ frontend/public/runtime/
 frontend/public/controllers/
 go/cmd/gateway/frontend-dist/*
 !go/cmd/gateway/frontend-dist/placeholder.txt
+
+# Binaries from go build ./cmd/<name> run in go/
+/go/gateway
+/go/operator
+/go/sandbox-manager
+/go/integration-worker
+/go/feature-gateway
+/go/storage-proxy
+/go/log-exporter
+/go/metrics-collector
+/go/cli

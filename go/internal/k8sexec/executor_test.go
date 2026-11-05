@@ -10,6 +10,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/kiongahq/platform/pkg/api"
@@ -178,4 +179,69 @@ func TestFunctionNodesAreRejected(t *testing.T) {
 func gpuLimit(container corev1.Container) string {
 	quantity := container.Resources.Limits["nvidia.com/gpu"]
 	return quantity.String()
+}
+
+// Regression for #34: cancelling a run during node 1 deletes its Job with
+// background propagation (so its pods stop) and never creates node 2's Job.
+func TestCancelDeletesActiveJobAndStartsNoFurtherNode(t *testing.T) {
+	c := newCluster(nil) // the Job controller never finishes a Job
+	e := executorFor(c)
+	e.Sleep = nil // poll on real time so cancellation interrupts the wait
+	rec := &recorder{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	jobs := []api.PipelineJob{
+		{Name: "train", Kind: "container", Image: "img", Resources: api.JobResources{GPU: 1}},
+		{Name: "evaluate", Kind: "container", Image: "img", DependsOn: []string{"train"}},
+	}
+	done := make(chan map[string]error)
+	go func() { done <- e.Run(ctx, api.PipelineRun{ID: "run-1", ProjectID: "prj-1"}, jobs, rec, 8) }()
+	first := JobName("run-1", "train", 1)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := c.client.BatchV1().Jobs("kionga-prj-1").Get(context.Background(), first, metav1.GetOptions{}); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("node 1 Job was never created")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("executor did not stop after cancellation")
+	}
+	remaining, _ := c.client.BatchV1().Jobs("").List(context.Background(), metav1.ListOptions{})
+	if len(remaining.Items) != 0 {
+		t.Fatalf("Jobs still present after cancel: %d", len(remaining.Items))
+	}
+	deleted := false
+	for _, action := range c.client.Actions() {
+		if action.GetVerb() == "create" && action.GetResource().Resource == "jobs" {
+			if created := action.(interface{ GetObject() runtime.Object }).GetObject().(*batchv1.Job); created.Name != first {
+				t.Fatalf("Job %s was created after cancellation", created.Name)
+			}
+		}
+		if action.GetVerb() == "delete" && action.GetResource().Resource == "jobs" {
+			options := action.(interface{ GetDeleteOptions() metav1.DeleteOptions }).GetDeleteOptions()
+			if options.PropagationPolicy == nil || *options.PropagationPolicy != metav1.DeletePropagationBackground {
+				t.Fatalf("Job deleted without background propagation: %+v", options)
+			}
+			deleted = true
+		}
+	}
+	if !deleted {
+		t.Fatal("the active Job was not deleted")
+	}
+	final := map[string]api.UpdateRunStepRequest{}
+	rec.mu.Lock()
+	for _, step := range rec.steps {
+		final[step.Step] = step
+	}
+	rec.mu.Unlock()
+	if final["train"].Status != "skipped" || !strings.Contains(final["train"].Message, "cancelled") || final["evaluate"].Status != "skipped" {
+		t.Fatalf("steps after cancel: train %+v evaluate %+v", final["train"], final["evaluate"])
+	}
 }

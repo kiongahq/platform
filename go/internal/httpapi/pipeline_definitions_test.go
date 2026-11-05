@@ -27,7 +27,7 @@ func do(t *testing.T, handler http.Handler, method, path, body string, roles ...
 	if len(roles) == 0 {
 		roles = []string{auth.RoleAdmin}
 	}
-	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	request := newTestRequest(method, path, strings.NewReader(body))
 	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "admin", Roles: roles}))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -130,7 +130,7 @@ func TestDefinitionsAreProjectIsolated(t *testing.T) {
 	if _, err := data.UpsertUserAccess("outsider", api.UpsertUserAccessRequest{Role: "user", Services: []string{"pipelines"}}, "admin"); err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest("GET", "/api/v1/pipelines/definitions/"+definition.ID+"/revisions", nil)
+	request := newTestRequest("GET", "/api/v1/pipelines/definitions/"+definition.ID+"/revisions", nil)
 	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{Subject: "outsider", Roles: []string{auth.RoleUser}}))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
