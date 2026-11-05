@@ -588,7 +588,7 @@ func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) {
 // (the SDK step reporter inside each flow).
 func (s *Server) updateRunStep(w http.ResponseWriter, r *http.Request) {
 	var req api.UpdateRunStepRequest
-	if err := decode(r, &req); err != nil {
+	if err := decodeOpen(r, &req); err != nil {
 		writeDecodeError(w, err)
 		return
 	}
@@ -1551,7 +1551,7 @@ func (s *Server) agentUsage(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) recordTrace(w http.ResponseWriter, r *http.Request) {
 	var req api.RecordTraceRequest
-	if err := decode(r, &req); err != nil {
+	if err := decodeOpen(r, &req); err != nil {
 		writeDecodeError(w, err)
 		return
 	}
@@ -1657,6 +1657,18 @@ func decode(r *http.Request, target any) error {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	return decoder.Decode(target)
+}
+
+// decodeOpen is decode for the open ingest contracts (contracts
+// ingest/step-report.v1 and ingest/trace.v1, see contracts docs/compatibility.md):
+// unknown fields are ignored so a newer producer can talk to an older gateway,
+// and known fields stay typed. Use decode for everything a user or the console
+// authors.
+func decodeOpen(r *http.Request, target any) error {
+	if err := requireJSON(r); err != nil {
+		return err
+	}
+	return json.NewDecoder(r.Body).Decode(target)
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
