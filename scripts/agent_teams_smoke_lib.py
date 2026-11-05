@@ -210,6 +210,7 @@ class GitServer:
 
         self.server = ThreadingHTTPServer(("0.0.0.0", 0), Handler)  # helpers reach it over the engine's bridge
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(cert, key)
         self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
         self.port = self.server.server_address[1]
@@ -316,6 +317,9 @@ class CountingBackend:
         self.server.shutdown()
 
 
+RUNNER_ROUTES = ("/agent-turns", "/embeddings", "/healthz", "/runs", "/judge")
+
+
 class RunnerRecorder:
     """Forwards to the real runner and keeps each request and response, so the real wire
     format can be checked against the contract. It changes nothing on the way through."""
@@ -333,7 +337,12 @@ class RunnerRecorder:
 
             def _forward(self, body: bytes | None) -> None:
                 headers = {name: value for name, value in self.headers.items() if name.lower() not in ("host", "content-length", "connection")}
-                request = urllib.request.Request(target + self.path, data=body, headers=headers, method=self.command)
+                # Only the runner's own routes, so a request can't steer the proxy elsewhere.
+                route = next((known for known in RUNNER_ROUTES if known == self.path), None)
+                if route is None:
+                    self.send_error(404)
+                    return
+                request = urllib.request.Request(target + route, data=body, headers=headers, method=self.command)
                 try:
                     with urllib.request.urlopen(request, timeout=660) as response:  # noqa: S310 -- local runner URL
                         status, reply, kind = response.status, response.read(), response.headers.get("Content-Type", "")
