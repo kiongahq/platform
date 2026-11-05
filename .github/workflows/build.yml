@@ -8,7 +8,7 @@ on:
     types: [published]
   push:
     branches: [main]
-    paths: [go/**, frontend/**, Dockerfile.gateway, .dockerignore, .github/workflows/build.yml]
+    paths: [go/**, frontend/**, deploy/sandbox/**, Dockerfile.gateway, .dockerignore, .github/workflows/build.yml]
   workflow_dispatch:
 
 permissions:
@@ -26,10 +26,18 @@ jobs:
       fail-fast: false
       matrix:
         service: [gateway, operator, integration-worker, feature-gateway, storage-proxy,
-                  metrics-collector, log-exporter, cli]
+                  metrics-collector, log-exporter, cli, sandbox-manager]
     uses: kiongahq/.github/.github/workflows/image.yml@717e2cc3be707aff75c717662c6b3fea58ab56d8
     with:
       image: ${{ matrix.service }}
       context: ${{ matrix.service == 'gateway' && '.' || 'go' }}
       dockerfile: ${{ matrix.service == 'gateway' && 'Dockerfile.gateway' || 'Dockerfile' }}
       build-args: SERVICE=${{ matrix.service }}
+
+  # The image agent sandboxes and git helpers run. Pin it by digest in KIONGA_SANDBOX_IMAGES.
+  sandbox:
+    uses: kiongahq/.github/.github/workflows/image.yml@717e2cc3be707aff75c717662c6b3fea58ab56d8
+    with:
+      image: sandbox
+      context: deploy/sandbox
+      dockerfile: Dockerfile

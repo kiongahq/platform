@@ -160,3 +160,21 @@ func TestDesignerRunnerTokenIsASecret(t *testing.T) {
 		t.Fatal("the runner token was accepted from the non-secret config file")
 	}
 }
+
+// The VM path delivers secrets only as files, so the manager's token must be listed.
+func TestSandboxTokenLoadsFromFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	want := strings.Repeat("sandbox-file-value-", 3)
+	if err := os.WriteFile(path, []byte(want+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KIONGA_CONFIG_FILE", "")
+	t.Setenv("KIONGA_SANDBOX_TOKEN", "")
+	t.Setenv("KIONGA_SANDBOX_TOKEN_FILE", path)
+	if err := Load(); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("KIONGA_SANDBOX_TOKEN"); got != want {
+		t.Fatalf("got %q", got)
+	}
+}
