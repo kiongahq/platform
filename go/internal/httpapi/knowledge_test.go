@@ -215,7 +215,9 @@ func TestKnowledgeBackendCannotReachMetadataServices(t *testing.T) {
 	}
 	handler := New(repository, fstest.MapFS{})
 	created := httptest.NewRecorder()
-	handler.ServeHTTP(created, httptest.NewRequest(http.MethodPost, "/api/v1/admin/knowledge-bases", strings.NewReader(`{"project_id":"`+project.ID+`","name":"meta-docs","backend":"qdrant","dimensions":3,"endpoint":"http://169.254.169.254","secret_ref":"none"}`)))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/knowledge-bases", strings.NewReader(`{"project_id":"`+project.ID+`","name":"meta-docs","backend":"qdrant","dimensions":3,"endpoint":"http://169.254.169.254","secret_ref":"none"}`))
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(created, request)
 	if created.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("metadata endpoint registration = %d %s", created.Code, created.Body.String())
 	}
