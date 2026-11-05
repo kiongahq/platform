@@ -622,6 +622,35 @@ test("the transcript shows tool calls with their paired results as code views, a
   ok(calls.some((item) => item.path === `${RUN}/workers/atw-f`));
 });
 
+test("the transcript labels gateway tool failures as errors", async () => {
+  liveRun({
+    details: {
+      "atw-c": {
+        transcript: [
+          { role: "assistant", tool_calls: [
+            { id: "denied", name: "read_file", arguments: {}, status: "error" },
+            { id: "search", name: "search_files", arguments: {}, status: "error" },
+          ] },
+          { role: "tool", tool_call_id: "denied", content: '{"error":"access_denied","message":"Access denied."}' },
+          { role: "tool", tool_call_id: "search", content: '{"error":"search_failed","message":"Search failed."}' },
+        ],
+      },
+    },
+  });
+  const view = openRun();
+  for (const id of ["denied", "search"]) {
+    const call = await waitFor(() => {
+      const node = view.container.querySelector(`[data-tool-call="${id}"]`);
+      ok(node);
+      return node as HTMLElement;
+    });
+    assert.match(call.textContent || "", /Error \(redacted\)/);
+    assert.doesNotMatch(call.textContent || "", /Result \(redacted\)/);
+  }
+  assert.match(view.container.querySelector('[data-tool-call="denied"]')?.textContent || "", /access_denied/);
+  assert.match(view.container.querySelector('[data-tool-call="search"]')?.textContent || "", /search_failed/);
+});
+
 test("transcripts read the gateway's provenance wrapper, and text inside it cannot change the sender", async () => {
   const frame = (source: string, kind: string, body: string) => `<kionga-data source="${source}" kind="${kind}" nonce="abc123">${body}</kionga-data>`;
   assert.deepEqual(unframe(frame("worker:bug-fixer", "hand-back", "done")), { source: "worker:bug-fixer", kind: "hand-back", body: "done" });

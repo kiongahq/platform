@@ -321,7 +321,7 @@ function Transcript({ runId, worker, events }: { runId: string; worker: TeamWork
               {entry.result === undefined ? (
                 <p className="team-muted">No result yet.</p>
               ) : (
-                <CodeBlock language={codeView(entry.result).language} format={false} filename="Result (redacted)">{codeView(entry.result).source}</CodeBlock>
+                <CodeBlock language={codeView(entry.result).language} format={false} filename={entry.call.status === "error" ? "Error (redacted)" : "Result (redacted)"}>{codeView(entry.result).source}</CodeBlock>
               )}
             </li>
           ),
