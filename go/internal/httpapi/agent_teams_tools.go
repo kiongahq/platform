@@ -26,6 +26,9 @@ import (
 // sandboxGitFailed is the sandbox manager's code for a git failure.
 const sandboxGitFailed = "git_failed"
 
+// sandboxSearchFailed means search_files did not finish, so it says nothing about matches.
+const sandboxSearchFailed = "search_failed"
+
 var gitRef = regexp.MustCompile(`^[A-Za-z0-9_]+([./-][A-Za-z0-9_]+)*$`)
 
 // toolOutcome is one call's result. failed marks it for the model and the console.
@@ -694,6 +697,17 @@ func (e *teamEngine) executeSandbox(ctx context.Context, run agentteam.Run, work
 		out, err := sandbox.Exec(ctx, id, sandboxExecRequest{Command: "grep -rnIE -e " + shellQuote(pattern) + " -- " + shellQuote(path), TimeoutSeconds: 120})
 		if err != nil {
 			return sandboxFailure(err)
+		}
+		// grep exits 1 for no match and above that for an error. Neither a timeout nor
+		// an error may reach the model looking like an empty result.
+		if out.TimedOut {
+			return toolFailure(sandboxSearchFailed, "The search timed out and every process in the sandbox was stopped. Narrow the path; empty results here do not mean no match.")
+		}
+		if out.ExitCode > 1 {
+			if out.Stdout == "" {
+				return toolFailure(sandboxSearchFailed, "The search failed: "+strings.TrimSpace(out.Stderr))
+			}
+			return toolJSON(map[string]any{"matches": out.Stdout, "truncated": out.Truncated, "errors": strings.TrimSpace(out.Stderr)})
 		}
 		return toolJSON(map[string]any{"matches": out.Stdout, "truncated": out.Truncated})
 	}
