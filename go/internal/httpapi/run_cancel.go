@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// runCancelPoll is how often an in-process execution re-reads its run so a
-// cancellation recorded by another gateway replica also stops it.
-var runCancelPoll = 5 * time.Second
+// defaultRunCancelPoll is how often an in-process execution re-reads its run so
+// a cancellation recorded by another gateway replica also stops it.
+const defaultRunCancelPoll = 5 * time.Second
 
 // runExecutions tracks the pipeline runs this process executes itself (the
 // Kubernetes executor and the OpenFaaS function DAG). Each has a cancellable
@@ -18,6 +18,8 @@ var runCancelPoll = 5 * time.Second
 type runExecutions struct {
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
+	// poll overrides defaultRunCancelPoll. Set it only when building the Server.
+	poll time.Duration
 }
 
 // startRunExecution returns the context an in-process executor must run
@@ -44,7 +46,11 @@ func (s *Server) startRunExecution(runID string) (context.Context, func()) {
 // watchRunCancellation cancels an execution whose run was cancelled through
 // another replica (or directly in the store).
 func (s *Server) watchRunCancellation(ctx context.Context, runID string, cancel context.CancelFunc) {
-	ticker := time.NewTicker(runCancelPoll)
+	poll := s.executions.poll
+	if poll == 0 {
+		poll = defaultRunCancelPoll
+	}
+	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
 	for {
 		select {
