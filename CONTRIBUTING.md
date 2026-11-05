@@ -45,6 +45,19 @@ cd go && go run github.com/securego/gosec/v2/cmd/gosec@v2.29.0 -quiet -exclude-d
 go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --no-banner --redact .
 ```
 
+The **Sandbox attack suite** workflow (`sandbox-attack.yml`) runs hostile commands in
+real sandboxes under a pinned gVisor release on Linux, then removes gVisor and proves
+creates return 503. To run the same tests on a development machine without gVisor:
+
+```bash
+KIONGA_ATTACK_RUNTIME=crun KIONGA_SANDBOX_ALLOW_UNSAFE_RUNTIME=1 \
+KIONGA_ATTACK_SOCKET=<engine socket> KIONGA_ATTACK_GIT_HOST=<address containers reach this host on> \
+make test-sandbox-attack
+```
+
+Those local results say nothing about gVisor. Read `go/internal/sandbox/README.md`
+before changing that package.
+
 Browser acceptance tests run against a live stack and are not part of CI:
 
 ```bash
@@ -80,7 +93,7 @@ The gateway image builds the frontend with `Dockerfile.gateway`. Other Go servic
 images use `go/Dockerfile` and do not require Node.js or frontend dependencies.
 
 `SERVICE` is one of `gateway`, `operator`, `integration-worker`, `feature-gateway`,
-`storage-proxy`, `metrics-collector`, `log-exporter` or `cli`. The **Build &
+`storage-proxy`, `metrics-collector`, `log-exporter`, `cli` or `sandbox-manager`. The **Build &
 Publish Images** workflow (`build.yml`) publishes each as
 `ghcr.io/kiongahq/<service>` on pushes to `main` that touch `go/` or `frontend/`,
 using `edge` and SHA references. Published releases use exact version tags and
