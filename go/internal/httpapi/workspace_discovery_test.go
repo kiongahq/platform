@@ -117,6 +117,9 @@ func TestIDESessionIsNotReusedAfterPasswordRotation(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("logins = %d, want 2: the repeat reuses its session, the rotation does not", calls)
+	}
+}
+
 // Regression for #105: scaffold jobs authenticate with the workspace's own
 // job-token, never the editor login token, and are unavailable until the
 // operator has generated job-token.
