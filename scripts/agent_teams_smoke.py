@@ -736,11 +736,13 @@ def scenario_6a(s: Smoke) -> None:
     # Cancellation sweeps all processes in this sandbox, including background writers.
     # The fixture changes only the filesystem; neither the persisted call nor its result
     # is touched. An old reader of the FIFO cannot read this new inode.
+    # That sweep can also kill this docker exec (status 137), so it retries until the
+    # replacement reports success. The replace is atomic and safe to repeat.
     def release_search() -> bool:
-        run(["docker", "exec", search_container, "python3", "-c",
-             "from pathlib import Path; p=Path('/workspace/replay.txt'); p.write_text('needle\\n'); p.replace('/workspace/pipe')"])
-        return True
-    wait_for("replace the FIFO after cancellation cleanup", release_search, 30)
+        return run(["docker", "exec", search_container, "python3", "-c",
+                    "from pathlib import Path; p=Path('/workspace/replay.txt'); p.write_text('needle\\n'); p.replace('/workspace/pipe'); print('replaced')"],
+                   check=False) == "replaced"
+    wait_for("replace the FIFO after cancellation cleanup", release_search, 30, every=1)
     backend_hold.set()
     git_hold.set()
     s.start_gateway()
