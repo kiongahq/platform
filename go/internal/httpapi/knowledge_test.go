@@ -43,14 +43,14 @@ func TestPgvectorKnowledgeRoundTrip(t *testing.T) {
 	query := target.Query()
 	query.Set("search_path", schema+",public")
 	target.RawQuery = query.Encode()
-	t.Setenv("KIONGA_TEST_PGVECTOR_DSN", target.String())
+	t.Setenv("KIONGA_KB_SECRET_TEST_DSN", target.String())
 	repository := store.New()
 	project, err := repository.CreateProject(api.CreateProjectRequest{Name: "pgvector project"}, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := domainServer(repository, auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}})
-	body := `{"project_id":"` + project.ID + `","name":"pgvector-docs","backend":"pgvector","dimensions":3,"dsn_ref":"env:KIONGA_TEST_PGVECTOR_DSN"}`
+	body := `{"project_id":"` + project.ID + `","name":"pgvector-docs","backend":"pgvector","dimensions":3,"dsn_ref":"env:KIONGA_KB_SECRET_TEST_DSN"}`
 	created := call(t, server, http.MethodPost, "/api/v1/admin/knowledge-bases", body)
 	if created.Code != 201 {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())
@@ -100,7 +100,7 @@ func TestQdrantKnowledgeRoundTrip(t *testing.T) {
 }
 
 func TestQdrantKnowledgeIsProjectScopedAndCredentialsStayServerSide(t *testing.T) {
-	t.Setenv("KIONGA_QDRANT_TEST_KEY", "qdrant-secret-value")
+	t.Setenv("KIONGA_KB_SECRET_QDRANT_TEST", "qdrant-secret-value")
 	var requests []string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("api-key") != "qdrant-secret-value" {
@@ -134,7 +134,7 @@ func TestQdrantKnowledgeIsProjectScopedAndCredentialsStayServerSide(t *testing.T
 		t.Fatal(err)
 	}
 	adminServer := domainServer(repository, auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}})
-	body := `{"project_id":"` + project.ID + `","name":"support-docs","backend":"qdrant","dimensions":3,"endpoint":"` + upstream.URL + `","secret_ref":"env:KIONGA_QDRANT_TEST_KEY"}`
+	body := `{"project_id":"` + project.ID + `","name":"support-docs","backend":"qdrant","dimensions":3,"endpoint":"` + upstream.URL + `","secret_ref":"env:KIONGA_KB_SECRET_QDRANT_TEST"}`
 	created := call(t, adminServer, http.MethodPost, "/api/v1/admin/knowledge-bases", body)
 	if created.Code != 201 {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())
