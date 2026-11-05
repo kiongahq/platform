@@ -23,6 +23,7 @@ import (
 	"github.com/kiongahq/platform/internal/pipelinespec"
 	"github.com/kiongahq/platform/internal/platform"
 	"github.com/kiongahq/platform/internal/policy"
+	"github.com/kiongahq/platform/internal/runtimeconfig"
 	"github.com/kiongahq/platform/internal/store"
 	"github.com/kiongahq/platform/pkg/api"
 )
@@ -588,7 +589,7 @@ func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) {
 // (the SDK step reporter inside each flow).
 func (s *Server) updateRunStep(w http.ResponseWriter, r *http.Request) {
 	var req api.UpdateRunStepRequest
-	if err := decode(r, &req); err != nil {
+	if err := decodeOpen(r, &req); err != nil {
 		writeDecodeError(w, err)
 		return
 	}
@@ -1553,7 +1554,7 @@ func (s *Server) agentUsage(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) recordTrace(w http.ResponseWriter, r *http.Request) {
 	var req api.RecordTraceRequest
-	if err := decode(r, &req); err != nil {
+	if err := decodeOpen(r, &req); err != nil {
 		writeDecodeError(w, err)
 		return
 	}
@@ -1589,6 +1590,10 @@ func (s *Server) createConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	if decision := s.authorize(r, policy.InfraProvision, policy.ConnectionResource("*")); !decision.Allowed {
 		writeDenied(w, decision)
+		return
+	}
+	if strings.HasPrefix(req.SecretRef, "env:") && !runtimeconfig.PlatformSecrets(req.Type).Permits(req.SecretRef) {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_request", "Use env:KIONGA_PLATFORM_SECRET_<NAME>, or list the variable in KIONGA_PLATFORM_SECRET_REFS. The gateway's own secrets cannot be referenced.")
 		return
 	}
 	item, err := s.store.CreateConnection(req, actor(r))
@@ -1661,6 +1666,18 @@ func decode(r *http.Request, target any) error {
 	return decoder.Decode(target)
 }
 
+// decodeOpen is decode for the open ingest contracts (contracts
+// ingest/step-report.v1 and ingest/trace.v1, see contracts docs/compatibility.md):
+// unknown fields are ignored so a newer producer can talk to an older gateway,
+// and known fields stay typed. Use decode for everything a user or the console
+// authors.
+func decodeOpen(r *http.Request, target any) error {
+	if err := requireJSON(r); err != nil {
+		return err
+	}
+	return json.NewDecoder(r.Body).Decode(target)
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -1717,7 +1734,8 @@ func logging(next http.Handler) http.Handler {
 		requestCount.WithLabelValues(r.Method, category).Inc()
 		requestDuration.WithLabelValues(category).Observe(time.Since(start).Seconds())
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			log.Printf("method=%s path=%s duration=%s", r.Method, r.URL.Path, time.Since(start))
+			// %q keeps a decoded %0a in the path from forging a log line.
+			log.Printf("method=%s path=%q duration=%s", r.Method, r.URL.Path, time.Since(start))
 		}
 	})
 }

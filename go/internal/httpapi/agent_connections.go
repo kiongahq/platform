@@ -6,8 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/kiongahq/platform/internal/store"
@@ -60,8 +58,8 @@ func (s *Server) createAgentAPIConnection(w http.ResponseWriter, r *http.Request
 	if !connectionName.MatchString(connection.Name) || len(connection.Description) > 500 ||
 		err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" ||
 		target.User != nil || target.RawQuery != "" || target.Fragment != "" ||
-		(connection.SecretRef != "none" && !knowledgeRef.MatchString(connection.SecretRef)) {
-		writeError(w, 422, "invalid_request", "Use a named HTTP(S) endpoint without URL credentials or query, and none or an env: credential reference")
+		(connection.SecretRef != "none" && !connectionSecrets.Permits(connection.SecretRef)) {
+		writeError(w, 422, "invalid_request", "Use a named HTTP(S) endpoint without URL credentials or query, and none or a permitted env: credential reference (KIONGA_CONNECTION_SECRET_*)")
 		return
 	}
 	for _, current := range store.ListDocs[agentAPIConnection](s.store, agentConnectionKind) {
@@ -113,7 +111,7 @@ func (s *Server) invokeAgentAPIConnection(w http.ResponseWriter, r *http.Request
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	if connection.SecretRef != "none" {
-		token := os.Getenv(strings.TrimPrefix(connection.SecretRef, "env:"))
+		token := connectionSecrets.Value(connection.SecretRef)
 		if token == "" {
 			writeError(w, 503, "credential_unavailable", "API connection credential is unavailable")
 			return

@@ -14,12 +14,25 @@ const escape = (value: string) =>
         c
       ]!,
   );
+// Plain text for the no-DOM fallback. A scan rather than a tag-matching regex:
+// nested or unterminated markup such as "<scr<script>ipt>" cannot reassemble a
+// tag, because no angle bracket ever reaches the output.
+export function stripTags(html: string): string {
+  let text = "";
+  let inTag = false;
+  for (const character of html) {
+    if (character === "<") inTag = true;
+    else if (character === ">") inTag = false;
+    else if (!inTag) text += character;
+  }
+  return text;
+}
 export function inlineNodes(html: string, doc?: Document): RichNode[] {
   const parserDoc =
     doc || (typeof document !== "undefined" ? document : undefined);
   if (!parserDoc)
     return [
-      { type: "text", text: String(html || "").replace(/<[^>]*>/g, "") },
+      { type: "text", text: stripTags(String(html || "")) },
     ].filter((n) => n.text);
   const parsed = new parserDoc.defaultView!.DOMParser().parseFromString(
     String(html || ""),

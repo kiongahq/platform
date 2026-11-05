@@ -118,6 +118,7 @@ func main() {
 	httpapi.StartScheduler(ctx, repository)
 	httpapi.StartLogRetention(ctx, repository)
 	httpapi.StartEditorialPublisher(ctx, repository)
+	httpapi.LogRefusedSecretRefs(repository)
 	// Sign-in: single sign-on through an OIDC broker (Dex: LDAP, SAML,
 	// GitHub, Google, Microsoft, ...), local accounts, or both. Local
 	// accounts next to SSO are break-glass access and need an explicit
