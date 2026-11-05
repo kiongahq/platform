@@ -1,9 +1,15 @@
 import type { SVGProps } from "react";
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
+import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
+import ManageHistoryOutlinedIcon from "@mui/icons-material/ManageHistoryOutlined";
 import SaveAsIcon from "@mui/icons-material/SaveAs";
+import SmartToyOutlinedIcon from "@mui/icons-material/SmartToyOutlined";
 const materialIcons = {
   "agent-designer": AccountTreeOutlinedIcon,
+  "agent-definitions": SmartToyOutlinedIcon,
+  "agent-teams": GroupsOutlinedIcon,
+  "team-runs": ManageHistoryOutlinedIcon,
   langflow: HubOutlinedIcon,
   storage: SaveAsIcon,
   bucket: SaveAsIcon,
