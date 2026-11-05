@@ -158,8 +158,9 @@ a separate Node.js server.
   manager's answer; keep it above the manager's `SERVE_READY_TIMEOUT_SECONDS`
   (default 80) so a model server that never becomes ready is reported by the
   manager rather than cut off by the gateway.
-- **agent-runtime** serves agents the gateway proxies to, and reports sessions with
-  the internal service token.
+- **agent-runtime** serves agents the gateway proxies to. Each Kubernetes agent
+  receives an independent invocation token from an agent-owned Secret; it has no
+  gateway service authority. Published graph callbacks use the scoped API sidecar.
 - **trace-proxy** runs as the operator's sidecar in every agent pod.
 - **workspace** images are proxied under `/workspaces/` and call back through the
   `8087` listener.
@@ -173,3 +174,36 @@ a separate Node.js server.
   [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Naming.** Binaries, environment variables and the CRD group keep the `mlaiops`
   prefix; newer settings use `KIONGA_`.
+
+
+## Agent runtime credentials
+
+The operator creates `kionga-agent-runtime-<ID digest>` Secrets owned by each
+KiongaAgent, preserving their random credentials across reconciles. The runtime
+still reads `MLAIOPS_INTERNAL_TOKEN` with `MLAIOPS_RUNTIME_AUTH=required`, but the
+value is never the gateway service credential. The old operator setting
+`KIONGA_AGENT_RUNTIME_TOKEN_SECRET` is removed.
+
+Existing agents gain their Secret and a changed pod template on the next
+reconcile. A runtime-token hash annotation triggers a rollout after credential
+replacement or regeneration of a missing key. Old pods retain their previous
+environment until replaced; complete their rollout before treating the shared
+credential as removed, then rotate the gateway service credential if it was
+previously exposed to agent code.
+
+The gateway resolves the named Secret on every invocation in
+`MLAIOPS_AGENT_NAMESPACE` (default `default`), using its existing in-cluster
+identity and the same named Secret GET mechanism used for workspaces. This
+change adds no RBAC grants or Secret list/watch operations. Deployment RBAC lives
+outside this clone: if the existing identity cannot read that named Secret in
+the agent namespace, invocation returns 503; do not broaden Secret access as
+part of this rollout. Missing, invalid, or unreadable credentials also return
+503, with no shared-token fallback. During rollout or rotation, old and new pods
+can temporarily disagree with the gateway and return 401.
+
+For the shared Compose runtime (`AGENT_RUNTIME_URL`), set a separate
+`KIONGA_AGENT_RUNTIME_TOKEN` in the gateway and the same value as
+`MLAIOPS_INTERNAL_TOKEN` in the runtime. An unset dedicated token sends no bearer
+and is rejected by runtimes requiring authentication. This shared local runtime
+does not provide per-agent isolation. Runtime callbacks that previously relied
+on the service token can no longer authenticate as the gateway service.

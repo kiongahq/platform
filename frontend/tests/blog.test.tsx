@@ -5,6 +5,7 @@ import React from "react";
 import { render, cleanup, waitFor, fireEvent } from "@testing-library/react";
 import { BlogIndex } from "../components/blog/BlogIndex";
 import { BlogArticle } from "../components/blog/BlogArticle";
+import { isGistURL } from "../components/blog/ArticleBlocks";
 const payload = '<img src=x onerror="window.pwned=1">';
 const post = (overrides = {}) => ({
   id: "p1",
@@ -149,4 +150,11 @@ test("article blocks preserve checklists and safe GitHub gist links without fram
     "https://gist.github.com/test/abcdef",
   );
   assert.equal(view.container.querySelector("iframe"), null);
+});
+
+test("only the exact gist host counts as a GitHub gist", () => {
+  assert.equal(isGistURL("https://gist.github.com/test/abcdef"), true);
+  for (const source of ["https://gistXgithub.com/a", "http://gist.github.com/a", "https://gist.github.com.evil.test/a", "https://evil.test/gist.github.com/a", "not a url", undefined]) {
+    assert.equal(isGistURL(source), false, String(source));
+  }
 });
