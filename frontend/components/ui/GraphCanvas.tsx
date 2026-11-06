@@ -1,6 +1,7 @@
 "use client";
 import {
   forwardRef,
+  useState,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -23,6 +24,7 @@ import {
   type Edge,
   type ReactFlowInstance,
 } from "@xyflow/react";
+import { clampToVisible } from "./graphBounds";
 export type CanvasNode = {
   id: string;
   x: number;
@@ -107,12 +109,18 @@ export const GraphCanvas = forwardRef<
   ref,
 ) {
   const api = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null);
+  // React Flow hides a node whose size it doesn't know, and it only reports a size
+  // when one changes, so nodes rebuilt from caller data must carry it forward.
+  const [sizes, setSizes] = useState<
+    Record<string, { width: number; height: number }>
+  >({});
   const flowNodes = useMemo<FlowNode[]>(
     () =>
       nodes.map((node) => ({
         id: node.id,
         type: "card",
         position: { x: node.x, y: node.y },
+        measured: sizes[node.id],
         selected: node.selected,
         dragHandle: node.dragHandle,
         data: {
@@ -121,7 +129,7 @@ export const GraphCanvas = forwardRef<
           outputs: node.outputs || [],
         },
       })),
-    [nodes],
+    [nodes, sizes],
   );
   const flowEdges = useMemo<Edge[]>(
     () =>
@@ -148,6 +156,20 @@ export const GraphCanvas = forwardRef<
       })),
     [edges],
   );
+  const surface = useRef<HTMLDivElement>(null);
+  const keepVisible = (id: string, position: { x: number; y: number }) => {
+    const flow = api.current;
+    const box = surface.current?.getBoundingClientRect();
+    if (!flow || !box) return position;
+    const start = flow.screenToFlowPosition({ x: box.left, y: box.top });
+    const end = flow.screenToFlowPosition({ x: box.right, y: box.bottom });
+    const measured = sizes[id];
+    return clampToVisible(
+      position,
+      { width: measured?.width ?? 0, height: measured?.height ?? 0 },
+      { x: start.x, y: start.y, width: end.x - start.x, height: end.y - start.y },
+    );
+  };
   useImperativeHandle(
     ref,
     () => ({
@@ -165,6 +187,7 @@ export const GraphCanvas = forwardRef<
   }, [zoom]);
   return (
     <div
+      ref={surface}
       className="flow-surface"
       role="region"
       aria-label={label}
@@ -206,6 +229,10 @@ export const GraphCanvas = forwardRef<
           [0, 0],
           [20000, 20000],
         ]}
+        translateExtent={[
+          [-400, -400],
+          [20400, 20400],
+        ]}
         onInit={(instance) => {
           api.current = instance;
         }}
@@ -218,10 +245,20 @@ export const GraphCanvas = forwardRef<
         }}
         onNodeDragStart={() => onDragStart?.()}
         onNodesChange={(changes) => {
+          const measuredSizes = changes.flatMap((change) =>
+            change.type === "dimensions" && change.dimensions
+              ? [[change.id, change.dimensions] as const]
+              : [],
+          );
+          if (measuredSizes.length)
+            setSizes((known) => ({
+              ...known,
+              ...Object.fromEntries(measuredSizes),
+            }));
           const positions = Object.fromEntries(
             changes.flatMap((change) =>
               change.type === "position" && change.position
-                ? [[change.id, change.position]]
+                ? [[change.id, keepVisible(change.id, change.position)]]
                 : [],
             ),
           );
