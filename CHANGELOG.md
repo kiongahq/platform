@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.1](https://github.com/kiongahq/platform/compare/v0.1.0...v0.1.1) (2026-11-06)
+
+
+### Features
+
+* **agents:** agent teams gateway: resources, scheduler and tool dispatch ([#112](https://github.com/kiongahq/platform/issues/112)) ([46c9141](https://github.com/kiongahq/platform/commit/46c91411bf49559a11336eda57a4befe97838ed1))
+* **console:** agent teams console ([#113](https://github.com/kiongahq/platform/issues/113)) ([d00b1e5](https://github.com/kiongahq/platform/commit/d00b1e5337b9759218bacd2dfa48ded70fb4ea22))
+* **sandbox:** sandbox manager, drivers, client and gVisor attack suite ([#114](https://github.com/kiongahq/platform/issues/114)) ([8b08959](https://github.com/kiongahq/platform/commit/8b08959d8074e39cbf78f3f1bc1b3396e1f2520d))
+
+
+### Fixes
+
+* **agents:** give each agent its own runtime token ([#118](https://github.com/kiongahq/platform/issues/118)) ([34c5b0d](https://github.com/kiongahq/platform/commit/34c5b0d553607f57003e41171f35beb8dec142ab))
+* **console:** open the application's dropdown list in every browser ([#121](https://github.com/kiongahq/platform/issues/121)) ([dd15cb4](https://github.com/kiongahq/platform/commit/dd15cb4922b10a7958438753b6adb23c59c3e518))
+* **designer:** keep dragged nodes visible ([#120](https://github.com/kiongahq/platform/issues/120)) ([b739ce0](https://github.com/kiongahq/platform/commit/b739ce09724996c5d9f2f9dec42bf0f5f761f709))
+* **ingest:** accept unknown fields on step reports and traces ([#107](https://github.com/kiongahq/platform/issues/107)) ([867ce32](https://github.com/kiongahq/platform/commit/867ce32d3cf8076fc939248e37318d9825531a7e))
+* **knowledge:** restrict env: references on knowledge bases and API connections ([#111](https://github.com/kiongahq/platform/issues/111)) ([4998934](https://github.com/kiongahq/platform/commit/4998934fdca2c89ad0974d1520eaac2400dc9a17))
+* P1 security and durability fixes, plus runtime and trace-proxy counterparts ([#104](https://github.com/kiongahq/platform/issues/104)) ([aa611fd](https://github.com/kiongahq/platform/commit/aa611fd0c2bc867ecbfadbef911be66331b308b6))
+* resolve open CodeQL code-scanning alerts ([#106](https://github.com/kiongahq/platform/issues/106)) ([212c3a0](https://github.com/kiongahq/platform/commit/212c3a00c0e5b55483b4208207faf208aa6c8d02))
+
 ## 0.1.0 (2026-11-02)
 
 
