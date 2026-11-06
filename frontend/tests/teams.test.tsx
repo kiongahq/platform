@@ -974,8 +974,10 @@ test("each new console page has a route and its own icon", () => {
   for (const view of views) {
     const page = join(import.meta.dirname, `../app/(app)/console/${view}/page.tsx`);
     ok(existsSync(page) && statSync(page).isFile(), view);
-    assert.match(readFileSync(page, "utf8"), new RegExp(`view="${view}"`));
+    assert.match(readFileSync(page, "utf8"), /export const metadata/);
   }
+  const layout = readFileSync(join(import.meta.dirname, "../app/(app)/console/layout.tsx"), "utf8");
+  assert.match(layout, /<ConsolePage/);
   const shell = readFileSync(join(import.meta.dirname, "../components/pages/ConsolePage.tsx"), "utf8");
   for (const view of views) assert.match(shell, new RegExp(`\\["${view}", "`));
 });

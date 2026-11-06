@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PublicLayout } from "@/components/layout/PublicLayout";
-import { AsciiFlow } from "@/components/landing/AsciiFlow";
 import { SampleWorkspaces } from "@/components/landing/SampleWorkspaces";
 import { PlatformPreview } from "@/components/landing/PlatformPreview";
 import { Icon } from "@/components/ui/Icon";
@@ -16,12 +15,12 @@ export function IndexPage() {
   }, []);
   const command = `curl '${origin}/api/v1/health'`;
   return (
-    <PublicLayout brandFooter>
+    <PublicLayout brandFooter matrix>
       <div className="landing-page">
         <section className="landing-hero landing-hero-field">
-          <AsciiFlow />
           <div className="hero-content">
             <div className="hero-copy">
+              <div className="hero-terminal-label">kionga / your infrastructure</div>
               <h1>Run your ML work in one place.</h1>
               <p>
                 Workspaces, pipelines, model serving and agents on
@@ -78,7 +77,7 @@ export function IndexPage() {
         <div className="landing-content">
           <PlatformPreview />
           <div className="ascii-divider" aria-hidden="true">
-            <span>{". : : = + * # % @ @ % # * + = : : . ".repeat(12)}</span>
+            <span>{"01 / data → train → evaluate → serve / 10   ".repeat(12)}</span>
           </div>
           <SampleWorkspaces />
           <section className="landing-section access-section" id="security">

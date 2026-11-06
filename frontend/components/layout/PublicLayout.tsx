@@ -1,15 +1,19 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { AsciiWordmark } from "@/components/landing/AsciiWordmark";
+import { AsciiFlow } from "@/components/landing/AsciiFlow";
 export function PublicLayout({
   children,
   brandFooter = false,
+  matrix = false,
 }: {
   children: ReactNode;
   brandFooter?: boolean;
+  matrix?: boolean;
 }) {
   return (
-    <div className="public-shell">
+    <div className={`public-shell${matrix ? " kionga-matrix" : ""}`}>
+      {matrix && <AsciiFlow />}
       <a className="skip-link" href="#main">
         Skip to content
       </a>

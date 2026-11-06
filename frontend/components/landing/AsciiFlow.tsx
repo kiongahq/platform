@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
-/** A full-section illustration of project files becoming runs and artifacts. */
+/** A continuous page-wide rain field behind the product's working surfaces. */
 export function AsciiFlow() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [reduced, setReduced] = useState(false),
@@ -11,12 +11,14 @@ export function AsciiFlow() {
     if (!element || !window.CanvasRenderingContext2D) return;
     const ctx = element.getContext("2d");
     if (!ctx) return;
-    const host = element.closest("section")!,
+    const host = element.closest<HTMLElement>(".kionga-matrix")!,
       copy = host.querySelector<HTMLElement>(".hero-copy");
     const motion = matchMedia("(prefers-reduced-motion: reduce)");
     setReduced(motion.matches);
     let width = 0,
       height = 0,
+      heroHeight = 0,
+      heroTop = 0,
       cols = 0,
       rows = 0,
       frame = 0,
@@ -45,6 +47,7 @@ export function AsciiFlow() {
         ].map(token),
         ink: token("--color-ink"),
         accent: token("--color-accent"),
+        signal: token("--color-accent"),
         danger: token("--color-danger"),
         paper: token("--color-paper"),
         font: css.fontFamily,
@@ -72,9 +75,9 @@ export function AsciiFlow() {
         blend = Math.min(1, Math.max(0, x / gate));
       const spread =
         Math.sin(x * 0.009 - clock * 0.24 + lane * 1.7) *
-        (height * 0.075) *
+        (heroHeight * 0.075) *
         (1 - blend) ** 2;
-      return height * (0.12 + lane * 0.15) + spread;
+      return heroTop + heroHeight * (0.12 + lane * 0.15) + spread;
     }
     function draw() {
       ctx!.clearRect(0, 0, width, height);
@@ -114,29 +117,28 @@ export function AsciiFlow() {
             );
           }
       }
-      const ramp = [".", ":", "-", "=", "+", "*", "#", "%", "@"],
-        gate = Math.round(cols * 0.61);
-      for (let row = 0; row < rows; row++)
+      const glyphs = "01{}[]<>/\\:;=+*#KIONGA";
+      // An illustrative cycle: unstructured input resolves into connected layers.
+      const intelligence = motion.matches ? 1 : Math.min(1, (0.5 + 0.5 * Math.sin(clock * 0.55)) * 1.7);
+      const bounds = element!.getBoundingClientRect();
+      const firstRow = Math.max(0, Math.floor(-bounds.top / cellHeight) - 1);
+      const lastRow = Math.min(rows, Math.ceil((window.innerHeight - bounds.top) / cellHeight) + 1);
+      for (let row = firstRow; row < lastRow; row++)
         for (let col = 0; col < cols; col++) {
           const calm = quiet[row * cols + col] ?? 1;
           if (calm < 0.025) continue;
           const x = col * cellWidth,
             y = row * cellHeight + cellHeight / 2;
-          let density = 0;
-          for (let lane = 0; lane < 6; lane++) {
-            const proximity = Math.hypot(x - pointer.x, y - pointer.y);
-            const bend =
-              proximity < 150
-                ? Math.sin(col * 0.08 + lane) * (1 - proximity / 150) * 22
-                : 0;
-            const distance = y - laneY(lane, x) - bend;
-            const thickness = col < gate ? 4200 : 900;
-            density = Math.max(
-              density,
-              Math.exp((-distance * distance) / thickness) *
-                (0.7 + 0.3 * Math.sin(col * 0.055 - clock * 0.65 + lane)),
-            );
-          }
+          // Deterministic columns descend at different speeds, with long fading
+          // tails. Keep the text mask and pointer wake independent of the field.
+          const seed = (col * 73 + 19) % 127;
+          const cycle = 78;
+          const head = (seed + clock * (3 + (seed % 7))) % cycle;
+          const behind = ((head - row) % cycle + cycle) % cycle;
+          const length = 14 + (seed % 25);
+          const stream = behind < length ? (1 - behind / length) ** 1.7 : 0;
+          const networkArea = x > width * 0.53 && y > heroTop + heroHeight * 0.2 && y < heroTop + heroHeight * 0.85;
+          let density = (0.09 + stream * (col % 3 === 0 ? 0.84 : 0.48)) * (networkArea ? 1 - intelligence * 0.65 : 1);
           // Fresh cursor positions become a dense ribbon; older positions fade in place.
           const energy = wake[row * cols + col];
           density =
@@ -144,11 +146,50 @@ export function AsciiFlow() {
           if (density < 0.08) continue;
           ctx!.fillStyle = colors.tints[Math.min(4, Math.floor(density * 5))];
           ctx!.fillText(
-            col === gate ? "┊" : ramp[Math.min(8, Math.floor(density * 9))],
+            glyphs[(seed + row * 13 + Math.floor(clock * 2)) % glyphs.length],
             x,
             y,
           );
         }
+      if (intelligence > 0.02 && bounds.top > -heroHeight - heroTop) {
+        const compact = width < 720;
+        const layers = (compact ? [3, 4, 4, 2] : [4, 6, 5, 3]).map((count, layer) =>
+          Array.from({ length: count }, (_, node) => ({
+            x: width * (compact ? 0.09 + layer * 0.27 : 0.55 + layer * 0.13),
+            y: heroTop + heroHeight * (compact ? 0.74 + (node + 0.5) / count * 0.2 : 0.22 + (node + 0.5) / count * 0.58),
+          }))),
+          labels = ["observe", "encode", "reason", "act"];
+        ctx!.globalAlpha = intelligence;
+        for (let layer = 0; layer < layers.length - 1; layer++) {
+          for (const from of layers[layer]) for (const to of layers[layer + 1]) {
+            const steps = Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / 7);
+            for (let step = 0; step <= steps; step++) {
+              const t = step / steps;
+              const pulse = ((t - clock * 0.22 + layer * 0.25) % 1 + 1) % 1 < 0.12;
+              ctx!.fillStyle = pulse ? colors.signal : colors.tints[3];
+              const loose = 1 - intelligence;
+              const x = from.x + (to.x - from.x) * t;
+              const y = from.y + (to.y - from.y) * t;
+              // The same glyphs fall loose, converge into connections, and
+              // release back into rain as the cycle recedes.
+              const driftX = Math.sin(step * 2.4 + from.y) * (compact ? 14 : 44);
+              const driftY = ((step * 37 + clock * 65) % 150) - 75;
+              ctx!.fillText(loose > 0.35 ? glyphs[step % glyphs.length] : pulse ? "+" : ":", x + loose * driftX, y + loose * driftY);
+            }
+          }
+        }
+        layers.forEach((nodes, layer) => {
+          ctx!.fillStyle = colors.ink;
+          ctx!.fillText(labels[layer], nodes[0].x - 18, heroTop + heroHeight * (compact ? 0.71 : 0.18));
+          for (const node of nodes) {
+            ctx!.fillStyle = colors.paper;
+            ctx!.fillRect(node.x - 16, node.y - 12, 32, 24);
+            ctx!.fillStyle = colors.signal;
+            ctx!.fillText("[@]", node.x - 12, node.y);
+          }
+        });
+        ctx!.globalAlpha = 1;
+      }
       // Packet labels are examples, not service telemetry. One illustrates a retry.
       for (let lane = 0; lane < 6; lane++) {
         const phase = (clock * 0.032 + lane * 0.163 + 0.06) % 1;
@@ -208,7 +249,10 @@ export function AsciiFlow() {
       const bounds = element!.getBoundingClientRect();
       width = bounds.width;
       height = bounds.height;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      heroHeight = host.querySelector(".landing-hero")?.getBoundingClientRect().height || 800;
+      heroTop = (host.querySelector(".landing-hero")?.getBoundingClientRect().top ?? bounds.top) - bounds.top;
+      // A full-page field uses CSS-pixel resolution to bound canvas memory.
+      const dpr = 1;
       element!.width = Math.round(width * dpr);
       element!.height = Math.round(height * dpr);
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -217,7 +261,10 @@ export function AsciiFlow() {
       quiet = new Float32Array(cols * rows).fill(1);
       wake = new Float32Array(cols * rows);
       trail.length = 0;
-      const boxes = Array.from(copy?.children || [])
+      const boxes = [
+        ...Array.from(copy?.children || []),
+        ...Array.from(host.querySelectorAll(".section-heading, .footer-top")),
+      ]
         .map((child) => child.getBoundingClientRect())
         .map((box) => ({
           left: box.left - bounds.left - 20,
@@ -245,6 +292,7 @@ export function AsciiFlow() {
     }
     const observer = new ResizeObserver(resize);
     observer.observe(element);
+    observer.observe(host);
     if (copy) observer.observe(copy);
     const intersection = new IntersectionObserver((entries) => {
       visible = entries[0]?.isIntersecting ?? true;
@@ -293,6 +341,8 @@ export function AsciiFlow() {
       pointer.x = pointer.y = -1000;
       resume();
     };
+    const scroll = () => { if (motion.matches) draw(); };
+    window.addEventListener("scroll", scroll, { passive: true });
     host.addEventListener("pointermove", move);
     host.addEventListener("pointerleave", leave);
     document.addEventListener("visibilitychange", resume);
@@ -310,6 +360,7 @@ export function AsciiFlow() {
       theme.disconnect();
       host.removeEventListener("pointermove", move);
       host.removeEventListener("pointerleave", leave);
+      window.removeEventListener("scroll", scroll);
       document.removeEventListener("visibilitychange", resume);
       motion.removeEventListener("change", preference);
     };
@@ -328,12 +379,10 @@ export function AsciiFlow() {
         </pre>
         <canvas ref={canvas} aria-hidden="true" />
       </div>
-      <div className="ascii-flow-head">
-        <span>Illustrated project flow</span>
-      </div>
       <figcaption className="sr-only">
         Project files flow through training and evaluation into versioned models
-        and agents. This is an illustration, not live platform activity.
+        and agents. Falling characters resolve into connected encode, reason and
+        act layers before dispersing. This is an illustration, not live platform activity.
       </figcaption>
     </figure>
   );

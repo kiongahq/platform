@@ -84,20 +84,21 @@ const service = (view: string) =>
     logs: "pipelines",
   })[view] || view;
 const ungated = new Set(["profile", "settings", "blogs"]);
-export default function ConsolePage({ view = "overview" }: { view?: string }) {
+export default function ConsolePage({ view }: { view?: string }) {
   return (
     <Suspense fallback={<p role="status">Opening console…</p>}>
       <ConsoleApplication view={view} />
     </Suspense>
   );
 }
-function ConsoleApplication({ view }: { view: string }) {
+function ConsoleApplication({ view: requestedView }: { view?: string }) {
   const route = useRouter(),
     pathname = usePathname(),
     query = useSearchParams(),
     me = useQuery<Identity>("/api/v1/me"),
     projects = useQuery<Entity>("/api/v1/project-options"),
     workspaceQuery = useQuery<Entity>("/api/v1/workspaces");
+  const view = requestedView ?? (pathname.split("/")[2] || "overview");
   const identity: Identity = me.data
     ? {
         ...me.data,
@@ -342,9 +343,11 @@ function ConsoleApplication({ view }: { view: string }) {
                       data-view={id}
                       aria-label={label}
                       href={url(id)}
-                      prefetch={false}
+                      onMouseEnter={() => route.prefetch(url(id))}
+                      onFocus={() => route.prefetch(url(id))}
                       aria-current={view === id ? "page" : undefined}
                       onClick={(event) => {
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                         event.preventDefault();
                         navigate(id);
                       }}
@@ -373,10 +376,14 @@ function ConsoleApplication({ view }: { view: string }) {
                 </a>
               ))}
             {hasService(identity, "langflow") && (
-              <a id="langflow-link" aria-label="Langflow canvas" href={url("langflow")}>
+              <Link id="langflow-link" aria-label="Langflow canvas" href={url("langflow")} onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                navigate("langflow");
+              }}>
                 <Icon name="langflow" />
                 <span>Langflow canvas</span>
-              </a>
+              </Link>
             )}
           </div>
           <button
