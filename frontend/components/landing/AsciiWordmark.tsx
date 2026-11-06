@@ -72,13 +72,17 @@ export function AsciiWordmark() {
         const { x, y, letter, seed } = point;
         const wave = Math.sin(x / width * 11 + y / height * 7 - time * 0.65);
         if (letter) {
-          // A left-to-right assembly that settles into an uninterrupted silhouette.
-          const progress = Math.max(0, Math.min(1, (time - x / width * 0.65 - seed * 0.35) / 1.8));
+          // Rain gathers at the center, then bursts outward into the word.
+          // Play once on entering the footer; leave the settled name readable.
+          const progress = Math.max(0, Math.min(1, (time - 0.8 - seed * 0.3) / 1.8));
           const ease = 1 - Math.pow(1 - progress, 3);
           const shimmer = Math.sin(x * 0.012 - time * 0.9 + y * 0.018);
-          ctx!.globalAlpha = (0.12 + ease * 0.88) * (0.82 + shimmer * 0.12);
+          ctx!.globalAlpha = (0.35 + ease * 0.65) * (0.82 + shimmer * 0.12);
           ctx!.fillStyle = shimmer > 0.45 ? deep : accent;
-          ctx!.fillText("#%@"[Math.floor(seed * 9 + time * 2) % 3], x + (1 - ease) * Math.sin(seed * 20) * width * 0.12, y + (1 - ease) * Math.cos(seed * 17) * height * 0.6);
+          const gatheredX = width / 2 + Math.sin(seed * 40) * width * 0.025;
+          const gatheredY = height * 0.55 - Math.max(0, 1 - time / 0.8) * height * (0.3 + seed * 0.7);
+          const burst = Math.sin(progress * Math.PI) * 0.12;
+          ctx!.fillText("01#%@"[Math.floor(seed * 9 + time * 2) % 5], gatheredX + (x - gatheredX) * (ease + burst), gatheredY + (y - gatheredY) * (ease + burst));
         } else {
           const strand = Math.pow(Math.max(0, wave), 10);
           ctx!.globalAlpha = 0.025 + strand * 0.14;
