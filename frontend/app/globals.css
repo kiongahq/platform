@@ -715,4 +715,6 @@ button, .button, .button-link { white-space: nowrap; }
 .kionga-matrix .access-intro .button { color: var(--color-accent-ink); background: var(--color-accent); border-color: var(--color-accent-edge); }
 .kionga-matrix .access-ledger li { border-bottom-color: var(--color-rule); }
 .kionga-matrix .brand-footer { background: transparent; border-top: 0; }
+.kionga-matrix .brand-footer { overflow: visible; }
+.kionga-matrix .ascii-wordmark canvas { top: auto; bottom: 0; height: calc(100% + 100svh); }
 .kionga-matrix .ascii-divider { opacity: .65; }
