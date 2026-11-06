@@ -557,18 +557,12 @@ button, .button, .button-link { white-space: nowrap; }
 .storage-breadcrumbs, .storage-crumb { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }.storage-breadcrumbs { padding: var(--space-3) 0 var(--space-5); font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; }.storage-breadcrumbs a, .storage-folders a, .storage-object-link, .storage-path-link { display: inline-flex; align-items: center; gap: var(--space-2); }.storage-folders a { padding: var(--space-3); }.storage-path-link { max-width: 100%; }.storage-path-link code { min-width: 0; }
 @media (max-width: 640px) { .dialog { width: calc(100% - 16px); max-width: calc(100% - 16px); max-height: calc(100dvh - 16px); padding: var(--space-4); } }
 /* Style the popup itself as application UI while retaining native form semantics. */
-@supports (appearance: base-select) {
-  .select-control select:not([multiple]), .select-control select:not([multiple])::picker(select) { appearance: base-select; }
-  .select-control select:not([multiple]) { display: flex; align-items: center; min-height: 42px; padding-right: var(--space-10); font-family: var(--font-body); }
-  .select-control select::picker-icon { display: none; }
-  .select-control select::picker(select) { background: var(--color-key-face); color: var(--color-ink); border: 1px solid var(--color-rule-2); border-radius: var(--radius-input); padding: var(--space-1); max-height: min(360px,60dvh); overflow: auto; box-shadow: var(--shadow-card); font-family: var(--font-body); }
-  .select-control option { display: flex; gap: var(--space-3); align-items: center; min-height: 36px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-input); background: var(--color-key-face); color: var(--color-ink); font: inherit; cursor: pointer; }
-  .select-control option:hover, .select-control option:focus { background: var(--color-accent-wash); outline: none; }
-  .select-control option:checked { background: var(--color-accent-wash); color: var(--color-accent-deep); font-weight: 500; }
-  .select-control option:disabled { color: var(--color-muted); cursor: not-allowed; }
-  .select-control option::checkmark { color: var(--color-accent-deep); }
-  .select-control optgroup { font-family: var(--font-body); color: var(--color-ink-2); }
-}
+.select-list { position: fixed; inset: auto; box-sizing: border-box; margin: 0; padding: var(--space-1); overflow-y: auto; list-style: none; z-index: 1000; background: var(--color-key-face); color: var(--color-ink); border: 1px solid var(--color-rule-2); border-radius: var(--radius-input); font-family: var(--font-body); box-shadow: 0 8px 24px rgb(0 0 0 / 16%); }
+.select-list li { display: flex; align-items: center; min-height: 36px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-input); cursor: default; overflow-wrap: anywhere; }
+.select-list li[data-active="true"] { background: var(--color-accent-wash); }
+.select-list li[aria-selected="true"] { color: var(--color-accent-deep); font-weight: 500; }
+.select-list li[aria-disabled="true"] { color: var(--color-muted); cursor: not-allowed; }
+.select-list li[data-group]::before { content: attr(data-group) " / "; color: var(--color-ink-2); margin-right: var(--space-1); }
 /* Graph editors share a dotted, pannable work area with real connection handles. */
 .flow-surface { width: 100%; height: 560px; min-height: 360px; border: 1px solid var(--color-rule-2); border-radius: var(--radius-card); overflow: hidden; background: var(--color-paper-2); --xy-background-color-default: var(--color-paper-2); --xy-node-color: var(--color-ink); --xy-controls-button-background-color-default: var(--color-key-face); --xy-controls-button-background-color-hover-default: var(--color-accent-wash); --xy-controls-button-color-default: var(--color-ink); --xy-edge-label-color: var(--color-ink); }
 .flow-surface .react-flow__node-card { width: 200px; }.flow-surface .react-flow__handle { width: 12px; height: 12px; border: 2px solid var(--color-key-face); background: var(--color-accent-deep); z-index: 5; }.flow-surface .react-flow__controls-button { border-radius: 0; box-shadow: none; min-height: 32px; width: 32px; padding: var(--space-2); }.flow-surface .react-flow__minimap { width: 140px; height: 90px; border: 1px solid var(--color-rule); background: var(--color-key-face); }
