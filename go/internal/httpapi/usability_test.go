@@ -35,7 +35,7 @@ func TestActivatedPrefectPersistsAndDrivesRuntime(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/health":
 			w.Write([]byte("true"))
-		case "/api/deployments/name/training-pipeline/mlaiops":
+		case "/api/deployments/name/training-pipeline/kionga":
 			w.Write([]byte(`{"id":"deployment-1"}`))
 		case "/api/deployments/deployment-1/create_flow_run":
 			calls++
@@ -64,12 +64,12 @@ func TestActivatedPrefectPersistsAndDrivesRuntime(t *testing.T) {
 	if s.activeConnection("prefect") == nil {
 		t.Fatal("activation not persisted")
 	}
-	result, err := s.prefectClient().CreateFlowRun(t.Context(), "training-pipeline", "mlaiops", "test", nil)
+	result, err := s.prefectClient().CreateFlowRun(t.Context(), "training-pipeline", "kionga", "test", nil)
 	if err != nil || result != "flow-1" || calls != 1 {
 		t.Fatalf("runtime not wired: %s %v calls=%d", result, err, calls)
 	}
 	t.Setenv("KIONGA_PLATFORM_SECRET_PREFECT", "")
-	if _, err = s.prefectClient().CreateFlowRun(t.Context(), "training-pipeline", "mlaiops", "test", nil); err == nil {
+	if _, err = s.prefectClient().CreateFlowRun(t.Context(), "training-pipeline", "kionga", "test", nil); err == nil {
 		t.Fatal("missing credential must not fall back to anonymous")
 	}
 }

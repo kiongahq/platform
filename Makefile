@@ -39,7 +39,7 @@ format:
 build: frontend
 	mkdir -p bin
 	cd go && for cmd in $(GO_SERVICES); do \
-		go build -buildvcs=false -o ../bin/mlaiops-$$cmd ./cmd/$$cmd || exit 1; \
+		go build -buildvcs=false -o ../bin/kionga-$$cmd ./cmd/$$cmd || exit 1; \
 	done
 
 verify: lint test-go build

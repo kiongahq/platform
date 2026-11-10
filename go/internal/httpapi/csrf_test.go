@@ -27,7 +27,7 @@ func cookieRequest(method, path, body string, headers map[string]string) *http.R
 // Regression for #32: a notebook on a same-site workspace host must not be
 // able to submit pipelines or write editorial posts with the console cookie.
 func TestCookieWritesFromWorkspaceHostsAreRejected(t *testing.T) {
-	t.Setenv("MLAIOPS_ALLOWED_ORIGIN", consoleOrigin)
+	t.Setenv("KIONGA_ALLOWED_ORIGIN", consoleOrigin)
 	server, _ := accessServer(t)
 	submit := `{"project_id":"prj-demo","name":"training-pipeline"}`
 	for _, test := range []struct {
@@ -57,7 +57,7 @@ func TestCookieWritesFromWorkspaceHostsAreRejected(t *testing.T) {
 }
 
 func TestSafeMethodsAndCookielessClientsPassTheOriginGuard(t *testing.T) {
-	t.Setenv("MLAIOPS_ALLOWED_ORIGIN", consoleOrigin)
+	t.Setenv("KIONGA_ALLOWED_ORIGIN", consoleOrigin)
 	server, _ := accessServer(t)
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, cookieRequest(http.MethodGet, "/api/v1/projects", "", map[string]string{"Sec-Fetch-Site": "same-site", "Origin": "https://ws-x.example.com"}))
@@ -102,7 +102,7 @@ func TestDecodeRequiresJSONContentType(t *testing.T) {
 }
 
 func TestEditorialGuardRejectsSameSiteWrites(t *testing.T) {
-	t.Setenv("MLAIOPS_ALLOWED_ORIGIN", consoleOrigin)
+	t.Setenv("KIONGA_ALLOWED_ORIGIN", consoleOrigin)
 	e := &editorialAPI{origin: newCrossOriginProtection()}
 	reached := false
 	handler := e.member(func(http.ResponseWriter, *http.Request, api.EditorialMember) { reached = true })

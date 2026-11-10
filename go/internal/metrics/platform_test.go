@@ -35,13 +35,13 @@ func TestPlatformCollectorAggregatesGatewayState(t *testing.T) {
 	}
 	exposition := collector.Prometheus()
 	for _, expected := range []string{
-		`mlaiops_agent_active_sessions{agent="agt-1"} 1`,
-		`mlaiops_llm_tokens_used_total{agent="agt-1",type="input"} 1200`,
-		`mlaiops_llm_cost_usd_total{agent="agt-1"} 0.42`,
-		`mlaiops_pipeline_runs_total{status="succeeded"} 2`,
-		`mlaiops_pipeline_runs_total{status="failed"} 1`,
-		`mlaiops_realtime_events_total{demo="fraud"} 10`,
-		`mlaiops_realtime_avg_latency_ms{demo="fraud"} 4.2`,
+		`kionga_agent_active_sessions{agent="agt-1"} 1`,
+		`kionga_llm_tokens_used_total{agent="agt-1",type="input"} 1200`,
+		`kionga_llm_cost_usd_total{agent="agt-1"} 0.42`,
+		`kionga_pipeline_runs_total{status="succeeded"} 2`,
+		`kionga_pipeline_runs_total{status="failed"} 1`,
+		`kionga_realtime_events_total{demo="fraud"} 10`,
+		`kionga_realtime_avg_latency_ms{demo="fraud"} 4.2`,
 	} {
 		if !strings.Contains(exposition, expected) {
 			t.Fatalf("missing metric %q in:\n%s", expected, exposition)
@@ -54,7 +54,7 @@ func TestPlatformCollectorNoGatewayIsNoop(t *testing.T) {
 	if err := collector.Poll(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(collector.Prometheus(), "mlaiops_agent") {
+	if strings.Contains(collector.Prometheus(), "kionga_agent") {
 		t.Fatal("no data expected without a gateway")
 	}
 }

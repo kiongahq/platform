@@ -66,9 +66,9 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	namespace := env("MLAIOPS_TARGET_NAMESPACE", "default")
-	consumer := integrations.NewKafkaConsumer(env("KAFKA_REST_URL", "http://kafka-rest:8082"), "mlaiops-integration", env("HOSTNAME", "worker"), os.Getenv("KAFKA_REST_TOKEN"))
-	topics := []string{"mlaiops.pipeline.commands", "mlaiops.model.commands", "mlaiops.agent.commands", "mlaiops.tool.commands", "mlaiops.connection.commands", "mlaiops.workspace.commands"}
+	namespace := env("KIONGA_TARGET_NAMESPACE", "default")
+	consumer := integrations.NewKafkaConsumer(env("KAFKA_REST_URL", "http://kafka-rest:8082"), "kionga-integration", env("HOSTNAME", "worker"), os.Getenv("KAFKA_REST_TOKEN"))
+	topics := []string{"kionga.pipeline.commands", "kionga.model.commands", "kionga.agent.commands", "kionga.tool.commands", "kionga.connection.commands", "kionga.workspace.commands"}
 	if err := consumer.Connect(ctx, topics); err != nil {
 		return err
 	}

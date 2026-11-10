@@ -84,9 +84,9 @@ func main() {
 }
 
 // authorized fails closed: the proxy holds the object-store credentials, so
-// without MLAIOPS_INTERNAL_TOKEN it refuses every call instead of serving all.
+// without KIONGA_INTERNAL_TOKEN it refuses every call instead of serving all.
 func authorized(r *http.Request) bool {
-	token := os.Getenv("MLAIOPS_INTERNAL_TOKEN")
+	token := os.Getenv("KIONGA_INTERNAL_TOKEN")
 	bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	return token != "" && ok && subtle.ConstantTimeCompare([]byte(bearer), []byte(token)) == 1
 }

@@ -114,7 +114,7 @@ func conformance(t *testing.T, provider string, adapter Adapter) {
 func memoryInternal() *InternalAdapter {
 	memory := NewMemoryStore()
 	memory.Put("customer_profile", "user_id=u1", seeded["u1"])
-	return &InternalAdapter{Online: MemoryBackend{Store: memory}, OfflineURI: "s3://mlaiops-features"}
+	return &InternalAdapter{Online: MemoryBackend{Store: memory}, OfflineURI: "s3://kionga-features"}
 }
 
 func TestInternalAdapterConformance(t *testing.T) {
@@ -144,7 +144,7 @@ func TestInternalAdapterThroughFeatureGatewayConformance(t *testing.T) {
 		}
 	}))
 	defer gateway.Close()
-	adapter, err := New("internal", Config{Settings: map[string]string{"online_url": gateway.URL, "offline_uri": "s3://mlaiops-features"}})
+	adapter, err := New("internal", Config{Settings: map[string]string{"online_url": gateway.URL, "offline_uri": "s3://kionga-features"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestValidationRejectsSecretsAndUnknownProviders(t *testing.T) {
 			t.Fatalf("%s %v: expected issue on %s, got %+v", c.provider, c.settings, c.field, issues)
 		}
 	}
-	if issues := Validate("internal", map[string]string{"online_url": "redis://redis:6379/0", "offline_uri": "s3://mlaiops-features"}); len(issues) != 0 {
+	if issues := Validate("internal", map[string]string{"online_url": "redis://redis:6379/0", "offline_uri": "s3://kionga-features"}); len(issues) != 0 {
 		t.Fatalf("valid config rejected: %+v", issues)
 	}
 	for _, ref := range []string{"env:FEAST_TOKEN", ""} {

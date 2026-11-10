@@ -44,25 +44,25 @@ func verifySigV4(t *testing.T, method, rawURL, secret string) {
 
 func TestPresignVerifiesLikeAnS3Server(t *testing.T) {
 	signed, err := Presign(
-		Config{Endpoint: "http://objectstore:9000", AccessKey: "mlaiops", SecretKey: "secret"},
-		Request{Bucket: "mlaiops-features", Key: "customer_profile/snapshot.parquet", Operation: "PUT", TTLSeconds: 300},
+		Config{Endpoint: "http://objectstore:9000", AccessKey: "kionga", SecretKey: "secret"},
+		Request{Bucket: "kionga-features", Key: "customer_profile/snapshot.parquet", Operation: "PUT", TTLSeconds: 300},
 		time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	parsed, _ := url.Parse(signed)
-	if !strings.HasPrefix(parsed.EscapedPath(), "/mlaiops-features/") {
+	if !strings.HasPrefix(parsed.EscapedPath(), "/kionga-features/") {
 		t.Fatalf("signed path must be absolute: %q", parsed.EscapedPath())
 	}
 	verifySigV4(t, "PUT", signed, "secret")
 }
 
 func TestBrowserURLsVerifyLikeAnS3Server(t *testing.T) {
-	browser := NewBrowser(Config{Endpoint: "http://objectstore:9000", AccessKey: "mlaiops", SecretKey: "secret"})
+	browser := NewBrowser(Config{Endpoint: "http://objectstore:9000", AccessKey: "kionga", SecretKey: "secret"})
 	query := url.Values{}
 	query.Set("list-type", "2")
-	signed, err := browser.signedURL("GET", "/mlaiops-models", query, time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC))
+	signed, err := browser.signedURL("GET", "/kionga-models", query, time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}

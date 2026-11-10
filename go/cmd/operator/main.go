@@ -18,7 +18,7 @@ import (
 
 	"github.com/kiongahq/platform/internal/integrations"
 	platformoperator "github.com/kiongahq/platform/internal/operator"
-	mlaiopsv1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
+	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
 
 func main() {
@@ -36,31 +36,31 @@ func main() {
 	must(clientgoscheme.AddToScheme(scheme))
 	must(appsv1.AddToScheme(scheme))
 	must(corev1.AddToScheme(scheme))
-	must(mlaiopsv1.AddToScheme(scheme))
+	must(kiongav1.AddToScheme(scheme))
 	cacheOptions := cache.Options{}
-	if target := os.Getenv("MLAIOPS_TARGET_NAMESPACE"); target != "" {
-		cacheOptions.DefaultNamespaces = map[string]cache.Config{target: {}, os.Getenv("MLAIOPS_CONTROL_NAMESPACE"): {}}
-		if os.Getenv("MLAIOPS_CONTROL_NAMESPACE") == "" {
-			log.Fatal("MLAIOPS_CONTROL_NAMESPACE is required with namespace-scoped operator")
+	if target := os.Getenv("KIONGA_TARGET_NAMESPACE"); target != "" {
+		cacheOptions.DefaultNamespaces = map[string]cache.Config{target: {}, os.Getenv("KIONGA_CONTROL_NAMESPACE"): {}}
+		if os.Getenv("KIONGA_CONTROL_NAMESPACE") == "" {
+			log.Fatal("KIONGA_CONTROL_NAMESPACE is required with namespace-scoped operator")
 		}
 	}
 	manager, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Cache:  cacheOptions,
-		Scheme: scheme, LeaderElection: leaderElection, LeaderElectionID: "mlaiops-operator.mlaiops.io",
+		Scheme: scheme, LeaderElection: leaderElection, LeaderElectionID: "kionga-operator.kionga.dev",
 		HealthProbeBindAddress: probeAddress, Metrics: metricsserver.Options{BindAddress: metricsAddress},
 	})
 	must(err)
 	// Private registries: Secret names in each workload namespace, referenced
 	// by every pod the operator creates.
 	pullSecrets := platformoperator.ParseImagePullSecrets(os.Getenv("KIONGA_IMAGE_PULL_SECRETS"))
-	must((&platformoperator.AgentReconciler{Client: manager.GetClient(), TraceProxyImage: env("TRACE_PROXY_IMAGE", "ghcr.io/kiongahq/trace-proxy:latest"), LangflowSidecarImage: env("LANGFLOW_SIDECAR_IMAGE", "ghcr.io/kiongahq/langflow-sidecar:latest"), GatewayURL: env("MLAIOPS_URL", "http://mlaiops-gateway.mlaiops-system:8080"),
+	must((&platformoperator.AgentReconciler{Client: manager.GetClient(), TraceProxyImage: env("TRACE_PROXY_IMAGE", "ghcr.io/kiongahq/trace-proxy:latest"), LangflowSidecarImage: env("LANGFLOW_SIDECAR_IMAGE", "ghcr.io/kiongahq/langflow-sidecar:latest"), GatewayURL: env("KIONGA_URL", "http://kionga-gateway.kionga-system:8080"),
 		ImagePullSecrets: pullSecrets, ProviderKeySecret: os.Getenv("KIONGA_LLM_PROVIDER_SECRET")}).SetupWithManager(manager))
 	must((&platformoperator.WorkspaceReconciler{
 		Client: manager.GetClient(), WorkbenchImage: env("WORKBENCH_IMAGE", "ghcr.io/kiongahq/jupyter:latest"),
-		IDEImage: env("IDE_IMAGE", "ghcr.io/kiongahq/ide:latest"), LangflowImage: env("LANGFLOW_IMAGE", "ghcr.io/kiongahq/langflow:latest"), LangflowSidecarImage: env("LANGFLOW_SIDECAR_IMAGE", "ghcr.io/kiongahq/langflow-sidecar:latest"), GatewayURL: env("MLAIOPS_URL", "http://mlaiops-gateway.mlaiops-system:8080"),
-		FeatureURL: env("WORKSPACE_FEATURE_URL", "http://mlaiops-feature-gateway.mlaiops-system:8083"), StorageURL: env("WORKSPACE_STORAGE_URL", "http://mlaiops-storage-proxy.mlaiops-system:8084"),
-		MLflowURL: env("WORKSPACE_MLFLOW_URL", "http://mlflow.mlaiops-system:5000"), PrefectURL: env("WORKSPACE_PREFECT_URL", "http://prefect-server.mlaiops-system:4200/api"),
-		LangfuseURL: env("WORKSPACE_LANGFUSE_URL", "http://langfuse.mlaiops-system:3000"), KafkaRESTURL: env("WORKSPACE_KAFKA_REST_URL", "http://kafka-rest.mlaiops-system:8082"),
+		IDEImage: env("IDE_IMAGE", "ghcr.io/kiongahq/ide:latest"), LangflowImage: env("LANGFLOW_IMAGE", "ghcr.io/kiongahq/langflow:latest"), LangflowSidecarImage: env("LANGFLOW_SIDECAR_IMAGE", "ghcr.io/kiongahq/langflow-sidecar:latest"), GatewayURL: env("KIONGA_URL", "http://kionga-gateway.kionga-system:8080"),
+		FeatureURL: env("WORKSPACE_FEATURE_URL", "http://kionga-feature-gateway.kionga-system:8083"), StorageURL: env("WORKSPACE_STORAGE_URL", "http://kionga-storage-proxy.kionga-system:8084"),
+		MLflowURL: env("WORKSPACE_MLFLOW_URL", "http://mlflow.kionga-system:5000"), PrefectURL: env("WORKSPACE_PREFECT_URL", "http://prefect-server.kionga-system:4200/api"),
+		LangfuseURL: env("WORKSPACE_LANGFUSE_URL", "http://langfuse.kionga-system:3000"), KafkaRESTURL: env("WORKSPACE_KAFKA_REST_URL", "http://kafka-rest.kionga-system:8082"),
 		StorageClass:          os.Getenv("WORKSPACE_STORAGE_CLASS"),
 		AllowedStorageClasses: platformoperator.ParseStorageClasses(os.Getenv("WORKSPACE_ALLOWED_STORAGE_CLASSES")),
 		ImagePullSecrets:      pullSecrets,
@@ -74,7 +74,7 @@ func main() {
 	}).SetupWithManager(manager))
 	must(manager.AddHealthzCheck("healthz", healthz.Ping))
 	must(manager.AddReadyzCheck("readyz", healthz.Ping))
-	log.Printf("starting mlaiops Kubernetes operator")
+	log.Printf("starting kionga Kubernetes operator")
 	must(manager.Start(ctrl.SetupSignalHandler()))
 }
 

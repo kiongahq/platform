@@ -16,7 +16,7 @@ and IDE workspaces.
 
 Alongside the gateway, the repository builds the Kubernetes operator, the online
 feature gateway, the object storage proxy, the Kafka integration worker, the
-metrics collector, the log exporter and the `mlaiops` CLI. The other parts of
+metrics collector, the log exporter and the `kionga` CLI. The other parts of
 Kionga live in their own repositories in the [kiongahq](https://github.com/kiongahq)
 organization.
 
@@ -38,13 +38,13 @@ Released images are published as `ghcr.io/kiongahq/<service>`, for example
 ## Usage
 
 Open <http://localhost:8080> and sign in with the local development account
-`admin` / `mlaiops-local`. To call the API from the CLI or the
+`admin` / `kionga-local`. To call the API from the CLI or the
 [Python SDK](https://github.com/kiongahq/sdk-python), create a personal key in
 **Settings > API keys** and export it:
 
 ```bash
-export MLAIOPS_TOKEN=<your key>
-make build && bin/mlaiops-cli project list
+export KIONGA_TOKEN=<your key>
+make build && bin/kionga-cli project list
 ```
 
 To run the gateway alone during development, with a file-backed store and no other

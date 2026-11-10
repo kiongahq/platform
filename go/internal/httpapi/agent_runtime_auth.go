@@ -32,7 +32,7 @@ func agentRuntimeToken(ctx context.Context, agentID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	namespace := strings.TrimSpace(os.Getenv("MLAIOPS_AGENT_NAMESPACE"))
+	namespace := strings.TrimSpace(os.Getenv("KIONGA_AGENT_NAMESPACE"))
 	if namespace == "" {
 		namespace = "default"
 	}
@@ -44,7 +44,7 @@ func discoverAgentRuntimeToken(ctx context.Context, client dynamic.Interface, na
 	if err != nil {
 		return "", err
 	}
-	encoded, _, err := unstructured.NestedString(secret.Object, "data", "MLAIOPS_INTERNAL_TOKEN")
+	encoded, _, err := unstructured.NestedString(secret.Object, "data", "KIONGA_INTERNAL_TOKEN")
 	if err != nil {
 		return "", err
 	}

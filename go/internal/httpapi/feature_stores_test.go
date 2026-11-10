@@ -136,14 +136,14 @@ func TestBuiltinInternalStoreHealth(t *testing.T) {
 	defer gateway.Close()
 	repository := store.New()
 	admin := domainServer(repository, localAdmin)
-	t.Setenv("MLAIOPS_FEATURE_GATEWAY_URL", "")
+	t.Setenv("KIONGA_FEATURE_GATEWAY_URL", "")
 	unconfigured := decodeInto[api.FeatureStoreConnection](t, call(t, admin, http.MethodPost, "/api/v1/admin/feature-stores/internal/test", `{}`))
 	if unconfigured.Health.State != "configured" {
 		t.Fatalf("unconfigured internal store: %+v", unconfigured.Health)
 	}
-	t.Setenv("MLAIOPS_FEATURE_GATEWAY_URL", gateway.URL)
+	t.Setenv("KIONGA_FEATURE_GATEWAY_URL", gateway.URL)
 	ok := decodeInto[api.FeatureStoreConnection](t, call(t, admin, http.MethodPost, "/api/v1/admin/feature-stores/internal/test", `{}`))
-	if ok.Health.State != "healthy" || !strings.Contains(ok.Health.Detail, "s3://mlaiops-features") {
+	if ok.Health.State != "healthy" || !strings.Contains(ok.Health.Detail, "s3://kionga-features") {
 		t.Fatalf("internal healthy: %+v", ok.Health)
 	}
 	healthy = false
@@ -203,7 +203,7 @@ func TestFeatureVersionsLineageAndFreshness(t *testing.T) {
 	if views.Items[0].Freshness.State != "never" || views.Items[0].Version != 2 || views.Items[0].Store.Kind != "internal" {
 		t.Fatalf("before materialization: %+v", views.Items[0])
 	}
-	report := call(t, admin, http.MethodPost, "/api/v1/features/customer_profile/materializations", `{"run_id":"mat-1","source_dataset":"s3://raw/customers","offline_uri":"s3://mlaiops-features/customer_profile/v2/snapshot.parquet","entity_count":3}`)
+	report := call(t, admin, http.MethodPost, "/api/v1/features/customer_profile/materializations", `{"run_id":"mat-1","source_dataset":"s3://raw/customers","offline_uri":"s3://kionga-features/customer_profile/v2/snapshot.parquet","entity_count":3}`)
 	if report.Code != http.StatusCreated {
 		t.Fatalf("report: %d %s", report.Code, report.Body.String())
 	}

@@ -202,7 +202,7 @@ func TestScopedEngineerAndRunStepProjectCheck(t *testing.T) {
 		t.Fatalf("scoped engineer runs: %+v", runs)
 	}
 	// Services may still report steps for any run.
-	t.Setenv("MLAIOPS_INTERNAL_TOKEN", "svc-token")
+	t.Setenv("KIONGA_INTERNAL_TOKEN", "svc-token")
 	request := newTestRequest(http.MethodPost, "/api/v1/pipelines/runs/"+f.run2+"/steps", strings.NewReader(step))
 	request.Header.Set("Authorization", "Bearer svc-token")
 	response := httptest.NewRecorder()

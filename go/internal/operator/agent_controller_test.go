@@ -20,7 +20,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	mlaiopsv1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
+	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
 
 func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
@@ -28,13 +28,13 @@ func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
 	_ = appsv1.AddToScheme(scheme)
 	_ = autoscalingv2.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
-	_ = mlaiopsv1.AddToScheme(scheme)
+	_ = kiongav1.AddToScheme(scheme)
 	resourceID := "agt-controller-test"
 	workloadName := platformapi.AgentDNSName(resourceID)
-	agent := &mlaiopsv1.KiongaAgent{
-		TypeMeta:   metav1.TypeMeta{APIVersion: "mlaiops.io/v1alpha1", Kind: "KiongaAgent"},
-		ObjectMeta: metav1.ObjectMeta{Name: workloadName, Namespace: "team-a", Labels: map[string]string{"mlaiops.io/resource-id": resourceID}},
-		Spec: mlaiopsv1.KiongaAgentSpec{Version: "1.2", Image: "registry/support:1.2", GraphModule: "agents.support:graph", Replicas: mlaiopsv1.ReplicaSpec{Min: 2, Max: 5}, Resources: corev1.ResourceRequirements{
+	agent := &kiongav1.KiongaAgent{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "kionga.dev/v1alpha1", Kind: "KiongaAgent"},
+		ObjectMeta: metav1.ObjectMeta{Name: workloadName, Namespace: "team-a", Labels: map[string]string{"kionga.dev/resource-id": resourceID}},
+		Spec: kiongav1.KiongaAgentSpec{Version: "1.2", Image: "registry/support:1.2", GraphModule: "agents.support:graph", Replicas: kiongav1.ReplicaSpec{Min: 2, Max: 5}, Resources: corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("2Gi"), corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("1")},
 		}},
 	}
@@ -60,8 +60,8 @@ func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
 	for _, variable := range deployment.Spec.Template.Spec.Containers[0].Env {
 		agentEnv[variable.Name] = variable
 	}
-	if agentEnv["MLAIOPS_RUNTIME_AUTH"].Value != "required" {
-		t.Fatalf("agent runtime auth must be required: %#v", agentEnv["MLAIOPS_RUNTIME_AUTH"])
+	if agentEnv["KIONGA_RUNTIME_AUTH"].Value != "required" {
+		t.Fatalf("agent runtime auth must be required: %#v", agentEnv["KIONGA_RUNTIME_AUTH"])
 	}
 	token := agentEnv[RuntimeTokenKey]
 	if token.Value != "" || token.ValueFrom == nil || token.ValueFrom.SecretKeyRef == nil || token.ValueFrom.SecretKeyRef.Name != platformapi.AgentRuntimeSecretName(resourceID) || token.ValueFrom.SecretKeyRef.Key != RuntimeTokenKey {
@@ -106,7 +106,7 @@ func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
 		}
 	}
 	firstKey := string(traceSecret.Data["key"])
-	if agentEnv["MLAIOPS_RUNTIME_PORT"].Value != "8080" || deployment.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort != 8080 {
+	if agentEnv["KIONGA_RUNTIME_PORT"].Value != "8080" || deployment.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort != 8080 {
 		t.Fatalf("runtime port and container port disagree: %#v", deployment.Spec.Template.Spec.Containers[0])
 	}
 	// Simulate an HPA scale. An owned Deployment event must not force the
@@ -146,7 +146,7 @@ func TestAgentControllerCreatesDeploymentAndService(t *testing.T) {
 	if hpa.Spec.MinReplicas == nil || *hpa.Spec.MinReplicas != 2 || hpa.Spec.MaxReplicas != 5 {
 		t.Fatalf("unexpected agent autoscaler: %#v", hpa.Spec)
 	}
-	var current mlaiopsv1.KiongaAgent
+	var current kiongav1.KiongaAgent
 	if err := client.Get(context.Background(), request.NamespacedName, &current); err != nil {
 		t.Fatal(err)
 	}
@@ -173,11 +173,11 @@ func TestAgentControllerMountsPublishedLangflowSnapshot(t *testing.T) {
 	_ = appsv1.AddToScheme(scheme)
 	_ = autoscalingv2.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
-	_ = mlaiopsv1.AddToScheme(scheme)
-	agent := &mlaiopsv1.KiongaAgent{
-		TypeMeta:   metav1.TypeMeta{APIVersion: "mlaiops.io/v1alpha1", Kind: "KiongaAgent"},
+	_ = kiongav1.AddToScheme(scheme)
+	agent := &kiongav1.KiongaAgent{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "kionga.dev/v1alpha1", Kind: "KiongaAgent"},
 		ObjectMeta: metav1.ObjectMeta{Name: "published-flow", Namespace: "team-a"},
-		Spec:       mlaiopsv1.KiongaAgentSpec{Version: "r2", Image: "registry/langflow:1.13", GraphModule: "agents.langflow_adapter:build_langflow", FlowJSON: `{"data":{"nodes":[{"id":"input"}],"edges":[]}}`, ProjectID: "prj-demo", OwnerSubject: "alice", Replicas: mlaiopsv1.ReplicaSpec{Min: 1, Max: 1}},
+		Spec:       kiongav1.KiongaAgentSpec{Version: "r2", Image: "registry/langflow:1.13", GraphModule: "agents.langflow_adapter:build_langflow", FlowJSON: `{"data":{"nodes":[{"id":"input"}],"edges":[]}}`, ProjectID: "prj-demo", OwnerSubject: "alice", Replicas: kiongav1.ReplicaSpec{Min: 1, Max: 1}},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(agent, &appsv1.Deployment{}).WithObjects(agent).Build()
 	reconciler := &AgentReconciler{Client: client, LangflowSidecarImage: "registry/kionga-api:1", GatewayURL: "http://gateway:8080"}
@@ -218,15 +218,15 @@ func TestAgentControllerMountsNativeVersionAndRejectsOtherModules(t *testing.T) 
 	_ = appsv1.AddToScheme(scheme)
 	_ = autoscalingv2.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
-	_ = mlaiopsv1.AddToScheme(scheme)
+	_ = kiongav1.AddToScheme(scheme)
 	for _, tc := range []struct {
 		module string
 		mount  bool
 	}{{"agents.native_graph:build_native", true}, {"evil.module:build", false}} {
-		agent := &mlaiopsv1.KiongaAgent{
-			TypeMeta:   metav1.TypeMeta{APIVersion: "mlaiops.io/v1alpha1", Kind: "KiongaAgent"},
+		agent := &kiongav1.KiongaAgent{
+			TypeMeta:   metav1.TypeMeta{APIVersion: "kionga.dev/v1alpha1", Kind: "KiongaAgent"},
 			ObjectMeta: metav1.ObjectMeta{Name: "native-agent", Namespace: "team-a"},
-			Spec:       mlaiopsv1.KiongaAgentSpec{Version: "v1", Image: "registry/agent-runtime:1", GraphModule: tc.module, FlowJSON: `{"artifact_version":1}`, ProjectID: "prj-demo", OwnerSubject: "alice", Replicas: mlaiopsv1.ReplicaSpec{Min: 1, Max: 1}},
+			Spec:       kiongav1.KiongaAgentSpec{Version: "v1", Image: "registry/agent-runtime:1", GraphModule: tc.module, FlowJSON: `{"artifact_version":1}`, ProjectID: "prj-demo", OwnerSubject: "alice", Replicas: kiongav1.ReplicaSpec{Min: 1, Max: 1}},
 		}
 		client := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(agent, &appsv1.Deployment{}).WithObjects(agent).Build()
 		reconciler := &AgentReconciler{Client: client, LangflowSidecarImage: "registry/kionga-api:1", GatewayURL: "http://gateway:8080"}
@@ -251,9 +251,9 @@ func TestAgentControllerMountsNativeVersionAndRejectsOtherModules(t *testing.T) 
 
 func TestAgentRuntimeTokenLifecycle(t *testing.T) {
 	ctx := context.Background()
-	agent := &mlaiopsv1.KiongaAgent{
+	agent := &kiongav1.KiongaAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "legacy-agent", Namespace: "default", UID: "agent-a"},
-		Spec:       mlaiopsv1.KiongaAgentSpec{Version: "1", Image: "agent:1", GraphModule: "agent:build", Replicas: mlaiopsv1.ReplicaSpec{Min: 1, Max: 1}},
+		Spec:       kiongav1.KiongaAgentSpec{Version: "1", Image: "agent:1", GraphModule: "agent:build", Replicas: kiongav1.ReplicaSpec{Min: 1, Max: 1}},
 	}
 	// Simulate the pre-upgrade Deployment referencing the service credential.
 	legacy := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: platformapi.AgentDNSName(agent.Name), Namespace: agent.Namespace}}
@@ -296,7 +296,7 @@ func TestAgentRuntimeTokenLifecycle(t *testing.T) {
 					t.Fatal("legacy Deployment still uses shared credential")
 				}
 			}
-			hash := deployment.Spec.Template.Annotations["mlaiops.io/runtime-token-hash"]
+			hash := deployment.Spec.Template.Annotations["kionga.dev/runtime-token-hash"]
 			if hash == "" {
 				t.Fatal("missing rollout hash")
 			}
@@ -309,7 +309,7 @@ func TestAgentRuntimeTokenLifecycle(t *testing.T) {
 			original, previousHash = token, hash
 		})
 	}
-	other := agent.DeepCopyObject().(*mlaiopsv1.KiongaAgent)
+	other := agent.DeepCopyObject().(*kiongav1.KiongaAgent)
 	other.Name, other.UID, other.ResourceVersion = "agent-b", "agent-b", ""
 	if err := client.Create(ctx, other); err != nil {
 		t.Fatal(err)

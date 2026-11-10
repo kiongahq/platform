@@ -170,7 +170,7 @@ func publicPath(method, path string) bool {
 // servicePrincipal matches the shared internal token that platform services
 // use to report state back to the control plane.
 func servicePrincipal(bearer string) (Principal, bool) {
-	token := os.Getenv("MLAIOPS_INTERNAL_TOKEN")
+	token := os.Getenv("KIONGA_INTERNAL_TOKEN")
 	if token == "" || subtle.ConstantTimeCompare([]byte(bearer), []byte(token)) != 1 {
 		return Principal{}, false
 	}
@@ -179,7 +179,7 @@ func servicePrincipal(bearer string) (Principal, bool) {
 
 // RBAC authorizes every API request. Identity comes from the OIDC middleware
 // when it ran; otherwise the internal service token or the local development
-// principal (role from MLAIOPS_LOCAL_ROLE, admin by default) applies. The
+// principal (role from KIONGA_LOCAL_ROLE, admin by default) applies. The
 // resolved principal is placed on the context so handlers attribute actions.
 func RBAC(next http.Handler) http.Handler {
 	return RBACWithResolver(next, nil)
@@ -202,7 +202,7 @@ func RBACWithResolver(next http.Handler, resolve AccessResolver) http.Handler {
 			if service, matched := servicePrincipal(bearer); matched {
 				principal = service
 			} else {
-				role := strings.TrimSpace(os.Getenv("MLAIOPS_LOCAL_ROLE"))
+				role := strings.TrimSpace(os.Getenv("KIONGA_LOCAL_ROLE"))
 				if role == "" {
 					role = RoleAdmin
 				}

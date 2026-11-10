@@ -32,7 +32,7 @@ func pipelineFile(client *http.Client, base string, args []string, stdout, stder
 			return 0, nil, err
 		}
 		request.Header.Set("Content-Type", "application/json")
-		if token := os.Getenv("MLAIOPS_TOKEN"); token != "" {
+		if token := os.Getenv("KIONGA_TOKEN"); token != "" {
 			request.Header.Set("Authorization", "Bearer "+token)
 		}
 		response, err := client.Do(request) // #nosec G704 -- the CLI calls the gateway its user configured

@@ -48,14 +48,14 @@ func (s *Server) agentMetrics(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, agentLiveMetrics{})
 		return
 	}
-	agents, err := client.Resource(schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: "kiongaagents"}).Namespace(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: "mlaiops.io/resource-id=" + r.PathValue("id")})
+	agents, err := client.Resource(schema.GroupVersionResource{Group: "kionga.dev", Version: "v1alpha1", Resource: "kiongaagents"}).Namespace(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: "kionga.dev/resource-id=" + r.PathValue("id")})
 	if err != nil {
 		writeJSON(w, 200, agentLiveMetrics{})
 		return
 	}
 	name := ""
 	for _, item := range agents.Items {
-		if item.GetLabels()["mlaiops.io/resource-id"] == r.PathValue("id") {
+		if item.GetLabels()["kionga.dev/resource-id"] == r.PathValue("id") {
 			name = item.GetName()
 			break
 		}
@@ -64,18 +64,18 @@ func (s *Server) agentMetrics(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, agentLiveMetrics{})
 		return
 	}
-	ownedPods, err := client.Resource(schema.GroupVersionResource{Version: "v1", Resource: "pods"}).Namespace(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: "mlaiops.io/agent=" + name})
+	ownedPods, err := client.Resource(schema.GroupVersionResource{Version: "v1", Resource: "pods"}).Namespace(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: "kionga.dev/agent=" + name})
 	if err != nil {
 		writeJSON(w, 200, agentLiveMetrics{})
 		return
 	}
 	allowedNames := map[string]bool{}
 	for _, pod := range ownedPods.Items {
-		if pod.GetLabels()["mlaiops.io/agent"] == name {
+		if pod.GetLabels()["kionga.dev/agent"] == name {
 			allowedNames[pod.GetName()] = true
 		}
 	}
-	pods, err := client.Resource(schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}).Namespace(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: "mlaiops.io/agent=" + name})
+	pods, err := client.Resource(schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}).Namespace(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: "kionga.dev/agent=" + name})
 	if err != nil {
 		writeJSON(w, 200, agentLiveMetrics{})
 		return

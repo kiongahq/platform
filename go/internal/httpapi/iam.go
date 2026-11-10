@@ -102,7 +102,7 @@ func (s *Server) principalForSubject(subject string) (auth.Principal, string) {
 		return auth.Principal{Subject: subject, Email: access.Email, Roles: []string{access.Role}, Services: access.Services, ProjectIDs: access.ProjectIDs, Disabled: access.Disabled, Provisioned: true}, "profile"
 	}
 	if localAccountsEnabled() && subject == bootstrapUsername() {
-		role := os.Getenv("MLAIOPS_LOCAL_ROLE")
+		role := os.Getenv("KIONGA_LOCAL_ROLE")
 		if role == "" {
 			role = auth.RoleAdmin
 		}
@@ -112,7 +112,7 @@ func (s *Server) principalForSubject(subject string) (auth.Principal, string) {
 }
 
 func bootstrapUsername() string {
-	if name := os.Getenv("MLAIOPS_LOCAL_USERNAME"); name != "" {
+	if name := os.Getenv("KIONGA_LOCAL_USERNAME"); name != "" {
 		return name
 	}
 	return "admin"
@@ -626,7 +626,7 @@ func (s *Server) wouldRemoveLastAdmin(r *http.Request, target string) bool {
 	}
 	if localAccountsEnabled() && target != bootstrapUsername() {
 		if _, err := s.store.AccessFor(bootstrapUsername()); err != nil {
-			if role := os.Getenv("MLAIOPS_LOCAL_ROLE"); role == "" || role == auth.RoleAdmin {
+			if role := os.Getenv("KIONGA_LOCAL_ROLE"); role == "" || role == auth.RoleAdmin {
 				return false
 			}
 		}

@@ -89,7 +89,7 @@ func TestLocalAPIRequiresSessionAndLogoutRevokesIt(t *testing.T) {
 }
 
 func TestLocalAPIAllowsServiceCredentialButRejectsInvalidBearer(t *testing.T) {
-	t.Setenv("MLAIOPS_INTERNAL_TOKEN", "test-internal-token")
+	t.Setenv("KIONGA_INTERNAL_TOKEN", "test-internal-token")
 	handler := NewLocalSessionManager("admin", "password").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, _ := PrincipalFrom(r.Context())
 		if !hasRole(p, RoleService) {

@@ -33,7 +33,7 @@ func TestMeReportsIdentityAndPermissions(t *testing.T) {
 }
 
 func TestMeAndEnforcementForViewerRole(t *testing.T) {
-	t.Setenv("MLAIOPS_LOCAL_ROLE", "viewer")
+	t.Setenv("KIONGA_LOCAL_ROLE", "viewer")
 	server := testServer()
 
 	me := httptest.NewRecorder()
@@ -64,7 +64,7 @@ func TestMeAndEnforcementForViewerRole(t *testing.T) {
 }
 
 func TestEngineerRoleBoundary(t *testing.T) {
-	t.Setenv("MLAIOPS_LOCAL_ROLE", "engineer")
+	t.Setenv("KIONGA_LOCAL_ROLE", "engineer")
 	server := testServer()
 
 	create := httptest.NewRecorder()

@@ -24,10 +24,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	platformapi "github.com/kiongahq/platform/pkg/api"
-	mlaiopsv1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
+	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
 
-const agentFinalizer = "mlaiops.io/agent-cleanup"
+const agentFinalizer = "kionga.dev/agent-cleanup"
 
 type AgentReconciler struct {
 	client.Client
@@ -71,17 +71,17 @@ func traceProxyKeys(keyID, project, agent string, key []byte) ([]byte, error) {
 }
 
 // RuntimeTokenKey retains the runtime's existing environment contract.
-const RuntimeTokenKey = "MLAIOPS_INTERNAL_TOKEN"
+const RuntimeTokenKey = "KIONGA_INTERNAL_TOKEN"
 
 func runtimeAuthEnv(secretName string) []corev1.EnvVar {
 	return []corev1.EnvVar{
-		{Name: "MLAIOPS_RUNTIME_AUTH", Value: "required"},
+		{Name: "KIONGA_RUNTIME_AUTH", Value: "required"},
 		{Name: RuntimeTokenKey, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secretName}, Key: RuntimeTokenKey}}},
 	}
 }
 
 func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	var agent mlaiopsv1.KiongaAgent
+	var agent kiongav1.KiongaAgent
 	if err := r.Get(ctx, request.NamespacedName, &agent); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -98,7 +98,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 			return ctrl.Result{}, err
 		}
 	}
-	resourceID := agent.Labels["mlaiops.io/resource-id"]
+	resourceID := agent.Labels["kionga.dev/resource-id"]
 	if resourceID == "" {
 		resourceID = agent.Name
 	}
@@ -164,8 +164,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 			if apiSecret.Annotations == nil {
 				apiSecret.Annotations = map[string]string{}
 			}
-			previous := apiSecret.Annotations["mlaiops.io/subject"]
-			apiSecret.Annotations["mlaiops.io/subject"] = agent.Spec.OwnerSubject
+			previous := apiSecret.Annotations["kionga.dev/subject"]
+			apiSecret.Annotations["kionga.dev/subject"] = agent.Spec.OwnerSubject
 			if apiSecret.Data == nil {
 				apiSecret.Data = map[string][]byte{}
 			}
@@ -219,17 +219,17 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 		if agent.Spec.Replicas.Max <= agent.Spec.Replicas.Min || deployment.ResourceVersion == "" {
 			deployment.Spec.Replicas = &replicas
 		}
-		deployment.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"mlaiops.io/agent": agent.Name, "mlaiops.io/version": agent.Spec.Version}}
+		deployment.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"kionga.dev/agent": agent.Name, "kionga.dev/version": agent.Spec.Version}}
 		deployment.Spec.Template.ObjectMeta.Labels = deployment.Spec.Selector.MatchLabels
 		if agent.Spec.FlowJSON != "" {
-			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{"mlaiops.io/flow-sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(agent.Spec.FlowJSON))), "mlaiops.io/api-token-hash": agentTokenHash}
+			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{"kionga.dev/flow-sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(agent.Spec.FlowJSON))), "kionga.dev/api-token-hash": agentTokenHash}
 			deployment.Spec.Template.Spec.Volumes = []corev1.Volume{{Name: "flow", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: flowConfigName}}}}}
 		}
 		if deployment.Spec.Template.ObjectMeta.Annotations == nil || agent.Spec.FlowJSON == "" {
 			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 		}
-		deployment.Spec.Template.ObjectMeta.Annotations["mlaiops.io/runtime-token-hash"] = runtimeTokenHash
-		deployment.Spec.Template.ObjectMeta.Annotations["mlaiops.io/trace-proxy-key-hash"] = traceKeyHash
+		deployment.Spec.Template.ObjectMeta.Annotations["kionga.dev/runtime-token-hash"] = runtimeTokenHash
+		deployment.Spec.Template.ObjectMeta.Annotations["kionga.dev/trace-proxy-key-hash"] = traceKeyHash
 		if agent.Spec.FlowJSON == "" {
 			deployment.Spec.Template.Spec.Volumes = nil
 		}
@@ -238,12 +238,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 		}}})
 		deployment.Spec.Template.Spec.ImagePullSecrets = r.ImagePullSecrets
 		deployment.Spec.Template.Spec.Containers = []corev1.Container{
-			{Name: "agent", Image: agent.Spec.Image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}, Env: append(append(envVars(plan.Workload.Containers[0].Env), corev1.EnvVar{Name: "MLAIOPS_AGENT_ID", Value: resourceID}, corev1.EnvVar{Name: "MLAIOPS_RUNTIME_PORT", Value: "8080"}), append(runtimeAuthEnv(runtimeSecret.Name), r.traceProxyClientEnv(traceSecret.Name))...), Resources: resources, ReadinessProbe: httpProbe("/healthz", "http", 2), LivenessProbe: httpProbe("/healthz", "http", 10), SecurityContext: hardenedSecurityContext()},
+			{Name: "agent", Image: agent.Spec.Image, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}, Env: append(append(envVars(plan.Workload.Containers[0].Env), corev1.EnvVar{Name: "KIONGA_AGENT_ID", Value: resourceID}, corev1.EnvVar{Name: "KIONGA_RUNTIME_PORT", Value: "8080"}), append(runtimeAuthEnv(runtimeSecret.Name), r.traceProxyClientEnv(traceSecret.Name))...), Resources: resources, ReadinessProbe: httpProbe("/healthz", "http", 2), LivenessProbe: httpProbe("/healthz", "http", 10), SecurityContext: hardenedSecurityContext()},
 			{Name: "trace-proxy", Image: traceProxyImage, Ports: []corev1.ContainerPort{{Name: "proxy", ContainerPort: 8081}}, Env: append(envVars(plan.Workload.Containers[1].Env), r.traceProxySidecarEnv()...), VolumeMounts: []corev1.VolumeMount{{Name: "trace-proxy-keys", MountPath: traceProxyKeyDir, ReadOnly: true}}, Resources: traceProxyResources(), ReadinessProbe: httpProbe("/healthz", "proxy", 2), LivenessProbe: httpProbe("/healthz", "proxy", 10), SecurityContext: hardenedSecurityContext()},
 		}
 		if agent.Spec.FlowJSON != "" {
 			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{{Name: "flow", MountPath: "/app/flows", ReadOnly: true}}
-			deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "MLAIOPS_URL", Value: "http://127.0.0.1:8890"})
+			deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "KIONGA_URL", Value: "http://127.0.0.1:8890"})
 			deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
 				Name: "kionga-api", Image: r.LangflowSidecarImage,
 				ReadinessProbe: &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt(8890)}}, PeriodSeconds: 5},
@@ -316,7 +316,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 	return ctrl.Result{}, nil
 }
 
-func (r *AgentReconciler) fail(ctx context.Context, agent *mlaiopsv1.KiongaAgent, reason string, reconcileErr error) (ctrl.Result, error) {
+func (r *AgentReconciler) fail(ctx context.Context, agent *kiongav1.KiongaAgent, reason string, reconcileErr error) (ctrl.Result, error) {
 	agent.Status.Phase = "Failed"
 	apimeta.SetStatusCondition(&agent.Status.Conditions, metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: reconcileErr.Error()})
 	_ = r.Status().Update(ctx, agent)
@@ -324,7 +324,7 @@ func (r *AgentReconciler) fail(ctx context.Context, agent *mlaiopsv1.KiongaAgent
 }
 
 func (r *AgentReconciler) SetupWithManager(manager ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(manager).For(&mlaiopsv1.KiongaAgent{}).Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&corev1.ConfigMap{}).Owns(&corev1.Secret{}).Owns(&autoscalingv2.HorizontalPodAutoscaler{}).Complete(r)
+	return ctrl.NewControllerManagedBy(manager).For(&kiongav1.KiongaAgent{}).Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&corev1.ConfigMap{}).Owns(&corev1.Secret{}).Owns(&autoscalingv2.HorizontalPodAutoscaler{}).Complete(r)
 }
 
 func resolvedAgentResources(value corev1.ResourceRequirements) (corev1.ResourceRequirements, error) {

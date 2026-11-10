@@ -261,6 +261,6 @@ func auditTx(ctx context.Context, tx pgx.Tx, tenant, action, kind, resourceID, a
 		return err
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO outbox_events (tenant_id,id,topic,event_key,payload) VALUES ($1,$2,$3,$4,$5)`,
-		tenant, id("out"), "mlaiops.audit.operations", resourceID, payload)
+		tenant, id("out"), "kionga.audit.operations", resourceID, payload)
 	return err
 }

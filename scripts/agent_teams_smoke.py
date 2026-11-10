@@ -54,7 +54,7 @@ NOT_EXERCISED = [
     "a real function runtime: scenario 11 runs registered `tool` grants against the counting backend in place of OpenFaaS",
     "the Kubernetes sandbox driver, and Podman: this runs Docker only",
     "several gateway replicas: one gateway process at a time, restarted",
-    "a real model provider: the runner uses MLAIOPS_LLM_BACKEND=mock, so model decisions are scripted",
+    "a real model provider: the runner uses KIONGA_LLM_BACKEND=mock, so model decisions are scripted",
     "trace-proxy: the mock backend makes no LLM call to send through it",
     "the console",
 ]
@@ -124,7 +124,7 @@ class Smoke:
         base = {"PATH": os.environ["PATH"], "HOME": str(self.work), "TMPDIR": os.environ.get("TMPDIR", "/tmp")}
         self.runner = Process("runner", [sys.executable, "-m", "agent_runtime.designer"], {
             **base, "KIONGA_DESIGNER_RUNNER_TOKEN": self.runner_token, "KIONGA_DESIGNER_PORT": str(self.runner_port),
-            "KIONGA_DESIGNER_HOST": "127.0.0.1", "MLAIOPS_LLM_BACKEND": "mock", "PYTHONUNBUFFERED": "1",
+            "KIONGA_DESIGNER_HOST": "127.0.0.1", "KIONGA_LLM_BACKEND": "mock", "PYTHONUNBUFFERED": "1",
         }, self.work / "runner.log", cwd=self.runtime_dir)
         self.manager = Process("sandbox-manager", [str(self.work / "sandbox-manager")], {
             **base, "KIONGA_SANDBOX_TOKEN": self.manager_token, "PORT": str(self.manager_port),
@@ -136,8 +136,8 @@ class Smoke:
 
     def _gateway_process(self, base: dict[str, str]) -> Process:
         env = {
-            **base, "PORT": str(self.gateway_port), "MLAIOPS_LOCAL_ROLE": "admin", "MLAIOPS_LOCAL_USERNAME": "admin",
-            "MLAIOPS_LOCAL_PASSWORD": self.password,
+            **base, "PORT": str(self.gateway_port), "KIONGA_LOCAL_ROLE": "admin", "KIONGA_LOCAL_USERNAME": "admin",
+            "KIONGA_LOCAL_PASSWORD": self.password,
             "KIONGA_AGENT_DESIGNER_RUNNER_TOKEN": self.runner_token,
             "KIONGA_AGENT_DESIGNER_CALLBACK_URL": "http://127.0.0.1:8087/api/v1",
             "KIONGA_SANDBOX_URL": f"http://127.0.0.1:{self.manager_port}", "KIONGA_SANDBOX_TOKEN": self.manager_token,
@@ -151,7 +151,7 @@ class Smoke:
         if os.environ.get("DATABASE_URL"):
             env["DATABASE_URL"] = os.environ["DATABASE_URL"]
         else:
-            env["MLAIOPS_DATA_PATH"] = str(self.work / "platform.json")
+            env["KIONGA_DATA_PATH"] = str(self.work / "platform.json")
         env["KIONGA_AGENT_DESIGNER_RUNNER_URL"] = self.gateway_runner_url
         return Process("gateway", [str(self.work / "gateway")], env, self.work / "gateway.log", cwd=str(self.work))
 

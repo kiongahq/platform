@@ -16,10 +16,10 @@ func fakeS3(t *testing.T) *httptest.Server {
 		switch {
 		case r.URL.Path == "/":
 			_, _ = w.Write([]byte(`<?xml version="1.0"?><ListAllMyBucketsResult><Buckets>
-				<Bucket><Name>mlaiops-models</Name><CreationDate>2026-01-01T00:00:00Z</CreationDate></Bucket>
-				<Bucket><Name>mlaiops-artifacts</Name><CreationDate>2026-01-02T00:00:00Z</CreationDate></Bucket>
+				<Bucket><Name>kionga-models</Name><CreationDate>2026-01-01T00:00:00Z</CreationDate></Bucket>
+				<Bucket><Name>kionga-artifacts</Name><CreationDate>2026-01-02T00:00:00Z</CreationDate></Bucket>
 			</Buckets></ListAllMyBucketsResult>`))
-		case r.URL.Path == "/mlaiops-models" && r.URL.Query().Get("list-type") == "2":
+		case r.URL.Path == "/kionga-models" && r.URL.Query().Get("list-type") == "2":
 			if got := r.URL.Query().Get("prefix"); got != "churn/" {
 				t.Errorf("prefix not forwarded, got %q", got)
 			}
@@ -27,7 +27,7 @@ func fakeS3(t *testing.T) *httptest.Server {
 				<Contents><Key>churn/model.pkl</Key><Size>1024</Size><LastModified>2026-06-01T10:00:00Z</LastModified></Contents>
 				<CommonPrefixes><Prefix>churn/v2/</Prefix></CommonPrefixes>
 			</ListBucketResult>`))
-		case r.URL.Path == "/mlaiops-models/churn/metrics.json":
+		case r.URL.Path == "/kionga-models/churn/metrics.json":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"auc": 0.94}`))
 		default:
@@ -48,7 +48,7 @@ func TestListBuckets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(buckets) != 2 || buckets[0].Name != "mlaiops-models" {
+	if len(buckets) != 2 || buckets[0].Name != "kionga-models" {
 		t.Fatalf("unexpected buckets: %v", buckets)
 	}
 }
@@ -56,7 +56,7 @@ func TestListBuckets(t *testing.T) {
 func TestListObjectsWithPrefixesAndDelimiter(t *testing.T) {
 	server := fakeS3(t)
 	defer server.Close()
-	listing, err := testBrowser(server.URL).ListObjects("mlaiops-models", "churn/")
+	listing, err := testBrowser(server.URL).ListObjects("kionga-models", "churn/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestPreviewObjectBounded(t *testing.T) {
 	defer server.Close()
 	browser := testBrowser(server.URL)
 	browser.PreviewLimit = 5
-	preview, err := browser.PreviewObject("mlaiops-models", "churn/metrics.json")
+	preview, err := browser.PreviewObject("kionga-models", "churn/metrics.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestPreviewObjectBounded(t *testing.T) {
 func TestBrowseFailsClosedOnUpstreamError(t *testing.T) {
 	server := fakeS3(t)
 	defer server.Close()
-	_, err := testBrowser(server.URL).PreviewObject("mlaiops-models", "missing.txt")
+	_, err := testBrowser(server.URL).PreviewObject("kionga-models", "missing.txt")
 	if err == nil || !strings.Contains(err.Error(), "404") {
 		t.Fatalf("expected upstream 404 error, got %v", err)
 	}

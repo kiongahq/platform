@@ -69,15 +69,15 @@ func TestProductionFailClosed(t *testing.T) {
 	t.Setenv("OIDC_AUDIENCE", "kionga")
 	t.Setenv("OIDC_CLIENT_ID", "kionga")
 	t.Setenv("OIDC_CLIENT_SECRET", strings.Repeat("s", 32))
-	t.Setenv("MLAIOPS_INTERNAL_TOKEN", strings.Repeat("t", 32))
+	t.Setenv("KIONGA_INTERNAL_TOKEN", strings.Repeat("t", 32))
 	t.Setenv("KIONGA_CREDENTIAL_KEY", base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	t.Setenv("DATABASE_URL", "postgres://user:pass@db.company.test/db?sslmode=verify-full")
-	t.Setenv("MLAIOPS_ALLOWED_ORIGIN", "https://app.company.test")
+	t.Setenv("KIONGA_ALLOWED_ORIGIN", "https://app.company.test")
 	t.Setenv("OIDC_REDIRECT_URL", "https://app.company.test/auth/callback")
 	if err := ValidateGateway(); err != nil {
 		t.Fatal(err)
 	}
-	for _, change := range [][2]string{{"OIDC_ISSUER", ""}, {"OIDC_TOKEN_URL", "http://id.company.test/token"}, {"DATABASE_URL", "postgres://db/db?sslmode=disable"}, {"OIDC_REDIRECT_URL", "https://evil.test/auth/callback"}, {"MLAIOPS_INTERNAL_TOKEN", "kionga-local-service-token"}, {"KIONGA_CREDENTIAL_KEY", "invalid"}} {
+	for _, change := range [][2]string{{"OIDC_ISSUER", ""}, {"OIDC_TOKEN_URL", "http://id.company.test/token"}, {"DATABASE_URL", "postgres://db/db?sslmode=disable"}, {"OIDC_REDIRECT_URL", "https://evil.test/auth/callback"}, {"KIONGA_INTERNAL_TOKEN", "kionga-local-service-token"}, {"KIONGA_CREDENTIAL_KEY", "invalid"}} {
 		t.Run(change[0], func(t *testing.T) {
 			t.Setenv(change[0], change[1])
 			if ValidateGateway() == nil {
@@ -90,13 +90,13 @@ func TestProductionFailClosed(t *testing.T) {
 func TestProductionBreakGlassPassword(t *testing.T) {
 	TestProductionFailClosed(t)
 	t.Setenv("KIONGA_LOCAL_LOGIN", "true")
-	for _, weak := range []string{"", "mlaiops-local", "short-secret", "my-Password-is-long-enough", "change-me-change-me-change-me"} {
-		t.Setenv("MLAIOPS_LOCAL_PASSWORD", weak)
+	for _, weak := range []string{"", "kionga-local", "short-secret", "my-Password-is-long-enough", "change-me-change-me-change-me"} {
+		t.Setenv("KIONGA_LOCAL_PASSWORD", weak)
 		if ValidateGateway() == nil {
 			t.Fatalf("weak break-glass password %q accepted", weak)
 		}
 	}
-	t.Setenv("MLAIOPS_LOCAL_PASSWORD", "vX9q-27fT-a8Lm-c3Rw")
+	t.Setenv("KIONGA_LOCAL_PASSWORD", "vX9q-27fT-a8Lm-c3Rw") // gitleaks:allow test fixture, not a credential
 	if err := ValidateGateway(); err != nil {
 		t.Fatal(err)
 	}
@@ -107,10 +107,10 @@ func TestLocalPasswordLoadsFromFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("vX9q-27fT-a8Lm-c3Rw\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("MLAIOPS_LOCAL_PASSWORD", "")
-	t.Setenv("MLAIOPS_LOCAL_PASSWORD_FILE", path)
-	if err := Load(); err != nil || os.Getenv("MLAIOPS_LOCAL_PASSWORD") != "vX9q-27fT-a8Lm-c3Rw" {
-		t.Fatalf("Load() = %v, password %q", err, os.Getenv("MLAIOPS_LOCAL_PASSWORD"))
+	t.Setenv("KIONGA_LOCAL_PASSWORD", "")
+	t.Setenv("KIONGA_LOCAL_PASSWORD_FILE", path)
+	if err := Load(); err != nil || os.Getenv("KIONGA_LOCAL_PASSWORD") != "vX9q-27fT-a8Lm-c3Rw" {
+		t.Fatalf("Load() = %v, password %q", err, os.Getenv("KIONGA_LOCAL_PASSWORD"))
 	}
 }
 
@@ -122,10 +122,10 @@ func TestProductionWorkspaceDomains(t *testing.T) {
 	t.Setenv("OIDC_AUDIENCE", "kionga")
 	t.Setenv("OIDC_CLIENT_ID", "kionga")
 	t.Setenv("OIDC_CLIENT_SECRET", strings.Repeat("s", 32))
-	t.Setenv("MLAIOPS_INTERNAL_TOKEN", strings.Repeat("t", 32))
+	t.Setenv("KIONGA_INTERNAL_TOKEN", strings.Repeat("t", 32))
 	t.Setenv("KIONGA_CREDENTIAL_KEY", base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	t.Setenv("DATABASE_URL", "postgres://user:pass@db.example.test/db?sslmode=verify-full")
-	t.Setenv("MLAIOPS_ALLOWED_ORIGIN", "https://console.example.test")
+	t.Setenv("KIONGA_ALLOWED_ORIGIN", "https://console.example.test")
 	t.Setenv("OIDC_REDIRECT_URL", "https://console.example.test/auth/callback")
 	t.Setenv("KIONGA_WORKSPACE_NAMESPACE", "kionga-workloads")
 	t.Setenv("KIONGA_WORKSPACE_BASE_DOMAIN", "workspaces.example.test")

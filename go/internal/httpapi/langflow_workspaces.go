@@ -57,12 +57,12 @@ func langflowClient() (dynamic.Interface, string, error) {
 	return client, namespace, err
 }
 func langflowResource(client dynamic.Interface, namespace string) dynamic.ResourceInterface {
-	return client.Resource(schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: "kiongaworkspaces"}).Namespace(namespace)
+	return client.Resource(schema.GroupVersionResource{Group: "kionga.dev", Version: "v1alpha1", Resource: "kiongaworkspaces"}).Namespace(namespace)
 }
 func langflowEntry(item *unstructured.Unstructured) langflowWorkspaceEntry {
 	subject, _, _ := unstructured.NestedString(item.Object, "spec", "subject")
 	project, _, _ := unstructured.NestedString(item.Object, "spec", "projectID")
-	display := item.GetAnnotations()["mlaiops.io/display-name"]
+	display := item.GetAnnotations()["kionga.dev/display-name"]
 	if display == "" {
 		display = item.GetName()
 	}
@@ -176,7 +176,7 @@ func (s *Server) createLangflowWorkspace(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	name := "langflow-" + hex.EncodeToString(raw)
-	object := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "mlaiops.io/v1alpha1", "kind": "KiongaWorkspace", "metadata": map[string]any{"name": name, "namespace": namespace, "annotations": map[string]any{"mlaiops.io/display-name": req.Name}, "labels": map[string]any{"mlaiops.io/component": "langflow"}}, "spec": map[string]any{"subject": principal(r).Subject, "projectID": req.ProjectID, "services": []any{"langflow"}, "disabled": false, "compute": map[string]any{"vcpus": req.CPU, "memoryGB": req.MemoryGB, "gpus": int64(0)}, "storageGB": req.StorageGB}}}
+	object := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "kionga.dev/v1alpha1", "kind": "KiongaWorkspace", "metadata": map[string]any{"name": name, "namespace": namespace, "annotations": map[string]any{"kionga.dev/display-name": req.Name}, "labels": map[string]any{"kionga.dev/component": "langflow"}}, "spec": map[string]any{"subject": principal(r).Subject, "projectID": req.ProjectID, "services": []any{"langflow"}, "disabled": false, "compute": map[string]any{"vcpus": req.CPU, "memoryGB": req.MemoryGB, "gpus": int64(0)}, "storageGB": req.StorageGB}}}
 	created, err := langflowResource(client, namespace).Create(r.Context(), object, metav1.CreateOptions{})
 	if err != nil {
 		writeError(w, 502, "workspace_unavailable", "Could not create Langflow workspace")
@@ -259,7 +259,7 @@ func (s *Server) changeLangflowWorkspace(w http.ResponseWriter, r *http.Request,
 		if annotations == nil {
 			annotations = map[string]string{}
 		}
-		annotations["mlaiops.io/restart-at"] = time.Now().UTC().Format(time.RFC3339Nano)
+		annotations["kionga.dev/restart-at"] = time.Now().UTC().Format(time.RFC3339Nano)
 		item.SetAnnotations(annotations)
 	}
 	updated, err := resources.Update(r.Context(), item, metav1.UpdateOptions{})

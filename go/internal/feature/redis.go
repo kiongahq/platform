@@ -10,7 +10,7 @@ import (
 
 // RedisStore is the production online store for the platform key convention:
 // one JSON document per (feature service, entity) under
-// mlaiops:features:<service>:<entityKey>. Materialization jobs write through
+// kionga:features:<service>:<entityKey>. Materialization jobs write through
 // the feature-gateway PUT endpoint; lookups are single Redis GETs, which keeps
 // the hot path inside the <5ms P99 budget.
 type RedisStore struct {
@@ -33,7 +33,7 @@ func (s *RedisStore) Ping(ctx context.Context) error {
 }
 
 func key(service, entityKey string) string {
-	return "mlaiops:features:" + service + ":" + entityKey
+	return "kionga:features:" + service + ":" + entityKey
 }
 
 func (s *RedisStore) Get(service, entityKey string) (map[string]any, bool) {

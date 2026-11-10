@@ -15,7 +15,7 @@ import (
 
 func TestWorkspaceDiscoveryIsolatesSubjects(t *testing.T) {
 	workspace := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "mlaiops.io/v1alpha1", "kind": "KiongaWorkspace",
+		"apiVersion": "kionga.dev/v1alpha1", "kind": "KiongaWorkspace",
 		"metadata": map[string]any{"name": "alice-workspace", "namespace": "default"},
 		"spec":     map[string]any{"subject": "alice", "services": []any{"workbench", "ide"}},
 	}}
@@ -48,7 +48,7 @@ func TestWorkspaceDiscoveryIsolatesSubjects(t *testing.T) {
 				other.SetName("duplicate")
 				objects = append(objects, other)
 			}
-			gvr := schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: "kiongaworkspaces"}
+			gvr := schema.GroupVersionResource{Group: "kionga.dev", Version: "v1alpha1", Resource: "kiongaworkspaces"}
 			client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "KiongaWorkspaceList"}, objects...)
 			target, err := discoverWorkspace(t.Context(), client, "default", tc.subject, tc.kind)
 			if (err != nil) != tc.wantError {
@@ -126,11 +126,11 @@ func TestIDESessionIsNotReusedAfterPasswordRotation(t *testing.T) {
 func TestScaffoldJobTokenNeverReusesTheLoginToken(t *testing.T) {
 	t.Setenv("KIONGA_WORKSPACE_JOB_TOKEN", "")
 	workspace := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "mlaiops.io/v1alpha1", "kind": "KiongaWorkspace",
+		"apiVersion": "kionga.dev/v1alpha1", "kind": "KiongaWorkspace",
 		"metadata": map[string]any{"name": "alice-workspace", "namespace": "default"},
 		"spec":     map[string]any{"subject": "alice", "services": []any{"workbench"}},
 	}}
-	gvr := schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: "kiongaworkspaces"}
+	gvr := schema.GroupVersionResource{Group: "kionga.dev", Version: "v1alpha1", Resource: "kiongaworkspaces"}
 	encode := func(value string) string { return base64.StdEncoding.EncodeToString([]byte(value)) }
 	for _, tc := range []struct {
 		name string

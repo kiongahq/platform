@@ -1025,7 +1025,7 @@ func defaultSteps(status string) []api.PipelineStep {
 	// Must mirror the steps pipeline-runner/pipelines/training.py reports: the run only
 	// completes when every templated step has reported, so a partial template
 	// would mark the run succeeded while later steps are still executing.
-	steps := []api.PipelineStep{{Name: "validate-data", Status: status, Image: "mlaiops/pipeline-runner:latest", Progress: 0}, {Name: "train-model", Status: status, Image: "mlaiops/pipeline-runner:latest", DependsOn: []string{"validate-data"}, Progress: 0}, {Name: "evaluate", Status: status, Image: "mlaiops/pipeline-runner:latest", DependsOn: []string{"train-model"}, Progress: 0}, {Name: "register-model", Status: status, Image: "mlaiops/pipeline-runner:latest", DependsOn: []string{"evaluate"}, Progress: 0}}
+	steps := []api.PipelineStep{{Name: "validate-data", Status: status, Image: "kionga/pipeline-runner:latest", Progress: 0}, {Name: "train-model", Status: status, Image: "kionga/pipeline-runner:latest", DependsOn: []string{"validate-data"}, Progress: 0}, {Name: "evaluate", Status: status, Image: "kionga/pipeline-runner:latest", DependsOn: []string{"train-model"}, Progress: 0}, {Name: "register-model", Status: status, Image: "kionga/pipeline-runner:latest", DependsOn: []string{"evaluate"}, Progress: 0}}
 	if status == "succeeded" {
 		for i := range steps {
 			steps[i].Progress = 100

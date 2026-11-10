@@ -10,7 +10,7 @@ import (
 // SecretScope limits which gateway environment variables a user-registered
 // resource can reference. A resource pairs its reference with a caller-chosen
 // endpoint, so an unrestricted env: lookup would hand any gateway secret
-// (DATABASE_URL, MLAIOPS_INTERNAL_TOKEN) to whoever controls that endpoint.
+// (DATABASE_URL, KIONGA_INTERNAL_TOKEN) to whoever controls that endpoint.
 //
 // A variable is permitted when it carries the scope's dedicated prefix, is one
 // of the names the scope has always documented, or is listed by the operator in

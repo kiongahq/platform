@@ -107,11 +107,11 @@ func (d *Dispatcher) Dispatch(ctx context.Context, record KafkaRecord) error {
 		return fmt.Errorf("unsupported lifecycle kind %q", command.Kind)
 	}
 	object := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "mlaiops.io/v1alpha1", "kind": kind,
-		"metadata": map[string]any{"name": dnsName(name, command.ID), "namespace": d.namespace, "labels": map[string]any{"mlaiops.io/tenant": command.Tenant, "mlaiops.io/resource-id": command.ID}},
+		"apiVersion": "kionga.dev/v1alpha1", "kind": kind,
+		"metadata": map[string]any{"name": dnsName(name, command.ID), "namespace": d.namespace, "labels": map[string]any{"kionga.dev/tenant": command.Tenant, "kionga.dev/resource-id": command.ID}},
 		"spec":     spec,
 	}}
-	gvr := schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: plural}
+	gvr := schema.GroupVersionResource{Group: "kionga.dev", Version: "v1alpha1", Resource: plural}
 	resources := d.client.Resource(gvr).Namespace(d.namespace)
 	if command.Kind == "user_access" && command.Action == "access.deleted" {
 		err := resources.Delete(ctx, object.GetName(), metav1.DeleteOptions{})

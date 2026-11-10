@@ -99,7 +99,7 @@ type Config struct {
 func ConfigFromEnv() (Config, error) {
 	config := Config{
 		Target: strings.ToLower(os.Getenv("KIONGA_LOG_EXPORT_TARGET")), URL: strings.TrimRight(os.Getenv("KIONGA_LOG_EXPORT_URL"), "/"),
-		Tenant: os.Getenv("MLAIOPS_TENANT"), Username: os.Getenv("KIONGA_LOG_EXPORT_USERNAME"),
+		Tenant: os.Getenv("KIONGA_TENANT"), Username: os.Getenv("KIONGA_LOG_EXPORT_USERNAME"),
 		CAFile: os.Getenv("KIONGA_LOG_EXPORT_CA_FILE"), InsecureTLS: os.Getenv("KIONGA_LOG_EXPORT_INSECURE_TLS") == "true", Timeout: 15 * time.Second,
 		Anonymous: os.Getenv("KIONGA_LOG_EXPORT_ANONYMOUS") == "true",
 	}

@@ -72,7 +72,7 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/pip install --quiet -r requirements-dev.txt
-          .venv/bin/pip list 2>/dev/null | grep -i -E '^(mlaiops-sdk|jsonschema|langchain-core) '
+          .venv/bin/pip list 2>/dev/null | grep -i -E '^(kionga|jsonschema|langchain-core) '
           git rev-parse HEAD
       - name: Install pinned, checksum-verified gVisor
         run: sudo scripts/ci-install-runsc.sh

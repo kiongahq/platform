@@ -17,7 +17,7 @@ import (
 // that gap for every unsafe method that carries cookies:
 //
 //   - Sec-Fetch-Site must be same-origin (or none, a user-initiated request),
-//     or the Origin must equal MLAIOPS_ALLOWED_ORIGIN;
+//     or the Origin must equal KIONGA_ALLOWED_ORIGIN;
 //   - browsers that send neither header fall back to comparing Origin with
 //     Host (net/http.CrossOriginProtection);
 //   - requests with no cookies are bearer, API-token or workspace-identity
@@ -38,7 +38,7 @@ func newCrossOriginProtection() *http.CrossOriginProtection {
 	protection := http.NewCrossOriginProtection()
 	if origin := trustedOrigin(); origin != "" {
 		if err := protection.AddTrustedOrigin(origin); err != nil {
-			log.Printf("MLAIOPS_ALLOWED_ORIGIN %q is not a valid origin; only same-origin writes are accepted: %v", origin, err)
+			log.Printf("KIONGA_ALLOWED_ORIGIN %q is not a valid origin; only same-origin writes are accepted: %v", origin, err)
 		}
 	}
 	protection.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,10 +47,10 @@ func newCrossOriginProtection() *http.CrossOriginProtection {
 	return protection
 }
 
-// trustedOrigin returns MLAIOPS_ALLOWED_ORIGIN normalised to scheme://host,
+// trustedOrigin returns KIONGA_ALLOWED_ORIGIN normalised to scheme://host,
 // or "" when it is unset or the wildcard.
 func trustedOrigin() string {
-	raw := strings.TrimSpace(os.Getenv("MLAIOPS_ALLOWED_ORIGIN"))
+	raw := strings.TrimSpace(os.Getenv("KIONGA_ALLOWED_ORIGIN"))
 	if raw == "" || raw == "*" {
 		return ""
 	}

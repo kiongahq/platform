@@ -41,7 +41,7 @@ func TestDeployModelStartsRealServing(t *testing.T) {
 			t.Fatalf("model serving metadata was not forwarded: %#v", request)
 		}
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"name":"churn-classifier","endpoint":"http://mlaiops-serve-churn-classifier:5001"}`))
+		_, _ = w.Write([]byte(`{"name":"churn-classifier","endpoint":"http://kionga-serve-churn-classifier:5001"}`))
 	}))
 	defer manager.Close()
 	t.Setenv("SERVING_MANAGER_URL", manager.URL)
@@ -55,7 +55,7 @@ func TestDeployModelStartsRealServing(t *testing.T) {
 		t.Fatalf("deploy failed: %d %s", deployed.Code, deployed.Body.String())
 	}
 	body := deployed.Body.String()
-	if !strings.Contains(body, `"endpoint_url":"http://mlaiops-serve-churn-classifier:5001"`) || !strings.Contains(body, `"deployment_status":"serving"`) {
+	if !strings.Contains(body, `"endpoint_url":"http://kionga-serve-churn-classifier:5001"`) || !strings.Contains(body, `"deployment_status":"serving"`) {
 		t.Fatalf("live endpoint not recorded: %s", body)
 	}
 }
@@ -137,7 +137,7 @@ func TestDeployModelOutlivesTheListenerWriteTimeout(t *testing.T) {
 	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(400 * time.Millisecond) // the manager waiting for readiness
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"endpoint":"http://mlaiops-serve-churn-classifier:5001"}`))
+		_, _ = w.Write([]byte(`{"endpoint":"http://kionga-serve-churn-classifier:5001"}`))
 	}))
 	defer manager.Close()
 	t.Setenv("SERVING_MANAGER_URL", manager.URL)

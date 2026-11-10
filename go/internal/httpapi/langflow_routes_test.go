@@ -20,7 +20,7 @@ func TestLangflowStableEndpointActivatesAndRollsBackReadyDeployment(t *testing.T
 			return
 		}
 		if r.URL.Path == "/invoke" {
-			_, _ = w.Write([]byte(`{"reply":"served by ` + r.Header.Get("X-MLAIOps-Agent-ID") + `","session_id":"session-1"}`))
+			_, _ = w.Write([]byte(`{"reply":"served by ` + r.Header.Get("X-Kionga-Agent-ID") + `","session_id":"session-1"}`))
 			return
 		}
 		http.NotFound(w, r)

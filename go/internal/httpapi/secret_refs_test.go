@@ -30,7 +30,7 @@ func TestSecretScopePermits(t *testing.T) {
 		{connectionSecrets, "env:KIONGA_AGENT_API_TOKEN", true},
 		// The gateway's own secrets, even when an operator allowlists one.
 		{knowledgeSecrets, "env:DATABASE_URL", false},
-		{knowledgeSecrets, "env:MLAIOPS_INTERNAL_TOKEN", false},
+		{knowledgeSecrets, "env:KIONGA_INTERNAL_TOKEN", false},
 		{knowledgeSecrets, "env:KIONGA_CREDENTIAL_KEY", false},
 		{connectionSecrets, "env:DATABASE_URL", false},
 		{connectionSecrets, "env:KIONGA_SANDBOX_TOKEN", false},
@@ -86,10 +86,10 @@ func secretTestServer(t *testing.T) (http.Handler, store.Repository, string) {
 
 func TestKnowledgeBaseRejectsGatewaySecretBeforeAnyNetworkCall(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://gateway-private")
-	t.Setenv("MLAIOPS_INTERNAL_TOKEN", "gateway-private")
+	t.Setenv("KIONGA_INTERNAL_TOKEN", "gateway-private")
 	stub, hits, _ := secretStub(t)
 	server, _, projectID := secretTestServer(t)
-	for _, ref := range []string{"env:DATABASE_URL", "env:MLAIOPS_INTERNAL_TOKEN", "env:HOME"} {
+	for _, ref := range []string{"env:DATABASE_URL", "env:KIONGA_INTERNAL_TOKEN", "env:HOME"} {
 		body := `{"project_id":"` + projectID + `","name":"stolen","backend":"qdrant","dimensions":3,"endpoint":"` + stub.URL + `","secret_ref":"` + ref + `"}`
 		created := call(t, server, http.MethodPost, "/api/v1/admin/knowledge-bases", body)
 		if created.Code != 422 {
@@ -146,7 +146,7 @@ func TestAgentConnectionRejectsGatewaySecretAndKnowledgeSecret(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://gateway-private")
 	stub, hits, _ := secretStub(t)
 	server, _, projectID := secretTestServer(t)
-	for _, ref := range []string{"env:DATABASE_URL", "env:MLAIOPS_INTERNAL_TOKEN", "env:KIONGA_KB_SECRET_DOCS"} {
+	for _, ref := range []string{"env:DATABASE_URL", "env:KIONGA_INTERNAL_TOKEN", "env:KIONGA_KB_SECRET_DOCS"} {
 		body := `{"project_id":"` + projectID + `","name":"stolen","endpoint":"` + stub.URL + `","secret_ref":"` + ref + `"}`
 		if created := call(t, server, http.MethodPost, "/api/v1/admin/agent-api-connections", body); created.Code != 422 {
 			t.Fatalf("%s: got %d %s", ref, created.Code, created.Body.String())
@@ -188,7 +188,7 @@ func TestPlatformSecretsAreScopedByType(t *testing.T) {
 		{"mlflow", "env:OPENFAAS_PASSWORD", false},
 		{"openfaas", "env:DATABASE_URL", false},
 		{"prefect", "env:DATABASE_URL", false},
-		{"kubernetes", "env:MLAIOPS_INTERNAL_TOKEN", false},
+		{"kubernetes", "env:KIONGA_INTERNAL_TOKEN", false},
 		{"prefect", "env:HOME", false},
 		{"prefect", "env:KIONGA_KB_SECRET_DOCS", false},
 	}

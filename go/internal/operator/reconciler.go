@@ -74,24 +74,24 @@ func ReconcileAgent(spec AgentSpec) (AgentPlan, error) {
 	labels := map[string]string{
 		"app.kubernetes.io/name":       spec.Name,
 		"app.kubernetes.io/component":  "agent",
-		"app.kubernetes.io/managed-by": "mlaiops-operator",
-		"mlaiops.io/version":           spec.Version,
+		"app.kubernetes.io/managed-by": "kionga-operator",
+		"kionga.dev/version":           spec.Version,
 	}
 	env := map[string]string{
-		"MLAIOPS_AGENT_NAME":       spec.Name,
-		"MLAIOPS_AGENT_VERSION":    spec.Version,
-		"MLAIOPS_GRAPH_MODULE":     spec.GraphModule,
-		"MLAIOPS_LLM_BACKEND":      spec.LLMBackend,
-		"MLAIOPS_LANGFUSE_PROJECT": spec.LangfuseProject,
-		"OPENAI_BASE_URL":          "http://localhost:8081/v1",
+		"KIONGA_AGENT_NAME":       spec.Name,
+		"KIONGA_AGENT_VERSION":    spec.Version,
+		"KIONGA_GRAPH_MODULE":     spec.GraphModule,
+		"KIONGA_LLM_BACKEND":      spec.LLMBackend,
+		"KIONGA_LANGFUSE_PROJECT": spec.LangfuseProject,
+		"OPENAI_BASE_URL":         "http://localhost:8081/v1",
 	}
 	plan := AgentPlan{
 		Workload: AgentWorkload{
 			Name: name, Namespace: spec.Namespace, Labels: labels, Replicas: spec.MinReplicas,
-			Annotations: map[string]string{"mlaiops.io/inject-trace-proxy": "true"},
+			Annotations: map[string]string{"kionga.dev/inject-trace-proxy": "true"},
 			Containers: []Container{
 				{Name: "agent", Image: spec.Image, Port: 8080, Env: env},
-				{Name: "trace-proxy", Image: "ghcr.io/kiongahq/trace-proxy:latest", Port: 8081, Env: map[string]string{"MLAIOPS_AGENT_NAME": spec.Name}},
+				{Name: "trace-proxy", Image: "ghcr.io/kiongahq/trace-proxy:latest", Port: 8081, Env: map[string]string{"KIONGA_AGENT_NAME": spec.Name}},
 			},
 		},
 		Traffic: TrafficRoute{

@@ -286,7 +286,7 @@ export function Models({ identity, project, resource, onNavigate }: OperationsPr
     }
   }, [resource, query.data]);
   function code(model: RecordData) {
-    return `from mlaiops_sdk.models import Model\nfrom mlaiops_sdk.huggingface import download_model\n\nmodel = Model.model_validate_json(${JSON.stringify(JSON.stringify(model))})\npath = download_model(model)\nprint(path)\n`;
+    return `from kionga.models import Model\nfrom kionga.huggingface import download_model\n\nmodel = Model.model_validate_json(${JSON.stringify(JSON.stringify(model))})\npath = download_model(model)\nprint(path)\n`;
   }
   return (
     <>

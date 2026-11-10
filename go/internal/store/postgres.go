@@ -355,7 +355,7 @@ func (p *Postgres) DeleteUserAccess(subject, actor string) error {
 		"resource": map[string]any{"subject": subject}, "actor": event.Actor, "tenant": p.tenant, "occurred_at": event.CreatedAt,
 	})
 	if _, err = tx.Exec(ctx, `INSERT INTO outbox_events (tenant_id,id,topic,event_key,payload) VALUES ($1,$2,$3,$4,$5)`,
-		p.tenant, id("out"), "mlaiops.workspace.commands", subject, commandPayload); err != nil {
+		p.tenant, id("out"), "kionga.workspace.commands", subject, commandPayload); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -775,7 +775,7 @@ func (p *Postgres) writeTx(ctx context.Context, tx pgx.Tx, kind, resourceID stri
 		return err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO outbox_events (tenant_id,id,topic,event_key,payload) VALUES ($1,$2,$3,$4,$5)`,
-		p.tenant, id("out"), "mlaiops.audit.operations", resourceID, eventPayload)
+		p.tenant, id("out"), "kionga.audit.operations", resourceID, eventPayload)
 	if err != nil {
 		return err
 	}
@@ -883,17 +883,17 @@ func actorOrAnonymous(actor string) string {
 func topicForAction(action string) string {
 	switch {
 	case strings.HasPrefix(action, "pipeline."):
-		return "mlaiops.pipeline.commands"
+		return "kionga.pipeline.commands"
 	case strings.HasPrefix(action, "model."):
-		return "mlaiops.model.commands"
+		return "kionga.model.commands"
 	case strings.HasPrefix(action, "agent."):
-		return "mlaiops.agent.commands"
+		return "kionga.agent.commands"
 	case strings.HasPrefix(action, "tool."):
-		return "mlaiops.tool.commands"
+		return "kionga.tool.commands"
 	case strings.HasPrefix(action, "connection."):
-		return "mlaiops.connection.commands"
+		return "kionga.connection.commands"
 	case strings.HasPrefix(action, "access."):
-		return "mlaiops.workspace.commands"
+		return "kionga.workspace.commands"
 	default:
 		return ""
 	}
