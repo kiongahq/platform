@@ -83,7 +83,7 @@ func ReconcileAgent(spec AgentSpec) (AgentPlan, error) {
 		"KIONGA_GRAPH_MODULE":     spec.GraphModule,
 		"KIONGA_LLM_BACKEND":      spec.LLMBackend,
 		"KIONGA_LANGFUSE_PROJECT": spec.LangfuseProject,
-		"OPENAI_BASE_URL":          "http://localhost:8081/v1",
+		"OPENAI_BASE_URL":         "http://localhost:8081/v1",
 	}
 	plan := AgentPlan{
 		Workload: AgentWorkload{

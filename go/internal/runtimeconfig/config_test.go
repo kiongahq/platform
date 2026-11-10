@@ -96,7 +96,7 @@ func TestProductionBreakGlassPassword(t *testing.T) {
 			t.Fatalf("weak break-glass password %q accepted", weak)
 		}
 	}
-	t.Setenv("KIONGA_LOCAL_PASSWORD", "vX9q-27fT-a8Lm-c3Rw")
+	t.Setenv("KIONGA_LOCAL_PASSWORD", "vX9q-27fT-a8Lm-c3Rw") // gitleaks:allow test fixture, not a credential
 	if err := ValidateGateway(); err != nil {
 		t.Fatal(err)
 	}

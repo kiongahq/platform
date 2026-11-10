@@ -14,3 +14,4 @@ f5022d3427a751e467b1620edbf96989e0324616:.gitleaksignore:aws-access-token:2
 8edcb3f4fcb17bfc13ea65b50627c42fa22ad891:frontend/features/designer/DesignStudio.tsx:generic-api-key:749
 # Test fixture: base64 of a fake token; the fixture now encodes it at runtime.
 59c14094994b0f4e0512923e9a95f1ccdadb58e5:go/internal/httpapi/workspace_discovery_test.go:generic-api-key:118
+b498c8c13e5549e102b3a0808af2f402dceb0616:go/internal/runtimeconfig/config_test.go:generic-api-key:99
