@@ -130,7 +130,7 @@ func paragraphs(words int) []api.Block {
 
 func TestEditorialSessionSeparationAndWorkflow(t *testing.T) {
 	t.Setenv("KIONGA_BLOG_MEDIA_DIR", t.TempDir())
-	t.Setenv("MLAIOPS_LOCAL_USERNAME", "admin")
+	t.Setenv("KIONGA_LOCAL_USERNAME", "admin")
 	server := testServer()
 	mlAdmin := &editorialClient{t: t, server: server, subject: "ops-admin", roles: []string{auth.RoleAdmin}}
 	bootstrapAdmin := &editorialClient{t: t, server: server, subject: "admin", roles: []string{auth.RoleAdmin}}

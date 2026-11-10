@@ -43,7 +43,7 @@ func (s *Server) kubernetesExecutor() (*k8sexec.Executor, error) {
 		if fixed == "" && prefix == "" {
 			fixed = "kionga-pipelines"
 		}
-		tenant := os.Getenv("MLAIOPS_TENANT")
+		tenant := os.Getenv("KIONGA_TENANT")
 		if tenant == "" {
 			tenant = "default"
 		}

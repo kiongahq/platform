@@ -12,7 +12,7 @@ func fakePrefect(t *testing.T, deploymentFound bool) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/deployments/name/training-pipeline/mlaiops":
+		case "/api/deployments/name/training-pipeline/kionga":
 			if !deploymentFound {
 				w.WriteHeader(http.StatusNotFound)
 				return
@@ -48,7 +48,7 @@ func TestPrefectCreateFlowRun(t *testing.T) {
 	server := fakePrefect(t, true)
 	defer server.Close()
 	prefect := NewPrefect(server.URL, "")
-	id, err := prefect.CreateFlowRun(context.Background(), "training-pipeline", "mlaiops", "run-42", map[string]any{"run_id": "run-42"})
+	id, err := prefect.CreateFlowRun(context.Background(), "training-pipeline", "kionga", "run-42", map[string]any{"run_id": "run-42"})
 	if err != nil || id != "fr-9" {
 		t.Fatalf("unexpected result: %q %v", id, err)
 	}
@@ -63,7 +63,7 @@ func TestPrefectAcceptsAPIConventionURL(t *testing.T) {
 	// PREFECT_API_URL conventionally ends in /api; the client must not
 	// produce /api/api/... paths.
 	prefect := NewPrefect(server.URL+"/api", "")
-	id, err := prefect.CreateFlowRun(context.Background(), "training-pipeline", "mlaiops", "run-42", map[string]any{"run_id": "run-42"})
+	id, err := prefect.CreateFlowRun(context.Background(), "training-pipeline", "kionga", "run-42", map[string]any{"run_id": "run-42"})
 	if err != nil || id != "fr-9" {
 		t.Fatalf("unexpected result: %q %v", id, err)
 	}
@@ -73,7 +73,7 @@ func TestPrefectMissingDeploymentFailsClosed(t *testing.T) {
 	server := fakePrefect(t, false)
 	defer server.Close()
 	prefect := NewPrefect(server.URL, "")
-	if _, err := prefect.CreateFlowRun(context.Background(), "training-pipeline", "mlaiops", "run-42", nil); err == nil {
+	if _, err := prefect.CreateFlowRun(context.Background(), "training-pipeline", "kionga", "run-42", nil); err == nil {
 		t.Fatal("expected deployment resolution error")
 	}
 }

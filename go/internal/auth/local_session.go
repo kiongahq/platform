@@ -14,7 +14,7 @@ import (
 const localSessionCookie = "kionga_local_session"
 
 // LocalAccounts verifies administrator-provisioned password logins. The
-// bootstrap administrator from MLAIOPS_LOCAL_USERNAME/PASSWORD always works;
+// bootstrap administrator from KIONGA_LOCAL_USERNAME/PASSWORD always works;
 // other subjects are normal users whose role and grants come from UserAccess.
 type LocalAccounts interface {
 	VerifyLocalAccount(subject, password string) bool
@@ -65,7 +65,7 @@ func NewLocalSessionManager(username, password string, accounts ...LocalAccounts
 // resolver later overlays the administrator-managed UserAccess profile.
 func (s *LocalSessionManager) principalFor(subject string) Principal {
 	if subject == s.username {
-		role := os.Getenv("MLAIOPS_LOCAL_ROLE")
+		role := os.Getenv("KIONGA_LOCAL_ROLE")
 		if role == "" {
 			role = RoleAdmin
 		}

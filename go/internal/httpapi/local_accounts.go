@@ -36,14 +36,14 @@ func localAccountsEnabled() bool {
 }
 
 // localBootstrapAdmin reports whether the caller is the built-in local
-// account (MLAIOPS_LOCAL_USERNAME, default admin), which has no stored
+// account (KIONGA_LOCAL_USERNAME, default admin), which has no stored
 // profile. A single sign-on identity never counts, even if its subject
 // happens to equal the local username.
 func localBootstrapAdmin(value auth.Principal) bool {
 	if !localAccountsEnabled() || value.Credential == auth.CredentialSSOSession || value.Credential == auth.CredentialOIDCToken {
 		return false
 	}
-	bootstrap := os.Getenv("MLAIOPS_LOCAL_USERNAME")
+	bootstrap := os.Getenv("KIONGA_LOCAL_USERNAME")
 	if bootstrap == "" {
 		bootstrap = "admin"
 	}

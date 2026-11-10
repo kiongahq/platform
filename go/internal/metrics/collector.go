@@ -45,18 +45,18 @@ func (c *Collector) Prometheus() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	var b strings.Builder
-	b.WriteString("# HELP mlaiops_component_up Whether a platform component health endpoint is reachable.\n# TYPE mlaiops_component_up gauge\n")
+	b.WriteString("# HELP kionga_component_up Whether a platform component health endpoint is reachable.\n# TYPE kionga_component_up gauge\n")
 	names := make([]string, 0, len(c.targets))
 	for name := range c.targets {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		_, _ = fmt.Fprintf(&b, "mlaiops_component_up{component=%q} %g\n", name, c.up[name])
+		_, _ = fmt.Fprintf(&b, "kionga_component_up{component=%q} %g\n", name, c.up[name])
 	}
-	b.WriteString("# HELP mlaiops_component_last_check_timestamp_seconds Last component health check.\n# TYPE mlaiops_component_last_check_timestamp_seconds gauge\n")
+	b.WriteString("# HELP kionga_component_last_check_timestamp_seconds Last component health check.\n# TYPE kionga_component_last_check_timestamp_seconds gauge\n")
 	for _, name := range names {
-		_, _ = fmt.Fprintf(&b, "mlaiops_component_last_check_timestamp_seconds{component=%q} %d\n", name, c.checked[name].Unix())
+		_, _ = fmt.Fprintf(&b, "kionga_component_last_check_timestamp_seconds{component=%q} %d\n", name, c.checked[name].Unix())
 	}
 	return b.String()
 }

@@ -62,12 +62,12 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_USER: mlaiops
-          POSTGRES_PASSWORD: mlaiops-ci
-          POSTGRES_DB: mlaiops
+          POSTGRES_USER: kionga
+          POSTGRES_PASSWORD: kionga-ci
+          POSTGRES_DB: kionga
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U mlaiops"
+          --health-cmd "pg_isready -U kionga"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
@@ -91,13 +91,13 @@ jobs:
       - run: go test -race ./...
       - run: go test -tags=integration ./integration
         env:
-          TEST_DATABASE_URL: postgres://mlaiops:mlaiops-ci@localhost:5432/mlaiops?sslmode=disable
+          TEST_DATABASE_URL: postgres://kionga:kionga-ci@localhost:5432/kionga?sslmode=disable
       - run: go test -race ./internal/httpapi -run '^TestTeam' -count=1
         env:
-          TEST_DATABASE_URL: postgres://mlaiops:mlaiops-ci@localhost:5432/mlaiops?sslmode=disable
+          TEST_DATABASE_URL: postgres://kionga:kionga-ci@localhost:5432/kionga?sslmode=disable
       - run: go test ./internal/httpapi -run TestPgvectorKnowledgeRoundTrip -count=1
         env:
-          KIONGA_KNOWLEDGE_TEST_DSN: postgres://mlaiops:mlaiops-ci@localhost:5432/mlaiops?sslmode=disable
+          KIONGA_KNOWLEDGE_TEST_DSN: postgres://kionga:kionga-ci@localhost:5432/kionga?sslmode=disable
       - run: go test ./internal/httpapi -run TestQdrantKnowledgeRoundTrip -count=1
         env:
           KIONGA_QDRANT_TEST_URL: http://localhost:6333

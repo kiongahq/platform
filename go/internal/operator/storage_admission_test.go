@@ -14,7 +14,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	mlaiopsv1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
+	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
 
 func TestValidateTenantStorage(t *testing.T) {
@@ -46,10 +46,10 @@ func TestWorkspaceWithUnlistedStorageClassIsNotProvisioned(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = appsv1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
-	_ = mlaiopsv1.AddToScheme(scheme)
-	workspace := &mlaiopsv1.KiongaWorkspace{
-		TypeMeta: metav1.TypeMeta{APIVersion: "mlaiops.io/v1alpha1", Kind: "KiongaWorkspace"}, ObjectMeta: metav1.ObjectMeta{Name: "workspace-user-2", Namespace: "team-a"},
-		Spec: mlaiopsv1.KiongaWorkspaceSpec{Subject: "user-2", Services: []string{"workbench"}, Compute: mlaiopsv1.WorkspaceComputeSpec{VCPUs: 2, MemoryGB: 4}, StorageGB: 10},
+	_ = kiongav1.AddToScheme(scheme)
+	workspace := &kiongav1.KiongaWorkspace{
+		TypeMeta: metav1.TypeMeta{APIVersion: "kionga.dev/v1alpha1", Kind: "KiongaWorkspace"}, ObjectMeta: metav1.ObjectMeta{Name: "workspace-user-2", Namespace: "team-a"},
+		Spec: kiongav1.KiongaWorkspaceSpec{Subject: "user-2", Services: []string{"workbench"}, Compute: kiongav1.WorkspaceComputeSpec{VCPUs: 2, MemoryGB: 4}, StorageGB: 10},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(workspace).WithObjects(workspace).Build()
 	reconciler := &WorkspaceReconciler{Client: client, WorkbenchImage: "registry/jupyter:1", StorageClass: "local-path", AllowedStorageClasses: []string{"gp3"}}

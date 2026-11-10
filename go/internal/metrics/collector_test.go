@@ -13,7 +13,7 @@ func TestCollectorExportsComponentHealth(t *testing.T) {
 	defer server.Close()
 	collector := New(map[string]string{"gateway": server.URL})
 	collector.Poll(context.Background())
-	if !strings.Contains(collector.Prometheus(), `mlaiops_component_up{component="gateway"} 1`) {
+	if !strings.Contains(collector.Prometheus(), `kionga_component_up{component="gateway"} 1`) {
 		t.Fatal(collector.Prometheus())
 	}
 }

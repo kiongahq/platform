@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	platformapi "github.com/kiongahq/platform/pkg/api"
-	mlaiopsv1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
+	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
 
 // Private Kionga images (GHCR packages are private) only pull when every pod
@@ -36,14 +36,14 @@ func pullSecretScheme() *runtime.Scheme {
 	_ = appsv1.AddToScheme(scheme)
 	_ = autoscalingv2.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
-	_ = mlaiopsv1.AddToScheme(scheme)
+	_ = kiongav1.AddToScheme(scheme)
 	return scheme
 }
 
 func TestWorkspacePodsReferencePullSecrets(t *testing.T) {
-	workspace := &mlaiopsv1.KiongaWorkspace{
-		TypeMeta: metav1.TypeMeta{APIVersion: "mlaiops.io/v1alpha1", Kind: "KiongaWorkspace"}, ObjectMeta: metav1.ObjectMeta{Name: "workspace-user-1", Namespace: "team-a"},
-		Spec: mlaiopsv1.KiongaWorkspaceSpec{Subject: "user-1", Services: []string{"workbench"}, Compute: mlaiopsv1.WorkspaceComputeSpec{VCPUs: 2, MemoryGB: 4}, StorageGB: 10},
+	workspace := &kiongav1.KiongaWorkspace{
+		TypeMeta: metav1.TypeMeta{APIVersion: "kionga.dev/v1alpha1", Kind: "KiongaWorkspace"}, ObjectMeta: metav1.ObjectMeta{Name: "workspace-user-1", Namespace: "team-a"},
+		Spec: kiongav1.KiongaWorkspaceSpec{Subject: "user-1", Services: []string{"workbench"}, Compute: kiongav1.WorkspaceComputeSpec{VCPUs: 2, MemoryGB: 4}, StorageGB: 10},
 	}
 	client := fake.NewClientBuilder().WithScheme(pullSecretScheme()).WithStatusSubresource(workspace).WithObjects(workspace).Build()
 	secrets := ParseImagePullSecrets("ghcr-pull")
@@ -64,10 +64,10 @@ func TestWorkspacePodsReferencePullSecrets(t *testing.T) {
 func TestAgentPodsReferencePullSecrets(t *testing.T) {
 	resourceID := "agt-pull-secret"
 	name := platformapi.AgentDNSName(resourceID)
-	agent := &mlaiopsv1.KiongaAgent{
-		TypeMeta:   metav1.TypeMeta{APIVersion: "mlaiops.io/v1alpha1", Kind: "KiongaAgent"},
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "team-a", Labels: map[string]string{"mlaiops.io/resource-id": resourceID}},
-		Spec:       mlaiopsv1.KiongaAgentSpec{Version: "1", Image: "ghcr.io/kiongahq/agent-runtime:1", GraphModule: "agents.support:graph", Replicas: mlaiopsv1.ReplicaSpec{Min: 1, Max: 1}},
+	agent := &kiongav1.KiongaAgent{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "kionga.dev/v1alpha1", Kind: "KiongaAgent"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "team-a", Labels: map[string]string{"kionga.dev/resource-id": resourceID}},
+		Spec:       kiongav1.KiongaAgentSpec{Version: "1", Image: "ghcr.io/kiongahq/agent-runtime:1", GraphModule: "agents.support:graph", Replicas: kiongav1.ReplicaSpec{Min: 1, Max: 1}},
 	}
 	client := fake.NewClientBuilder().WithScheme(pullSecretScheme()).WithStatusSubresource(agent, &appsv1.Deployment{}).WithObjects(agent).Build()
 	secrets := ParseImagePullSecrets("ghcr-pull")

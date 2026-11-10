@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	mlaiopsv1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
+	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
 
 // WorkspaceReconciler turns an administrator's access grant into one bounded
@@ -49,7 +49,7 @@ type WorkspaceReconciler struct {
 }
 
 func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	var workspace mlaiopsv1.KiongaWorkspace
+	var workspace kiongav1.KiongaWorkspace
 	if err := r.Get(ctx, request.NamespacedName, &workspace); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -65,8 +65,8 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 	labels := map[string]string{
 		"app.kubernetes.io/name":       workspace.Name,
 		"app.kubernetes.io/component":  "workspace",
-		"app.kubernetes.io/managed-by": "mlaiops-operator",
-		"mlaiops.io/workspace":         workspace.Name,
+		"app.kubernetes.io/managed-by": "kionga-operator",
+		"kionga.dev/workspace":         workspace.Name,
 	}
 	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: workspace.Name, Namespace: workspace.Namespace}}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, pvc, func() error {
@@ -91,8 +91,8 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		if authSecret.Annotations == nil {
 			authSecret.Annotations = make(map[string]string)
 		}
-		previousSubject := authSecret.Annotations["mlaiops.io/subject"]
-		authSecret.Annotations["mlaiops.io/subject"] = workspace.Spec.Subject
+		previousSubject := authSecret.Annotations["kionga.dev/subject"]
+		authSecret.Annotations["kionga.dev/subject"] = workspace.Spec.Subject
 		if authSecret.Data == nil {
 			authSecret.Data = make(map[string][]byte)
 		}
@@ -133,13 +133,13 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		}
 		deployment.Labels = labels
 		deployment.Spec.Replicas = &replicas
-		deployment.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"mlaiops.io/workspace": workspace.Name}}
+		deployment.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"kionga.dev/workspace": workspace.Name}}
 		deployment.Spec.Template.ObjectMeta.Labels = labels
 		if deployment.Spec.Template.Annotations == nil {
 			deployment.Spec.Template.Annotations = make(map[string]string)
 		}
-		deployment.Spec.Template.Annotations["mlaiops.io/api-token-hash"] = fmt.Sprintf("%x", sha256.Sum256(authSecret.Data["api-token"]))
-		deployment.Spec.Template.Annotations["mlaiops.io/restart-at"] = workspace.Annotations["mlaiops.io/restart-at"]
+		deployment.Spec.Template.Annotations["kionga.dev/api-token-hash"] = fmt.Sprintf("%x", sha256.Sum256(authSecret.Data["api-token"]))
+		deployment.Spec.Template.Annotations["kionga.dev/restart-at"] = workspace.Annotations["kionga.dev/restart-at"]
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{FSGroup: ptrInt64(1000), RunAsNonRoot: ptrBool(true), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
 		deployment.Spec.Template.Spec.Containers = containers
 		deployment.Spec.Template.Spec.Volumes = volumes
@@ -195,7 +195,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
-func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.KiongaWorkspace, authSecret string) []corev1.Container {
+func (r *WorkspaceReconciler) containers(workspace kiongav1.KiongaWorkspace, authSecret string) []corev1.Container {
 	services := make([]string, 0, 3)
 	for _, service := range []string{"workbench", "ide", "langflow"} {
 		if slices.Contains(workspace.Spec.Services, service) {
@@ -231,7 +231,7 @@ func (r *WorkspaceReconciler) containers(workspace mlaiopsv1.KiongaWorkspace, au
 			resources.Limits[corev1.ResourceName(gpuType)] = quantity
 		}
 		environment := []corev1.EnvVar{
-			{Name: "MLAIOPS_URL", Value: "http://127.0.0.1:8890"}, {Name: "KIONGA_GATEWAY_INTERNAL_URL", Value: "http://" + strings.TrimPrefix(strings.TrimPrefix(r.GatewayURL, "http://"), "https://")}, {Name: "MLAIOPS_FEATURE_GATEWAY_URL", Value: r.FeatureURL}, {Name: "MLAIOPS_STORAGE_PROXY_URL", Value: r.StorageURL},
+			{Name: "KIONGA_URL", Value: "http://127.0.0.1:8890"}, {Name: "KIONGA_GATEWAY_INTERNAL_URL", Value: "http://" + strings.TrimPrefix(strings.TrimPrefix(r.GatewayURL, "http://"), "https://")}, {Name: "KIONGA_FEATURE_GATEWAY_URL", Value: r.FeatureURL}, {Name: "KIONGA_STORAGE_PROXY_URL", Value: r.StorageURL},
 			{Name: "MLFLOW_TRACKING_URI", Value: r.MLflowURL}, {Name: "PREFECT_API_URL", Value: r.PrefectURL}, {Name: "LANGFUSE_HOST", Value: r.LangfuseURL}, {Name: "KAFKA_REST_URL", Value: r.KafkaRESTURL},
 			{Name: "KIONGA_SUBJECT", Value: workspace.Spec.Subject}, {Name: "KIONGA_WORKSPACE", Value: "/workspace"}, {Name: "KIONGA_WORKSPACE_NAME", Value: workspace.Name},
 		}
@@ -316,7 +316,7 @@ func workspacePorts(services []string) []corev1.ServicePort {
 	return result
 }
 
-func (r *WorkspaceReconciler) fail(ctx context.Context, workspace *mlaiopsv1.KiongaWorkspace, reason string, reconcileErr error) (ctrl.Result, error) {
+func (r *WorkspaceReconciler) fail(ctx context.Context, workspace *kiongav1.KiongaWorkspace, reason string, reconcileErr error) (ctrl.Result, error) {
 	workspace.Status.Phase = "Failed"
 	apimeta.SetStatusCondition(&workspace.Status.Conditions, metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: reconcileErr.Error()})
 	_ = r.Status().Update(ctx, workspace)
@@ -324,7 +324,7 @@ func (r *WorkspaceReconciler) fail(ctx context.Context, workspace *mlaiopsv1.Kio
 }
 
 func (r *WorkspaceReconciler) SetupWithManager(manager ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(manager).For(&mlaiopsv1.KiongaWorkspace{}).Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&corev1.PersistentVolumeClaim{}).Owns(&corev1.Secret{}).Complete(r)
+	return ctrl.NewControllerManagedBy(manager).For(&kiongav1.KiongaWorkspace{}).Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&corev1.PersistentVolumeClaim{}).Owns(&corev1.Secret{}).Complete(r)
 }
 
 func ptrBool(value bool) *bool    { return &value }

@@ -17,7 +17,7 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
-	base := env("MLAIOPS_URL", "http://localhost:8080")
+	base := env("KIONGA_URL", "http://localhost:8080")
 	client := &http.Client{Timeout: 15 * time.Second}
 	if len(os.Args) >= 4 && os.Args[1] == "pipeline" && (os.Args[2] == "export" || os.Args[2] == "validate" || os.Args[2] == "apply") {
 		os.Exit(pipelineFile(client, base, os.Args[2:], os.Stdout, os.Stderr))
@@ -51,9 +51,9 @@ func main() {
 		} else if len(os.Args) >= 6 && os.Args[1] == "function" && os.Args[2] == "deploy" {
 			method, path, body = http.MethodPost, "/api/v1/functions", map[string]string{"project_id": os.Args[3], "name": os.Args[4], "image": os.Args[5]}
 		} else if len(os.Args) >= 4 && os.Args[1] == "function" && os.Args[2] == "invoke" {
-			method, path, body = http.MethodPost, "/api/v1/functions/"+url.PathEscape(os.Args[3])+"/invoke", json.RawMessage(env("MLAIOPS_FUNCTION_PAYLOAD", "{}"))
+			method, path, body = http.MethodPost, "/api/v1/functions/"+url.PathEscape(os.Args[3])+"/invoke", json.RawMessage(env("KIONGA_FUNCTION_PAYLOAD", "{}"))
 		} else if len(os.Args) >= 4 && os.Args[1] == "function" && os.Args[2] == "invoke-async" {
-			method, path, body = http.MethodPost, "/api/v1/functions/"+url.PathEscape(os.Args[3])+"/invoke-async", json.RawMessage(env("MLAIOPS_FUNCTION_PAYLOAD", "{}"))
+			method, path, body = http.MethodPost, "/api/v1/functions/"+url.PathEscape(os.Args[3])+"/invoke-async", json.RawMessage(env("KIONGA_FUNCTION_PAYLOAD", "{}"))
 		} else if len(os.Args) >= 5 && os.Args[1] == "project" && os.Args[2] == "connect" {
 			branch := "main"
 			if len(os.Args) > 5 {
@@ -74,8 +74,8 @@ func main() {
 	request, err := http.NewRequest(method, base+path, reader) // #nosec G704 -- the CLI calls the gateway its user configured
 	fatal(err)
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-MLAIOps-Actor", env("USER", "cli"))
-	if token := os.Getenv("MLAIOPS_TOKEN"); token != "" {
+	request.Header.Set("X-Kionga-Actor", env("USER", "cli"))
+	if token := os.Getenv("KIONGA_TOKEN"); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 	response, err := client.Do(request) // #nosec G704 -- the CLI calls the gateway its user configured
@@ -96,13 +96,13 @@ func main() {
 	}
 }
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: mlaiops <project|pipeline|function|model|agent|tool|connection|audit> list")
-	fmt.Fprintln(os.Stderr, "       mlaiops pipeline definitions | pipeline submit <project-id> [definition-id]")
-	fmt.Fprintln(os.Stderr, "       mlaiops function deploy <project-id> <name> <image> | function <invoke|invoke-async> <name>")
-	fmt.Fprintln(os.Stderr, "       mlaiops project connect <project-id> <repository-url> [branch]")
-	fmt.Fprintln(os.Stderr, "       mlaiops pipeline export <definition-id>            (canonical YAML to stdout)")
-	fmt.Fprintln(os.Stderr, "       mlaiops pipeline validate <file.kionga.yaml>")
-	fmt.Fprintln(os.Stderr, "       mlaiops pipeline apply <file.kionga.yaml> [definition-id] [message]")
+	fmt.Fprintln(os.Stderr, "usage: kionga-cli <project|pipeline|function|model|agent|tool|connection|audit> list")
+	fmt.Fprintln(os.Stderr, "       kionga-cli pipeline definitions | pipeline submit <project-id> [definition-id]")
+	fmt.Fprintln(os.Stderr, "       kionga-cli function deploy <project-id> <name> <image> | function <invoke|invoke-async> <name>")
+	fmt.Fprintln(os.Stderr, "       kionga-cli project connect <project-id> <repository-url> [branch]")
+	fmt.Fprintln(os.Stderr, "       kionga-cli pipeline export <definition-id>            (canonical YAML to stdout)")
+	fmt.Fprintln(os.Stderr, "       kionga-cli pipeline validate <file.kionga.yaml>")
+	fmt.Fprintln(os.Stderr, "       kionga-cli pipeline apply <file.kionga.yaml> [definition-id] [message]")
 }
 func fatal(err error) {
 	if err != nil {

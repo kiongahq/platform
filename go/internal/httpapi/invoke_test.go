@@ -45,7 +45,7 @@ func TestInvokeAgentProxiesToRuntime(t *testing.T) {
 		if r.URL.Path != "/invoke" {
 			t.Fatalf("unexpected runtime path %s", r.URL.Path)
 		}
-		if got := r.Header.Get("X-MLAIOps-Agent-Name"); got != "support" {
+		if got := r.Header.Get("X-Kionga-Agent-Name"); got != "support" {
 			t.Fatalf("expected agent name header, got %q", got)
 		}
 		_ = json.NewDecoder(r.Body).Decode(&received)
@@ -70,7 +70,7 @@ func TestInvokeAgentProxiesToRuntime(t *testing.T) {
 
 func TestAgentRuntimeEndpointUsesImmutableID(t *testing.T) {
 	t.Setenv("AGENT_RUNTIME_URL", "")
-	t.Setenv("MLAIOPS_AGENT_NAMESPACE", "tenant-workloads")
+	t.Setenv("KIONGA_AGENT_NAMESPACE", "tenant-workloads")
 	identifier := "agt/project one"
 	want := "http://" + api.AgentDNSName(identifier) + ".tenant-workloads.svc"
 	if got := agentRuntimeEndpoint(identifier); got != want {
@@ -84,8 +84,8 @@ func TestAgentRuntimeEndpointUsesImmutableID(t *testing.T) {
 
 func TestAgentListReportsLiveComposeRuntime(t *testing.T) {
 	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/healthz" || r.Header.Get("X-MLAIOps-Agent-ID") == "" {
-			t.Fatalf("unexpected readiness request: %s agent=%q", r.URL.Path, r.Header.Get("X-MLAIOps-Agent-ID"))
+		if r.URL.Path != "/healthz" || r.Header.Get("X-Kionga-Agent-ID") == "" {
+			t.Fatalf("unexpected readiness request: %s agent=%q", r.URL.Path, r.Header.Get("X-Kionga-Agent-ID"))
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -188,11 +188,11 @@ func TestInvokeAgentRuntimeDown(t *testing.T) {
 }
 
 // agent-runtime requires the internal token on /invoke in production and
-// takes the end user only from X-MLAIOps-User-ID.
+// takes the end user only from X-Kionga-User-ID.
 func TestInvokeAgentAuthenticatesToRuntimeAndForwardsCaller(t *testing.T) {
 	token := base64.RawURLEncoding.EncodeToString([]byte(rand.Text()))
 	t.Setenv("KIONGA_AGENT_RUNTIME_TOKEN", token)
-	t.Setenv("MLAIOPS_INTERNAL_TOKEN", rand.Text())
+	t.Setenv("KIONGA_INTERNAL_TOKEN", rand.Text())
 	headers := make(chan http.Header, 1)
 	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
@@ -219,7 +219,7 @@ func TestInvokeAgentAuthenticatesToRuntimeAndForwardsCaller(t *testing.T) {
 	if got.Get("Authorization") != "Bearer "+token {
 		t.Fatalf("runtime Authorization = %q", got.Get("Authorization"))
 	}
-	if got.Get("X-MLAIOps-User-ID") != "local-dev" {
-		t.Fatalf("runtime caller = %q, want the authenticated principal", got.Get("X-MLAIOps-User-ID"))
+	if got.Get("X-Kionga-User-ID") != "local-dev" {
+		t.Fatalf("runtime caller = %q, want the authenticated principal", got.Get("X-Kionga-User-ID"))
 	}
 }

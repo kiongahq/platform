@@ -87,7 +87,7 @@ type editorialAPI struct {
 	server *Server
 	svc    *editorial.Service
 	// origin rejects editorial writes that are not same-origin or from
-	// MLAIOPS_ALLOWED_ORIGIN, including same-site workspace hosts.
+	// KIONGA_ALLOWED_ORIGIN, including same-site workspace hosts.
 	origin *http.CrossOriginProtection
 }
 

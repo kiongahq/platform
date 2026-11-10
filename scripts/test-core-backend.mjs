@@ -35,10 +35,10 @@ for (const key of ['PATH', 'HOME', 'TMPDIR', 'GOCACHE', 'GOPATH', 'GOMODCACHE', 
 }
 Object.assign(environment, {
   PORT: process.env.KIONGA_CORE_TEST_PORT || '18195',
-  MLAIOPS_DATA_PATH: join(state, 'platform.json'),
+  KIONGA_DATA_PATH: join(state, 'platform.json'),
   KIONGA_LANGFLOW_UPSTREAM: `http://127.0.0.1:${upstream.address().port}`,
-  MLAIOPS_LOCAL_USERNAME: 'admin',
-  MLAIOPS_LOCAL_PASSWORD: 'core-backend-test-password',
+  KIONGA_LOCAL_USERNAME: 'admin',
+  KIONGA_LOCAL_PASSWORD: 'core-backend-test-password',
 });
 const gateway = spawn('go', ['run', './cmd/gateway'], {
   cwd: resolve('go'), env: environment, stdio: ['ignore', 'inherit', 'inherit'], detached: true,

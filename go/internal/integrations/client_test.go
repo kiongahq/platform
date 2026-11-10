@@ -28,7 +28,7 @@ func TestMLflowTransitionUsesStandardAPI(t *testing.T) {
 
 func TestKafkaPublishesConfluentRESTEnvelope(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/topics/mlaiops.audit.operations" {
+		if r.URL.Path != "/topics/kionga.audit.operations" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
 		if got := r.Header.Get("Content-Type"); got != "application/vnd.kafka.json.v2+json" {
@@ -40,7 +40,7 @@ func TestKafkaPublishesConfluentRESTEnvelope(t *testing.T) {
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer server.Close()
-	if err := NewKafkaREST(server.URL, "").Publish(context.Background(), "mlaiops.audit.operations", map[string]string{"action": "created"}); err != nil {
+	if err := NewKafkaREST(server.URL, "").Publish(context.Background(), "kionga.audit.operations", map[string]string{"action": "created"}); err != nil {
 		t.Fatal(err)
 	}
 }

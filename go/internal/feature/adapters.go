@@ -113,9 +113,9 @@ func (r RedisBackend) Lookup(_ context.Context, request Request) (Response, erro
 // Views scans at most 10k keys; it is a diagnostic listing, not an index.
 func (r RedisBackend) Views(ctx context.Context) ([]ViewInfo, error) {
 	features := map[string]map[string]bool{}
-	iterator := r.Store.client.Scan(ctx, 0, "mlaiops:features:*", 500).Iterator()
+	iterator := r.Store.client.Scan(ctx, 0, "kionga:features:*", 500).Iterator()
 	for scanned := 0; iterator.Next(ctx) && scanned < 10000; scanned++ {
-		rest := strings.TrimPrefix(iterator.Val(), "mlaiops:features:")
+		rest := strings.TrimPrefix(iterator.Val(), "kionga:features:")
 		service, _, ok := strings.Cut(rest, ":")
 		if ok && features[service] == nil {
 			features[service] = map[string]bool{}

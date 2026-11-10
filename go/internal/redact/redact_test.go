@@ -13,7 +13,7 @@ func TestRedactsCredentialShapes(t *testing.T) {
 		"token hf_abcdefghijklmnopqrstuvwxyz12":                                  "hf_abcdefghijklmnopqrstuvwxyz12",
 		"OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwx":                        "sk-proj-abcdefghijklmnopqrstuvwx",
 		"github ghp_abcdefghijklmnopqrstuvwxyz0123456789":                        "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
-		"db postgres://mlaiops:hunter2-secret@postgres:5432/x":                   "hunter2-secret",
+		"db postgres://kionga:hunter2-secret@postgres:5432/x":                   "hunter2-secret",
 		`{"password": "correct horse battery"}`:                                  "correct horse battery",
 		"MY_SECRET=plainvalue123 next":                                           "plainvalue123",
 		"-----BEGIN RSA PRIVATE KEY-----\nMIIabc\n-----END RSA PRIVATE KEY-----": "MIIabc",

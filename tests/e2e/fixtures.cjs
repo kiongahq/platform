@@ -4,7 +4,7 @@ const {test: base, expect, request: requestFactory} = require('@playwright/test'
 const fs = require('node:fs');
 const path = require('node:path');
 
-const ADMIN = {username: process.env.KIONGA_ADMIN_USER || 'admin', password: process.env.KIONGA_ADMIN_PASSWORD || 'mlaiops-local'};
+const ADMIN = {username: process.env.KIONGA_ADMIN_USER || 'admin', password: process.env.KIONGA_ADMIN_PASSWORD || 'kionga-local'};
 const USER = {username: 'e2e-user', password: 'e2e-user-password-123'};
 
 async function signIn(page, {username, password}, returnTo = '/console') {

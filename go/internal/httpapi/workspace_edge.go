@@ -34,7 +34,7 @@ type edgeStore interface {
 // origin. The wildcard TLS ingress points to the same service, but requests on
 // workspace hosts never enter the console/auth router.
 func WorkspaceHostRouter(platform http.Handler, repository store.Repository) http.Handler {
-	origin, _ := url.Parse(os.Getenv("MLAIOPS_ALLOWED_ORIGIN"))
+	origin, _ := url.Parse(os.Getenv("KIONGA_ALLOWED_ORIGIN"))
 	platformHost := strings.ToLower(origin.Hostname())
 	base := strings.ToLower(strings.TrimSuffix(os.Getenv("KIONGA_WORKSPACE_BASE_DOMAIN"), "."))
 	server := &Server{store: repository}
@@ -86,7 +86,7 @@ func (s *Server) workspaceEdge(w http.ResponseWriter, r *http.Request, kind, slu
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "frame-ancestors "+os.Getenv("MLAIOPS_ALLOWED_ORIGIN"))
+	w.Header().Set("Content-Security-Policy", "frame-ancestors "+os.Getenv("KIONGA_ALLOWED_ORIGIN"))
 	w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 	backend, ok := s.store.(edgeStore)
 	if !ok {
@@ -98,7 +98,7 @@ func (s *Server) workspaceEdge(w http.ResponseWriter, r *http.Request, kind, slu
 			http.Error(w, "Method not allowed", 405)
 			return
 		}
-		if r.Header.Get("Origin") != os.Getenv("MLAIOPS_ALLOWED_ORIGIN") {
+		if r.Header.Get("Origin") != os.Getenv("KIONGA_ALLOWED_ORIGIN") {
 			http.Error(w, "Invalid handoff origin", 403)
 			return
 		}

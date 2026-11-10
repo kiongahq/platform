@@ -49,7 +49,7 @@ func main() {
 	var repository store.Repository
 	var postgres *store.Postgres
 	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
-		postgres, err = store.OpenPostgres(ctx, databaseURL, os.Getenv("MLAIOPS_TENANT"))
+		postgres, err = store.OpenPostgres(ctx, databaseURL, os.Getenv("KIONGA_TENANT"))
 		if err != nil {
 			log.Fatalf("open PostgreSQL repository: %v", err)
 		}
@@ -75,7 +75,7 @@ func main() {
 		}
 		log.Printf("using PostgreSQL control-plane repository")
 	} else {
-		dataPath := os.Getenv("MLAIOPS_DATA_PATH")
+		dataPath := os.Getenv("KIONGA_DATA_PATH")
 		if dataPath == "" {
 			dataPath = "data/platform.json"
 		}
@@ -102,7 +102,7 @@ func main() {
 				log.Fatalf("workspace API Kubernetes client: %v", err)
 			}
 		}
-		localSubject := os.Getenv("MLAIOPS_LOCAL_USERNAME")
+		localSubject := os.Getenv("KIONGA_LOCAL_USERNAME")
 		if localSubject == "" {
 			localSubject = "admin"
 		}
@@ -137,7 +137,7 @@ func main() {
 			log.Fatal(err)
 		}
 		verifier = auth.New(auth.Config{Issuer: issuer, Audience: os.Getenv("OIDC_AUDIENCE"), JWKSURL: jwksURL,
-			Tenant: os.Getenv("MLAIOPS_TENANT"), GroupRoles: groupRoles,
+			Tenant: os.Getenv("KIONGA_TENANT"), GroupRoles: groupRoles,
 			SingleTenantIssuer: os.Getenv("KIONGA_SSO_SINGLE_TENANT") == "true"})
 		var revokeWorkspaceSessions func(context.Context, string) error
 		if postgres != nil {
@@ -172,16 +172,16 @@ func main() {
 	}
 	var local *auth.LocalSessionManager
 	if issuer == "" || os.Getenv("KIONGA_LOCAL_LOGIN") == "true" {
-		username := os.Getenv("MLAIOPS_LOCAL_USERNAME")
+		username := os.Getenv("KIONGA_LOCAL_USERNAME")
 		if username == "" {
 			username = "admin"
 		}
-		password := os.Getenv("MLAIOPS_LOCAL_PASSWORD")
+		password := os.Getenv("KIONGA_LOCAL_PASSWORD")
 		if password == "" {
 			if issuer != "" {
-				log.Fatal("KIONGA_LOCAL_LOGIN=true next to single sign-on requires MLAIOPS_LOCAL_PASSWORD (break-glass account)")
+				log.Fatal("KIONGA_LOCAL_LOGIN=true next to single sign-on requires KIONGA_LOCAL_PASSWORD (break-glass account)")
 			}
-			password = "mlaiops-local"
+			password = "kionga-local"
 		}
 		local = auth.NewLocalSessionManager(username, password, httpapi.LocalAccountStore{Docs: repository})
 	}

@@ -67,7 +67,7 @@ func main() {
 	//   FEAST_URL  -> delegate to a running Feast feature server
 	//   REDIS_URL  -> direct Redis lookups on the platform key convention
 	//   otherwise  -> in-memory store (tests and dependency-free development)
-	g := &gateway{token: os.Getenv("MLAIOPS_INTERNAL_TOKEN"), metrics: newMetrics()}
+	g := &gateway{token: os.Getenv("KIONGA_INTERNAL_TOKEN"), metrics: newMetrics()}
 	switch {
 	case os.Getenv("FEAST_URL") != "":
 		adapter := &feature.FeastAdapter{Client: feature.NewFeastClient(os.Getenv("FEAST_URL"))}
@@ -151,7 +151,7 @@ func (g *gateway) getOnlineFeatures(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *gateway) put(w http.ResponseWriter, r *http.Request) {
-	// Writes fail closed: without MLAIOPS_INTERNAL_TOKEN nobody may write.
+	// Writes fail closed: without KIONGA_INTERNAL_TOKEN nobody may write.
 	bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if g.token == "" || !ok || subtle.ConstantTimeCompare([]byte(bearer), []byte(g.token)) != 1 {
 		g.metrics.writes.WithLabelValues(g.mode, "unauthorized").Inc()

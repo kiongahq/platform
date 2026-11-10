@@ -23,7 +23,7 @@ func runtimeSecretFixture(id, token string) *unstructured.Unstructured {
 	return &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "v1", "kind": "Secret",
 		"metadata": map[string]any{"name": api.AgentRuntimeSecretName(id), "namespace": "default"},
-		"data":     map[string]any{"MLAIOPS_INTERNAL_TOKEN": base64.StdEncoding.EncodeToString([]byte(token))},
+		"data":     map[string]any{"KIONGA_INTERNAL_TOKEN": base64.StdEncoding.EncodeToString([]byte(token))},
 	}}
 }
 
@@ -31,7 +31,7 @@ func TestAgentRuntimeTokenIsolation(t *testing.T) {
 	tokens := map[string]string{"a": runtimeTestToken(), "b": runtimeTestToken()}
 	client := fake.NewSimpleDynamicClient(runtime.NewScheme(), runtimeSecretFixture("a", tokens["a"]), runtimeSecretFixture("b", tokens["b"]))
 	serviceToken := runtimeTestToken()
-	t.Setenv("MLAIOPS_INTERNAL_TOKEN", serviceToken)
+	t.Setenv("KIONGA_INTERNAL_TOKEN", serviceToken)
 	// Exercise the gateway authentication boundary, including service-only routes.
 	gateway := auth.New(auth.Config{}).Middleware(testServer())
 	for _, path := range []string{"/api/v1/realtime/demo", "/api/v1/pipelines/runs/run/steps", "/api/v1/features/demo/materialized"} {
@@ -52,7 +52,7 @@ func TestAgentRuntimeTokenIsolation(t *testing.T) {
 		t.Fatalf("service credential control: got %d", controlResponse.Code)
 	}
 	// Model the unchanged agent-runtime bearer contract. Agent B accepts only
-	// the token supplied in its own MLAIOPS_INTERNAL_TOKEN environment.
+	// the token supplied in its own KIONGA_INTERNAL_TOKEN environment.
 	runtimeB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+tokens["b"])) != 1 {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -117,7 +117,7 @@ func TestDiscoverAgentRuntimeTokenFailsClosedAndReadsRotation(t *testing.T) {
 
 func TestConfiguredRuntimeNeverUsesServiceToken(t *testing.T) {
 	t.Setenv("AGENT_RUNTIME_URL", "http://runtime")
-	t.Setenv("MLAIOPS_INTERNAL_TOKEN", runtimeTestToken())
+	t.Setenv("KIONGA_INTERNAL_TOKEN", runtimeTestToken())
 	t.Setenv("KIONGA_AGENT_RUNTIME_TOKEN", "")
 	if token, err := agentRuntimeToken(t.Context(), "a"); err != nil || token != "" {
 		t.Fatal("configured runtime fell back to service token")
@@ -129,7 +129,7 @@ func TestAgentRuntimeTokenLookupErrors(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			secret := runtimeSecretFixture("a", runtimeTestToken())
 			if mode == "malformed" {
-				_ = unstructured.SetNestedField(secret.Object, "invalid-base64!", "data", "MLAIOPS_INTERNAL_TOKEN")
+				_ = unstructured.SetNestedField(secret.Object, "invalid-base64!", "data", "KIONGA_INTERNAL_TOKEN")
 			}
 			client := fake.NewSimpleDynamicClient(runtime.NewScheme(), secret)
 			if mode == "forbidden" {

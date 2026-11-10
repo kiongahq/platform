@@ -17,8 +17,8 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
-var workspaceResource = schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: "kiongaworkspaces"}
-var agentIdentityResource = schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: "kiongaagents"}
+var workspaceResource = schema.GroupVersionResource{Group: "kionga.dev", Version: "v1alpha1", Resource: "kiongaworkspaces"}
+var agentIdentityResource = schema.GroupVersionResource{Group: "kionga.dev", Version: "v1alpha1", Resource: "kiongaagents"}
 var secretResource = schema.GroupVersionResource{Version: "v1", Resource: "secrets"}
 
 // WorkspaceIdentity authenticates only requests arriving on the internal-only
@@ -76,7 +76,7 @@ func WorkspaceIdentity(next http.Handler, client dynamic.Interface, namespace, l
 				http.Error(w, "workspace credential rejected", http.StatusUnauthorized)
 				return
 			}
-			if secret.GetAnnotations()["mlaiops.io/subject"] != subject {
+			if secret.GetAnnotations()["kionga.dev/subject"] != subject {
 				http.Error(w, "workspace identity is being updated", http.StatusForbidden)
 				return
 			}

@@ -5,7 +5,7 @@
 // Environment:
 //
 //	DATABASE_URL                      PostgreSQL with the log_entries table
-//	MLAIOPS_TENANT                    tenant to export (default "default")
+//	KIONGA_TENANT                    tenant to export (default "default")
 //	KIONGA_LOG_EXPORT_TARGET          elasticsearch | opensearch
 //	KIONGA_LOG_EXPORT_URL             https://cluster:9200
 //	KIONGA_LOG_EXPORT_API_KEY_FILE    Elasticsearch API key (file)

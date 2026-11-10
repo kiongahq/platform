@@ -18,7 +18,7 @@ import (
 // the resulting 400 and the state is lost.
 func TestOpenIngestContractsAcceptExtraFields(t *testing.T) {
 	const token = "ingest-contract-test-token"
-	t.Setenv("MLAIOPS_INTERNAL_TOKEN", token)
+	t.Setenv("KIONGA_INTERNAL_TOKEN", token)
 	repository := store.New()
 	run, err := repository.SubmitPipeline(api.SubmitPipelineRequest{ProjectID: "prj-demo", Name: "training-pipeline"}, "admin")
 	if err != nil {

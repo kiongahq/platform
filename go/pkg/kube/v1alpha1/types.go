@@ -7,7 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-var GroupVersion = schema.GroupVersion{Group: "mlaiops.io", Version: "v1alpha1"}
+var GroupVersion = schema.GroupVersion{Group: "kionga.dev", Version: "v1alpha1"}
 
 type ReplicaSpec struct {
 	Min int32 `json:"min,omitempty"`

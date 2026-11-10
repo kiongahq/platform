@@ -11,7 +11,7 @@ func TestFeatureViewApplyListMaterialize(t *testing.T) {
 	server := testServer()
 
 	apply := newTestRequest(http.MethodPost, "/api/v1/features", strings.NewReader(
-		`{"name":"customer_profile","entity":"user_id","fields":[{"name":"plan","type":"string"}],"tags":["demo"],"source":"s3://mlaiops-features/customer_profile","ttl_seconds":3600}`))
+		`{"name":"customer_profile","entity":"user_id","fields":[{"name":"plan","type":"string"}],"tags":["demo"],"source":"s3://kionga-features/customer_profile","ttl_seconds":3600}`))
 	applied := httptest.NewRecorder()
 	server.ServeHTTP(applied, apply)
 	if applied.Code != http.StatusCreated || !strings.Contains(applied.Body.String(), `"status":"registered"`) {
@@ -81,12 +81,12 @@ func TestStorageEndpointsProxyToStorageProxy(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/buckets":
-			_, _ = w.Write([]byte(`{"buckets":[{"name":"mlaiops-models"}]}`))
+			_, _ = w.Write([]byte(`{"buckets":[{"name":"kionga-models"}]}`))
 		case "/objects":
-			if r.URL.Query().Get("bucket") != "mlaiops-models" {
+			if r.URL.Query().Get("bucket") != "kionga-models" {
 				t.Errorf("query not forwarded: %s", r.URL.RawQuery)
 			}
-			_, _ = w.Write([]byte(`{"bucket":"mlaiops-models","objects":[]}`))
+			_, _ = w.Write([]byte(`{"bucket":"kionga-models","objects":[]}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -97,11 +97,11 @@ func TestStorageEndpointsProxyToStorageProxy(t *testing.T) {
 	server := testServer()
 	buckets := httptest.NewRecorder()
 	server.ServeHTTP(buckets, newTestRequest(http.MethodGet, "/api/v1/storage/buckets", nil))
-	if buckets.Code != http.StatusOK || !strings.Contains(buckets.Body.String(), "mlaiops-models") {
+	if buckets.Code != http.StatusOK || !strings.Contains(buckets.Body.String(), "kionga-models") {
 		t.Fatalf("bucket proxy failed: %d %s", buckets.Code, buckets.Body.String())
 	}
 	objects := httptest.NewRecorder()
-	server.ServeHTTP(objects, newTestRequest(http.MethodGet, "/api/v1/storage/objects?bucket=mlaiops-models&prefix=churn/", nil))
+	server.ServeHTTP(objects, newTestRequest(http.MethodGet, "/api/v1/storage/objects?bucket=kionga-models&prefix=churn/", nil))
 	if objects.Code != http.StatusOK {
 		t.Fatalf("object proxy failed: %d %s", objects.Code, objects.Body.String())
 	}

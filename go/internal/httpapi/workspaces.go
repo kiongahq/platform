@@ -153,7 +153,7 @@ func discoverWorkspace(ctx context.Context, client dynamic.Interface, namespace,
 }
 
 func discoverWorkspaceNamed(ctx context.Context, client dynamic.Interface, namespace, subject, kind, selected string) (*workspaceDestination, error) {
-	gvr := schema.GroupVersionResource{Group: "mlaiops.io", Version: "v1alpha1", Resource: "kiongaworkspaces"}
+	gvr := schema.GroupVersionResource{Group: "kionga.dev", Version: "v1alpha1", Resource: "kiongaworkspaces"}
 	list, err := client.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("Workspace discovery is unavailable; contact your administrator")
@@ -442,7 +442,7 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request) {
 				response.Header.Del("Set-Cookie")
 			}
 			if r.Context().Value(edgeContextKey{}) == true {
-				rewriteWorkspaceFramePolicy(response.Header, os.Getenv("MLAIOPS_ALLOWED_ORIGIN"))
+				rewriteWorkspaceFramePolicy(response.Header, os.Getenv("KIONGA_ALLOWED_ORIGIN"))
 			} else if kind == "langflow" {
 				rewriteWorkspaceFramePolicy(response.Header, "'self'")
 			}

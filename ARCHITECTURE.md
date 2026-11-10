@@ -32,7 +32,7 @@ All Go code is in the module `github.com/kiongahq/platform` under `go/`.
 
 ### `go/cmd`
 
-One directory per binary; `make build` writes `bin/mlaiops-<name>`.
+One directory per binary; `make build` writes `bin/kionga-<name>`.
 
 | Command | Role |
 | --- | --- |
@@ -44,7 +44,7 @@ One directory per binary; `make build` writes `bin/mlaiops-<name>`.
 | `metrics-collector` | Prometheus metrics for component health and platform usage; port `9090` |
 | `log-exporter` | Ships one tenant's logs to Elasticsearch or OpenSearch |
 | `sandbox-manager` | Runs agent sandboxes under gVisor through the container engine or Kubernetes; internal only, port `8088` |
-| `cli` | The `mlaiops` CLI |
+| `cli` | The `kionga` CLI |
 
 `frontend/` contains the Next.js App Router frontend. The `app/` directory defines
 routes; `components/` provides React/TypeScript page compositions, console views,
@@ -101,7 +101,7 @@ a separate Node.js server.
 
 - `api`: wire types shared by the gateway, CLI and clients, including the versioned
   project template catalog (`project_templates.go`).
-- `kube/v1alpha1`: CRD types in group `mlaiops.io` (`KiongaAgent`,
+- `kube/v1alpha1`: CRD types in group `kionga.dev` (`KiongaAgent`,
   `KiongaPipelineRun`, `KiongaModelPromotion`, `KiongaWorkspace`).
 
 ### Other directories
@@ -172,7 +172,7 @@ a separate Node.js server.
   PostgreSQL, console tests on jsdom, and Playwright against a live stack.
 - **Security gates.** CI runs govulncheck, gosec and gitleaks; see
   [CONTRIBUTING.md](CONTRIBUTING.md).
-- **Naming.** Binaries, environment variables and the CRD group keep the `mlaiops`
+- **Naming.** Binaries, environment variables and the CRD group keep the `kionga`
   prefix; newer settings use `KIONGA_`.
 
 
@@ -180,7 +180,7 @@ a separate Node.js server.
 
 The operator creates `kionga-agent-runtime-<ID digest>` Secrets owned by each
 KiongaAgent, preserving their random credentials across reconciles. The runtime
-still reads `MLAIOPS_INTERNAL_TOKEN` with `MLAIOPS_RUNTIME_AUTH=required`, but the
+still reads `KIONGA_INTERNAL_TOKEN` with `KIONGA_RUNTIME_AUTH=required`, but the
 value is never the gateway service credential. The old operator setting
 `KIONGA_AGENT_RUNTIME_TOKEN_SECRET` is removed.
 
@@ -192,7 +192,7 @@ credential as removed, then rotate the gateway service credential if it was
 previously exposed to agent code.
 
 The gateway resolves the named Secret on every invocation in
-`MLAIOPS_AGENT_NAMESPACE` (default `default`), using its existing in-cluster
+`KIONGA_AGENT_NAMESPACE` (default `default`), using its existing in-cluster
 identity and the same named Secret GET mechanism used for workspaces. This
 change adds no RBAC grants or Secret list/watch operations. Deployment RBAC lives
 outside this clone: if the existing identity cannot read that named Secret in
@@ -203,7 +203,7 @@ can temporarily disagree with the gateway and return 401.
 
 For the shared Compose runtime (`AGENT_RUNTIME_URL`), set a separate
 `KIONGA_AGENT_RUNTIME_TOKEN` in the gateway and the same value as
-`MLAIOPS_INTERNAL_TOKEN` in the runtime. An unset dedicated token sends no bearer
+`KIONGA_INTERNAL_TOKEN` in the runtime. An unset dedicated token sends no bearer
 and is rejected by runtimes requiring authentication. This shared local runtime
 does not provide per-agent isolation. Runtime callbacks that previously relied
 on the service token can no longer authenticate as the gateway service.

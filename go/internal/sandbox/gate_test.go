@@ -637,7 +637,7 @@ func TestSandboxLimit(t *testing.T) {
 
 func TestLookupsRefuseForeignIDsAndContainers(t *testing.T) {
 	service, driver, _ := newTestService(t, nil)
-	for _, id := range []string{"", "../../containers/json", "sbx-short", "mlaiops-gateway-1", "sbx-" + strings.Repeat("a", 24) + "\n"} {
+	for _, id := range []string{"", "../../containers/json", "sbx-short", "kionga-gateway-1", "sbx-" + strings.Repeat("a", 24) + "\n"} {
 		_, err := service.Exec(context.Background(), id, client.ExecRequest{Command: "id"})
 		wantStatus(t, err, http.StatusNotFound, client.CodeNotFound)
 		if err := service.Delete(context.Background(), id); client.Code(err) != client.CodeNotFound {

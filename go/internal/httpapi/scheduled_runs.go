@@ -43,12 +43,12 @@ func ownerPrincipal(data store.Repository, owner string) (auth.Principal, error)
 		}
 		return auth.Principal{Subject: owner, Roles: []string{access.Role}, Services: access.Services, ProjectIDs: access.ProjectIDs, Provisioned: true}, nil
 	}
-	bootstrap := os.Getenv("MLAIOPS_LOCAL_USERNAME")
+	bootstrap := os.Getenv("KIONGA_LOCAL_USERNAME")
 	if bootstrap == "" {
 		bootstrap = "admin"
 	}
 	if localAccountsEnabled() && owner == bootstrap {
-		role := os.Getenv("MLAIOPS_LOCAL_ROLE")
+		role := os.Getenv("KIONGA_LOCAL_ROLE")
 		if role == "" {
 			role = auth.RoleAdmin
 		}

@@ -164,7 +164,7 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 		parameters["definition"] = payload
 		flowName = "pipeline-definition"
 	}
-	engineID, err := s.prefectClient().CreateFlowRun(ctx, flowName, "mlaiops", run.Name, parameters)
+	engineID, err := s.prefectClient().CreateFlowRun(ctx, flowName, "kionga", run.Name, parameters)
 	if err != nil {
 		failed, _ := s.reportStep(run.ID, api.UpdateRunStepRequest{Step: "submit-to-engine", Status: "failed", Message: err.Error()}, "system")
 		return failed

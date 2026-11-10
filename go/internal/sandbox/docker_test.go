@@ -293,7 +293,7 @@ func TestDockerEnsureNetworkRefusesAForeignNetwork(t *testing.T) {
 	}{
 		"missing":         {get: http.StatusNotFound, creates: true},
 		"ours":            {get: http.StatusOK, body: `{"Labels":{"` + LabelManaged + `":"true","` + LabelPrefix + `":"kionga-sandbox"}}`},
-		"compose network": {get: http.StatusOK, body: `{"Labels":{"com.docker.compose.project":"mlaiops"}}`, wantErr: true},
+		"compose network": {get: http.StatusOK, body: `{"Labels":{"com.docker.compose.project":"kionga"}}`, wantErr: true},
 		"another install": {get: http.StatusOK, body: `{"Labels":{"` + LabelManaged + `":"true","` + LabelPrefix + `":"other"}}`, wantErr: true},
 		"engine error":    {get: http.StatusInternalServerError, wantErr: true},
 	}

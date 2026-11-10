@@ -46,7 +46,7 @@ func (r *testEdgeRepository) RevokeWorkspaceEdgeSession(_ context.Context, token
 }
 
 func TestWorkspaceHostIsolationAndRevocation(t *testing.T) {
-	t.Setenv("MLAIOPS_ALLOWED_ORIGIN", "https://console.example.test")
+	t.Setenv("KIONGA_ALLOWED_ORIGIN", "https://console.example.test")
 	t.Setenv("KIONGA_WORKSPACE_BASE_DOMAIN", "workspaces.example.test")
 	t.Setenv("KIONGA_ENVIRONMENT", "production")
 	repo := &testEdgeRepository{

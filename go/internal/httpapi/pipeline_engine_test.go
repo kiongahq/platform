@@ -47,7 +47,7 @@ func TestSubmitPipelineCreatesPrefectFlowRun(t *testing.T) {
 	if submitted.Code != http.StatusAccepted || !strings.Contains(submitted.Body.String(), `"engine_run_id":"fr-77"`) {
 		t.Fatalf("engine run not linked: %d %s", submitted.Code, submitted.Body.String())
 	}
-	if deploymentPath != "/api/deployments/name/training-pipeline/mlaiops" {
+	if deploymentPath != "/api/deployments/name/training-pipeline/kionga" {
 		t.Fatalf("name-only run must preserve the training deployment, got %s", deploymentPath)
 	}
 	if createPayload["name"] != "nightly-churn" {
@@ -101,7 +101,7 @@ func TestDefinitionBackedPipelineUsesGenericPrefectDeployment(t *testing.T) {
 	if submitted.Code != http.StatusAccepted || !strings.Contains(submitted.Body.String(), `"engine_run_id":"definition-flow-run"`) {
 		t.Fatalf("definition run not linked: %d %s", submitted.Code, submitted.Body.String())
 	}
-	if deploymentPath != "/api/deployments/name/pipeline-definition/mlaiops" {
+	if deploymentPath != "/api/deployments/name/pipeline-definition/kionga" {
 		t.Fatalf("definition run resolved %s", deploymentPath)
 	}
 	parameters, ok := createPayload["parameters"].(map[string]any)

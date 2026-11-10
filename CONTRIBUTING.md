@@ -84,7 +84,7 @@ Use `make format` to apply gofmt and `make run` to start the gateway alone on
 ## Build binaries and images
 
 ```bash
-make build                                             # bin/mlaiops-<service>
+make build                                             # bin/kionga-<service>
 docker build -f Dockerfile.gateway -t gateway:dev .
 docker build --build-arg SERVICE=operator -t operator:dev go
 ```

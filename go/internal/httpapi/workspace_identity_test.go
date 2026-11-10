@@ -68,8 +68,8 @@ func TestWorkspaceIdentityLocal(t *testing.T) {
 
 func TestWorkspaceIdentityKubernetes(t *testing.T) {
 	scheme := runtime.NewScheme()
-	workspace := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "mlaiops.io/v1alpha1", "kind": "KiongaWorkspace", "metadata": map[string]interface{}{"name": "alice-ws", "namespace": "workspaces"}, "spec": map[string]interface{}{"subject": "alice", "services": []interface{}{"workbench"}}}}
-	secret := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]interface{}{"name": "alice-ws-auth", "namespace": "workspaces", "annotations": map[string]interface{}{"mlaiops.io/subject": "alice"}}, "data": map[string]interface{}{"api-token": base64.StdEncoding.EncodeToString([]byte("a-long-independent-workspace-api-token"))}}}
+	workspace := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "kionga.dev/v1alpha1", "kind": "KiongaWorkspace", "metadata": map[string]interface{}{"name": "alice-ws", "namespace": "workspaces"}, "spec": map[string]interface{}{"subject": "alice", "services": []interface{}{"workbench"}}}}
+	secret := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]interface{}{"name": "alice-ws-auth", "namespace": "workspaces", "annotations": map[string]interface{}{"kionga.dev/subject": "alice"}}, "data": map[string]interface{}{"api-token": base64.StdEncoding.EncodeToString([]byte("a-long-independent-workspace-api-token"))}}}
 	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{workspaceResource: "KiongaWorkspaceList", secretResource: "SecretList"}, workspace, secret)
 	h := WorkspaceIdentity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, ok := auth.PrincipalFrom(r.Context())
@@ -104,8 +104,8 @@ func TestWorkspaceIdentityKubernetes(t *testing.T) {
 func TestWorkspaceIdentityPublishedAgent(t *testing.T) {
 	name := "kionga-agent-published"
 	token := "an-independent-published-agent-api-token"
-	agent := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "mlaiops.io/v1alpha1", "kind": "KiongaAgent", "metadata": map[string]interface{}{"name": name, "namespace": "workspaces"}, "spec": map[string]interface{}{"flowJSON": `{"data":{"nodes":[]}}`, "ownerSubject": "alice", "projectID": "project-a"}}}
-	secret := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]interface{}{"name": platformapi.AgentAPISecretName(name), "namespace": "workspaces", "annotations": map[string]interface{}{"mlaiops.io/subject": "alice"}}, "data": map[string]interface{}{"api-token": base64.StdEncoding.EncodeToString([]byte(token))}}}
+	agent := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "kionga.dev/v1alpha1", "kind": "KiongaAgent", "metadata": map[string]interface{}{"name": name, "namespace": "workspaces"}, "spec": map[string]interface{}{"flowJSON": `{"data":{"nodes":[]}}`, "ownerSubject": "alice", "projectID": "project-a"}}}
+	secret := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]interface{}{"name": platformapi.AgentAPISecretName(name), "namespace": "workspaces", "annotations": map[string]interface{}{"kionga.dev/subject": "alice"}}, "data": map[string]interface{}{"api-token": base64.StdEncoding.EncodeToString([]byte(token))}}}
 	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{workspaceResource: "KiongaWorkspaceList", agentIdentityResource: "KiongaAgentList", secretResource: "SecretList"}, agent, secret)
 	h := WorkspaceIdentity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFrom(r.Context())

@@ -94,7 +94,7 @@ func TestFeastModeRefusesWrites(t *testing.T) {
 	}
 }
 
-// Without MLAIOPS_INTERNAL_TOKEN the gateway must refuse writes, not accept
+// Without KIONGA_INTERNAL_TOKEN the gateway must refuse writes, not accept
 // them from anyone who can reach it.
 func TestWritesFailClosedWithoutToken(t *testing.T) {
 	handler := memoryGateway("").handler()

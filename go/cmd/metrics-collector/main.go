@@ -12,9 +12,9 @@ import (
 )
 
 func main() {
-	targets := parseTargets(os.Getenv("MLAIOPS_METRICS_TARGETS"))
+	targets := parseTargets(os.Getenv("KIONGA_METRICS_TARGETS"))
 	collector := platformmetrics.New(targets)
-	platform := platformmetrics.NewPlatformCollector(os.Getenv("MLAIOPS_URL"), os.Getenv("MLAIOPS_TOKEN"))
+	platform := platformmetrics.NewPlatformCollector(os.Getenv("KIONGA_URL"), os.Getenv("KIONGA_TOKEN"))
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
@@ -38,7 +38,7 @@ func main() {
 	log.Fatal(server.ListenAndServe())
 }
 func parseTargets(raw string) map[string]string {
-	targets := map[string]string{"gateway": "http://mlaiops-gateway:8080/api/v1/health"}
+	targets := map[string]string{"gateway": "http://kionga-gateway:8080/api/v1/health"}
 	if raw == "" {
 		return targets
 	}

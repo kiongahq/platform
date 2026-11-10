@@ -363,7 +363,7 @@ func tokenScopesAllowed(repository store.Repository, value auth.Principal, servi
 // the /api/v1/editorial workspace API).
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "mlaiops-gateway", "version": "0.1.0"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "kionga-gateway", "version": "0.1.0"})
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -766,7 +766,7 @@ func (s *Server) storageProxy(path string) http.HandlerFunc {
 			writeError(w, http.StatusBadGateway, "storage_unreachable", err.Error())
 			return
 		}
-		if token := os.Getenv("MLAIOPS_INTERNAL_TOKEN"); token != "" {
+		if token := os.Getenv("KIONGA_INTERNAL_TOKEN"); token != "" {
 			request.Header.Set("Authorization", "Bearer "+token)
 		}
 		client := &http.Client{Timeout: 20 * time.Second}
@@ -1241,7 +1241,7 @@ func (s *Server) requestServing(r *http.Request, managerURL string, model api.Mo
 		return "", err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	if token := os.Getenv("MLAIOPS_INTERNAL_TOKEN"); token != "" {
+	if token := os.Getenv("KIONGA_INTERNAL_TOKEN"); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 	client := &http.Client{Timeout: servingRequestTimeout()}
@@ -1274,7 +1274,7 @@ func (s *Server) rollbackModel(w http.ResponseWriter, r *http.Request) {
 		managerURL := strings.TrimRight(os.Getenv("SERVING_MANAGER_URL"), "/")
 		request, buildErr := http.NewRequestWithContext(r.Context(), http.MethodDelete, managerURL+"/deployments/"+url.PathEscape(item.Name), nil) // #nosec G704 -- host is operator config (STORAGE_PROXY_URL, LANGFUSE_URL, SERVING_MANAGER_URL); paths are fixed or escaped
 		if buildErr == nil {
-			if token := os.Getenv("MLAIOPS_INTERNAL_TOKEN"); token != "" {
+			if token := os.Getenv("KIONGA_INTERNAL_TOKEN"); token != "" {
 				request.Header.Set("Authorization", "Bearer "+token)
 			}
 			client := &http.Client{Timeout: 30 * time.Second}
@@ -1395,7 +1395,7 @@ func agentRuntimeEndpoint(agentID string) string {
 	if override := strings.TrimSpace(os.Getenv("AGENT_RUNTIME_URL")); override != "" {
 		return strings.TrimRight(override, "/")
 	}
-	namespace := strings.TrimSpace(os.Getenv("MLAIOPS_AGENT_NAMESPACE"))
+	namespace := strings.TrimSpace(os.Getenv("KIONGA_AGENT_NAMESPACE"))
 	if namespace == "" {
 		namespace = "default"
 	}
@@ -1403,9 +1403,9 @@ func agentRuntimeEndpoint(agentID string) string {
 }
 
 func setAgentRuntimeHeaders(request *http.Request, agent *api.Agent) {
-	request.Header.Set("X-MLAIOps-Graph-Module", agent.GraphModule)
-	request.Header.Set("X-MLAIOps-Agent-ID", agent.ID)
-	request.Header.Set("X-MLAIOps-Agent-Name", agent.Name)
+	request.Header.Set("X-Kionga-Graph-Module", agent.GraphModule)
+	request.Header.Set("X-Kionga-Agent-ID", agent.ID)
+	request.Header.Set("X-Kionga-Agent-Name", agent.Name)
 }
 
 func agentRuntimeReady(ctx context.Context, runtime string, agent *api.Agent, timeout time.Duration) error {
@@ -1512,7 +1512,7 @@ func (s *Server) invokeAgent(w http.ResponseWriter, r *http.Request) {
 	if token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
-	request.Header.Set("X-MLAIOps-User-ID", principal(r).Subject)
+	request.Header.Set("X-Kionga-User-ID", principal(r).Subject)
 	client := &http.Client{Timeout: 120 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
@@ -1657,7 +1657,7 @@ func actor(r *http.Request) string {
 		}
 		return principal.Subject
 	}
-	if value := strings.TrimSpace(r.Header.Get("X-MLAIOps-Actor")); value != "" {
+	if value := strings.TrimSpace(r.Header.Get("X-Kionga-Actor")); value != "" {
 		return value
 	}
 	return "anonymous"
@@ -1710,12 +1710,12 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// cors reflects the configured origin. MLAIOPS_ALLOWED_ORIGIN pins the
+// cors reflects the configured origin. KIONGA_ALLOWED_ORIGIN pins the
 // console origin in public deployments; unset means local development where
 // any origin is fine.
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := os.Getenv("MLAIOPS_ALLOWED_ORIGIN")
+		origin := os.Getenv("KIONGA_ALLOWED_ORIGIN")
 		if origin == "" {
 			origin = "*"
 		}

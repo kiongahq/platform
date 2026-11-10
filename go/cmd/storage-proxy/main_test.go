@@ -17,7 +17,7 @@ func TestAuthorizedFailsClosed(t *testing.T) {
 		{"secret-token", "secret-token", false},
 		{"secret-token", "Bearer secret-token", true},
 	} {
-		t.Setenv("MLAIOPS_INTERNAL_TOKEN", tc.token)
+		t.Setenv("KIONGA_INTERNAL_TOKEN", tc.token)
 		r := httptest.NewRequest("GET", "/buckets", nil)
 		if tc.header != "" {
 			r.Header.Set("Authorization", tc.header)

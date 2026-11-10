@@ -28,13 +28,13 @@ func TestVerifierAndRBAC(t *testing.T) {
 	defer jwks.Close()
 	now := time.Now()
 	claims := Claims{Email: "engineer@example.com", Tenant: "team-a", Roles: []string{"engineer"}, RegisteredClaims: jwt.RegisteredClaims{
-		Subject: "user-1", Issuer: "https://issuer.example", Audience: []string{"mlaiops"},
+		Subject: "user-1", Issuer: "https://issuer.example", Audience: []string{"kionga"},
 		ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)), IssuedAt: jwt.NewNumericDate(now),
 	}}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = "key-1"
 	raw, _ := token.SignedString(privateKey)
-	verifier := New(Config{Issuer: "https://issuer.example", Audience: "mlaiops", JWKSURL: jwks.URL, Tenant: "team-a"})
+	verifier := New(Config{Issuer: "https://issuer.example", Audience: "kionga", JWKSURL: jwks.URL, Tenant: "team-a"})
 	principal, err := verifier.Verify(context.Background(), raw)
 	if err != nil {
 		t.Fatal(err)
@@ -128,7 +128,7 @@ func TestRBACLocalRole(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(principal.Subject)
 	}))
 
-	t.Setenv("MLAIOPS_LOCAL_ROLE", "viewer")
+	t.Setenv("KIONGA_LOCAL_ROLE", "viewer")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/projects", nil))
 	if recorder.Code != http.StatusForbidden {
@@ -140,7 +140,7 @@ func TestRBACLocalRole(t *testing.T) {
 		t.Fatalf("viewer GET should be 200, got %d", recorder.Code)
 	}
 
-	t.Setenv("MLAIOPS_LOCAL_ROLE", "")
+	t.Setenv("KIONGA_LOCAL_ROLE", "")
 	recorder = httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/projects", nil))
 	if recorder.Code != http.StatusOK {
@@ -149,8 +149,8 @@ func TestRBACLocalRole(t *testing.T) {
 }
 
 func TestRBACInternalToken(t *testing.T) {
-	t.Setenv("MLAIOPS_INTERNAL_TOKEN", "platform-secret")
-	t.Setenv("MLAIOPS_LOCAL_ROLE", "viewer")
+	t.Setenv("KIONGA_INTERNAL_TOKEN", "platform-secret")
+	t.Setenv("KIONGA_LOCAL_ROLE", "viewer")
 	handler := RBAC(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/traces", nil)

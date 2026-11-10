@@ -53,13 +53,13 @@ step "build gateway"
 
 step "start runner on :$RUNNER_PORT (mock model)"
 (cd "$AGENT_RUNTIME_DIR" && KIONGA_DESIGNER_RUNNER_TOKEN="$TOKEN" KIONGA_DESIGNER_PORT="$RUNNER_PORT" KIONGA_DESIGNER_HOST=127.0.0.1 \
-  MLAIOPS_LLM_BACKEND=mock exec "$PY" -m agent_runtime.designer) >"$WORK/runner.log" 2>&1 &
+  KIONGA_LLM_BACKEND=mock exec "$PY" -m agent_runtime.designer) >"$WORK/runner.log" 2>&1 &
 pids+=($!)
 wait_http "http://127.0.0.1:$RUNNER_PORT/healthz"
 
 step "start gateway on :$GATEWAY_PORT (file store, local admin)"
-(cd "$WORK" && PORT="$GATEWAY_PORT" MLAIOPS_DATA_PATH="$WORK/platform.json" MLAIOPS_LOCAL_ROLE=admin \
-  MLAIOPS_LOCAL_USERNAME=admin MLAIOPS_LOCAL_PASSWORD="$PASSWORD" \
+(cd "$WORK" && PORT="$GATEWAY_PORT" KIONGA_DATA_PATH="$WORK/platform.json" KIONGA_LOCAL_ROLE=admin \
+  KIONGA_LOCAL_USERNAME=admin KIONGA_LOCAL_PASSWORD="$PASSWORD" \
   KIONGA_AGENT_DESIGNER_RUNNER_URL="http://127.0.0.1:$RUNNER_PORT" KIONGA_AGENT_DESIGNER_RUNNER_TOKEN="$TOKEN" \
   KIONGA_AGENT_DESIGNER_CALLBACK_URL="http://127.0.0.1:8087/api/v1" exec "$WORK/gateway") >"$WORK/gateway.log" 2>&1 &
 pids+=($!)
@@ -273,6 +273,6 @@ echo "PASS: design $design · version $version · hash ${hash:0:12}"
 if [ "${KEEP_RUNNING:-}" = "1" ]; then
   # Leave the stack up for load tests (deploy/tests/load/agent-designer.js);
   # stop it with Ctrl+C or by killing this script.
-  echo "READY MLAIOPS_URL=$ORIGIN MLAIOPS_LOCAL_USERNAME=admin MLAIOPS_LOCAL_PASSWORD=$PASSWORD"
+  echo "READY KIONGA_URL=$ORIGIN KIONGA_LOCAL_USERNAME=admin KIONGA_LOCAL_PASSWORD=$PASSWORD"
   wait
 fi

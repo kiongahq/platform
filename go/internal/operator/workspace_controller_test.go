@@ -12,17 +12,17 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	mlaiopsv1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
+	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
 
 func TestWorkspaceControllerProvisionsBoundedSharedWorkspace(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = appsv1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
-	_ = mlaiopsv1.AddToScheme(scheme)
-	workspace := &mlaiopsv1.KiongaWorkspace{
-		TypeMeta: metav1.TypeMeta{APIVersion: "mlaiops.io/v1alpha1", Kind: "KiongaWorkspace"}, ObjectMeta: metav1.ObjectMeta{Name: "workspace-user-1", Namespace: "team-a"},
-		Spec: mlaiopsv1.KiongaWorkspaceSpec{Subject: "user-1", Services: []string{"workbench", "ide"}, Compute: mlaiopsv1.WorkspaceComputeSpec{VCPUs: 4, MemoryGB: 8}, StorageGB: 100},
+	_ = kiongav1.AddToScheme(scheme)
+	workspace := &kiongav1.KiongaWorkspace{
+		TypeMeta: metav1.TypeMeta{APIVersion: "kionga.dev/v1alpha1", Kind: "KiongaWorkspace"}, ObjectMeta: metav1.ObjectMeta{Name: "workspace-user-1", Namespace: "team-a"},
+		Spec: kiongav1.KiongaWorkspaceSpec{Subject: "user-1", Services: []string{"workbench", "ide"}, Compute: kiongav1.WorkspaceComputeSpec{VCPUs: 4, MemoryGB: 8}, StorageGB: 100},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(workspace).WithObjects(workspace).Build()
 	reconciler := &WorkspaceReconciler{Client: client, WorkbenchImage: "registry/jupyter:1", IDEImage: "registry/ide:1", GatewayURL: "http://gateway:8080"}
@@ -66,7 +66,7 @@ func TestWorkspaceControllerProvisionsBoundedSharedWorkspace(t *testing.T) {
 		for _, item := range container.Env {
 			env[item.Name] = item
 		}
-		if env["MLAIOPS_URL"].Value != "http://127.0.0.1:8890" || env["KIONGA_GATEWAY_INTERNAL_URL"].Value != "http://gateway:8087" || env["KIONGA_WORKSPACE_API_TOKEN"].ValueFrom.SecretKeyRef.Key != "api-token" {
+		if env["KIONGA_URL"].Value != "http://127.0.0.1:8890" || env["KIONGA_GATEWAY_INTERNAL_URL"].Value != "http://gateway:8087" || env["KIONGA_WORKSPACE_API_TOKEN"].ValueFrom.SecretKeyRef.Key != "api-token" {
 			t.Fatalf("%s is missing workspace API identity: %#v", container.Name, env)
 		}
 		// #105: scaffold jobs use a dedicated key, never the login token.
@@ -120,7 +120,7 @@ func TestWorkspaceControllerProvisionsBoundedSharedWorkspace(t *testing.T) {
 	if err := client.Get(context.Background(), types.NamespacedName{Name: workspace.Name + "-auth", Namespace: workspace.Namespace}, &secret); err != nil {
 		t.Fatal(err)
 	}
-	if string(secret.Data["api-token"]) == firstAPIToken || string(secret.Data["token"]) == firstWorkbenchToken || string(secret.Data["job-token"]) == firstJobToken || secret.Annotations["mlaiops.io/subject"] != "user-2" {
+	if string(secret.Data["api-token"]) == firstAPIToken || string(secret.Data["token"]) == firstWorkbenchToken || string(secret.Data["job-token"]) == firstJobToken || secret.Annotations["kionga.dev/subject"] != "user-2" {
 		t.Fatal("all workspace credentials must rotate when its owner changes")
 	}
 }
@@ -129,11 +129,11 @@ func TestLangflowWorkspaceHasIndependentVolumeAndScopedSidecar(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = appsv1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
-	_ = mlaiopsv1.AddToScheme(scheme)
-	workspace := &mlaiopsv1.KiongaWorkspace{
-		TypeMeta:   metav1.TypeMeta{APIVersion: "mlaiops.io/v1alpha1", Kind: "KiongaWorkspace"},
-		ObjectMeta: metav1.ObjectMeta{Name: "langflow-1234567890abcdef12345678", Namespace: "team-a", Annotations: map[string]string{"mlaiops.io/restart-at": "first"}},
-		Spec:       mlaiopsv1.KiongaWorkspaceSpec{Subject: "user-1", ProjectID: "project-a", Services: []string{"langflow"}, Compute: mlaiopsv1.WorkspaceComputeSpec{VCPUs: 2, MemoryGB: 4}, StorageGB: 10},
+	_ = kiongav1.AddToScheme(scheme)
+	workspace := &kiongav1.KiongaWorkspace{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "kionga.dev/v1alpha1", Kind: "KiongaWorkspace"},
+		ObjectMeta: metav1.ObjectMeta{Name: "langflow-1234567890abcdef12345678", Namespace: "team-a", Annotations: map[string]string{"kionga.dev/restart-at": "first"}},
+		Spec:       kiongav1.KiongaWorkspaceSpec{Subject: "user-1", ProjectID: "project-a", Services: []string{"langflow"}, Compute: kiongav1.WorkspaceComputeSpec{VCPUs: 2, MemoryGB: 4}, StorageGB: 10},
 	}
 	kube := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(workspace).WithObjects(workspace).Build()
 	r := &WorkspaceReconciler{Client: kube, LangflowImage: "langflow:1", LangflowSidecarImage: "sidecar:1", GatewayURL: "http://gateway:8080"}
@@ -158,7 +158,7 @@ func TestLangflowWorkspaceHasIndependentVolumeAndScopedSidecar(t *testing.T) {
 	if !autoAPI {
 		t.Fatal("Kionga's scoped gateway needs the Langflow flow API in auto-login mode")
 	}
-	if deployment.Spec.Template.Annotations["mlaiops.io/restart-at"] != "first" {
+	if deployment.Spec.Template.Annotations["kionga.dev/restart-at"] != "first" {
 		t.Fatal("restart annotation did not propagate")
 	}
 	for _, item := range containers[0].Env {
@@ -179,7 +179,7 @@ func TestLangflowWorkspaceHasIndependentVolumeAndScopedSidecar(t *testing.T) {
 	if err := kube.Get(context.Background(), request.NamespacedName, workspace); err != nil {
 		t.Fatal(err)
 	}
-	workspace.Annotations["mlaiops.io/restart-at"] = "second"
+	workspace.Annotations["kionga.dev/restart-at"] = "second"
 	if err := kube.Update(context.Background(), workspace); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestLangflowWorkspaceHasIndependentVolumeAndScopedSidecar(t *testing.T) {
 	if err := kube.Get(context.Background(), request.NamespacedName, &deployment); err != nil {
 		t.Fatal(err)
 	}
-	if deployment.Spec.Template.Annotations["mlaiops.io/restart-at"] != "second" {
+	if deployment.Spec.Template.Annotations["kionga.dev/restart-at"] != "second" {
 		t.Fatal("restart did not roll the deployment")
 	}
 }

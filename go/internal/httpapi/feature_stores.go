@@ -56,17 +56,17 @@ const featureStoreHealthKind = "feature_store_health"
 var connectionName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 
 func (s *Server) builtinStore() api.FeatureStoreConnection {
-	online := os.Getenv("MLAIOPS_FEATURE_GATEWAY_URL")
+	online := os.Getenv("KIONGA_FEATURE_GATEWAY_URL")
 	offline := os.Getenv("KIONGA_FEATURE_OFFLINE_URI")
 	if offline == "" {
-		offline = "s3://mlaiops-features"
+		offline = "s3://kionga-features"
 	}
 	connection := api.FeatureStoreConnection{ID: builtinStoreID, Provider: "internal", Name: "kionga-internal", Kind: "internal",
 		Config: map[string]string{"online_url": online, "offline_uri": offline}, AllowedProjects: []string{},
 		Capabilities: feature.InternalCapabilities, SecretPresent: true}
 	connection.Health = api.ConnectionHealth{State: feature.StateConfigured, Detail: "Platform-managed Redis online store and Parquet snapshots. Not checked yet."}
 	if online == "" {
-		connection.Health.Detail = "Set MLAIOPS_FEATURE_GATEWAY_URL on the gateway so the internal store can be checked."
+		connection.Health.Detail = "Set KIONGA_FEATURE_GATEWAY_URL on the gateway so the internal store can be checked."
 	}
 	if health, err := store.GetDoc[api.ConnectionHealth](s.store, featureStoreHealthKind, builtinStoreID); err == nil {
 		connection.Health = health
@@ -222,7 +222,7 @@ func checkFeatureStore(ctx context.Context, connection api.FeatureStoreConnectio
 	now := time.Now().UTC()
 	health := api.ConnectionHealth{CheckedAt: &now}
 	if connection.ID == builtinStoreID && connection.Config["online_url"] == "" {
-		health.State, health.Detail = feature.StateConfigured, "Set MLAIOPS_FEATURE_GATEWAY_URL on the gateway so the internal store can be checked."
+		health.State, health.Detail = feature.StateConfigured, "Set KIONGA_FEATURE_GATEWAY_URL on the gateway so the internal store can be checked."
 		return health
 	}
 	if connection.SecretRef != "" && !featureSecrets.Permits(connection.SecretRef) {

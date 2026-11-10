@@ -14,7 +14,7 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-var SecretNames = []string{"DATABASE_URL", "OIDC_CLIENT_SECRET", "MLAIOPS_INTERNAL_TOKEN", "KIONGA_CREDENTIAL_KEY", "S3_ACCESS_KEY", "S3_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "REDIS_URL", "KAFKA_REST_TOKEN", "KFP_TOKEN", "MLFLOW_TOKEN", "OPENFAAS_PASSWORD", "LANGFUSE_SECRET_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LLM_UPSTREAM_API_KEY", "KIONGA_JUPYTER_TOKEN", "KIONGA_IDE_PASSWORD", "TRACE_SINK_TOKEN", "MLAIOPS_LOCAL_PASSWORD", "KIONGA_AGENT_DESIGNER_RUNNER_TOKEN", "KIONGA_SANDBOX_TOKEN"}
+var SecretNames = []string{"DATABASE_URL", "OIDC_CLIENT_SECRET", "KIONGA_INTERNAL_TOKEN", "KIONGA_CREDENTIAL_KEY", "S3_ACCESS_KEY", "S3_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "REDIS_URL", "KAFKA_REST_TOKEN", "KFP_TOKEN", "MLFLOW_TOKEN", "OPENFAAS_PASSWORD", "LANGFUSE_SECRET_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LLM_UPSTREAM_API_KEY", "KIONGA_JUPYTER_TOKEN", "KIONGA_IDE_PASSWORD", "TRACE_SINK_TOKEN", "KIONGA_LOCAL_PASSWORD", "KIONGA_AGENT_DESIGNER_RUNNER_TOKEN", "KIONGA_SANDBOX_TOKEN"}
 var keyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
 func readFile(path string) ([]byte, error) {
@@ -82,18 +82,18 @@ func ValidateGateway() error {
 	if os.Getenv("KIONGA_ENVIRONMENT") != "production" {
 		return nil
 	}
-	for _, key := range []string{"DATABASE_URL", "OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUDIENCE", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_AUTH_URL", "OIDC_TOKEN_URL", "OIDC_REDIRECT_URL", "MLAIOPS_INTERNAL_TOKEN", "KIONGA_CREDENTIAL_KEY", "MLAIOPS_ALLOWED_ORIGIN"} {
+	for _, key := range []string{"DATABASE_URL", "OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUDIENCE", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_AUTH_URL", "OIDC_TOKEN_URL", "OIDC_REDIRECT_URL", "KIONGA_INTERNAL_TOKEN", "KIONGA_CREDENTIAL_KEY", "KIONGA_ALLOWED_ORIGIN"} {
 		if os.Getenv(key) == "" {
 			return fmt.Errorf("production requires %s", key)
 		}
 	}
-	for _, key := range []string{"OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUTH_URL", "OIDC_TOKEN_URL", "OIDC_REDIRECT_URL", "MLAIOPS_ALLOWED_ORIGIN"} {
+	for _, key := range []string{"OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUTH_URL", "OIDC_TOKEN_URL", "OIDC_REDIRECT_URL", "KIONGA_ALLOWED_ORIGIN"} {
 		u, err := url.Parse(os.Getenv(key))
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
 			return fmt.Errorf("production requires an HTTPS URL for %s", key)
 		}
 	}
-	origin, _ := url.Parse(os.Getenv("MLAIOPS_ALLOWED_ORIGIN"))
+	origin, _ := url.Parse(os.Getenv("KIONGA_ALLOWED_ORIGIN"))
 	redirect, _ := url.Parse(os.Getenv("OIDC_REDIRECT_URL"))
 	if origin.Host != redirect.Host || redirect.Path != "/auth/callback" {
 		return fmt.Errorf("OIDC_REDIRECT_URL must match the public origin and /auth/callback")
@@ -112,7 +112,7 @@ func ValidateGateway() error {
 	if err != nil || (db.Scheme != "postgres" && db.Scheme != "postgresql") || db.Host == "" || db.Query().Get("sslmode") != "verify-full" {
 		return fmt.Errorf("production DATABASE_URL must use PostgreSQL with sslmode=verify-full")
 	}
-	for _, key := range []string{"OIDC_CLIENT_SECRET", "MLAIOPS_INTERNAL_TOKEN"} {
+	for _, key := range []string{"OIDC_CLIENT_SECRET", "KIONGA_INTERNAL_TOKEN"} {
 		value := os.Getenv(key)
 		if len(value) < 24 || strings.Contains(strings.ToLower(value), "local") || strings.Contains(strings.ToLower(value), "change-me") {
 			return fmt.Errorf("production %s must be a strong non-development credential", key)
@@ -121,9 +121,9 @@ func ValidateGateway() error {
 	// Break-glass local sign-in next to single sign-on is an internet-facing
 	// password: never a development default, never short.
 	if os.Getenv("KIONGA_LOCAL_LOGIN") == "true" {
-		password := strings.ToLower(os.Getenv("MLAIOPS_LOCAL_PASSWORD"))
+		password := strings.ToLower(os.Getenv("KIONGA_LOCAL_PASSWORD"))
 		if len(password) < 16 || strings.Contains(password, "local") || strings.Contains(password, "change-me") || strings.Contains(password, "password") {
-			return fmt.Errorf("production MLAIOPS_LOCAL_PASSWORD (break-glass sign-in) must be at least 16 characters and not a development default")
+			return fmt.Errorf("production KIONGA_LOCAL_PASSWORD (break-glass sign-in) must be at least 16 characters and not a development default")
 		}
 	}
 	key, err := base64.StdEncoding.DecodeString(os.Getenv("KIONGA_CREDENTIAL_KEY"))

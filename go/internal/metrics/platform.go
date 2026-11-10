@@ -81,11 +81,11 @@ func (p *PlatformCollector) Poll(ctx context.Context) error {
 				continue
 			}
 			label := fmt.Sprintf("{agent=%q}", agent.ID)
-			collected["mlaiops_agent_active_sessions"+label] = float64(usage.Active)
-			collected["mlaiops_agent_sessions_total"+label] = float64(usage.Sessions)
-			collected["mlaiops_llm_tokens_used_total"+fmt.Sprintf("{agent=%q,type=%q}", agent.ID, "input")] = usage.InputTokens
-			collected["mlaiops_llm_tokens_used_total"+fmt.Sprintf("{agent=%q,type=%q}", agent.ID, "output")] = usage.OutputTokens
-			collected["mlaiops_llm_cost_usd_total"+label] = usage.CostUSD
+			collected["kionga_agent_active_sessions"+label] = float64(usage.Active)
+			collected["kionga_agent_sessions_total"+label] = float64(usage.Sessions)
+			collected["kionga_llm_tokens_used_total"+fmt.Sprintf("{agent=%q,type=%q}", agent.ID, "input")] = usage.InputTokens
+			collected["kionga_llm_tokens_used_total"+fmt.Sprintf("{agent=%q,type=%q}", agent.ID, "output")] = usage.OutputTokens
+			collected["kionga_llm_cost_usd_total"+label] = usage.CostUSD
 		}
 	}
 
@@ -98,7 +98,7 @@ func (p *PlatformCollector) Poll(ctx context.Context) error {
 			byStatus[run.Status]++
 		}
 		for status, count := range byStatus {
-			collected[fmt.Sprintf("mlaiops_pipeline_runs_total{status=%q}", status)] = count
+			collected[fmt.Sprintf("kionga_pipeline_runs_total{status=%q}", status)] = count
 		}
 	}
 
@@ -108,13 +108,13 @@ func (p *PlatformCollector) Poll(ctx context.Context) error {
 	if err := p.get(ctx, "/api/v1/realtime", &realtime); err == nil {
 		for demo, stats := range realtime.Demos {
 			if events, ok := stats["events"].(float64); ok {
-				collected[fmt.Sprintf("mlaiops_realtime_events_total{demo=%q}", demo)] = events
+				collected[fmt.Sprintf("kionga_realtime_events_total{demo=%q}", demo)] = events
 			}
 			if latency, ok := stats["avg_latency_ms"].(float64); ok {
-				collected[fmt.Sprintf("mlaiops_realtime_avg_latency_ms{demo=%q}", demo)] = latency
+				collected[fmt.Sprintf("kionga_realtime_avg_latency_ms{demo=%q}", demo)] = latency
 			}
 			if flagged, ok := stats["flagged"].(float64); ok {
-				collected[fmt.Sprintf("mlaiops_realtime_flagged_total{demo=%q}", demo)] = flagged
+				collected[fmt.Sprintf("kionga_realtime_flagged_total{demo=%q}", demo)] = flagged
 			}
 		}
 	}
@@ -140,7 +140,7 @@ func (p *PlatformCollector) Prometheus() string {
 		_, _ = fmt.Fprintf(&b, "%s %g\n", key, p.metrics[key])
 	}
 	if !p.scraped.IsZero() {
-		_, _ = fmt.Fprintf(&b, "mlaiops_platform_last_scrape_timestamp_seconds %d\n", p.scraped.Unix())
+		_, _ = fmt.Fprintf(&b, "kionga_platform_last_scrape_timestamp_seconds %d\n", p.scraped.Unix())
 	}
 	return b.String()
 }
