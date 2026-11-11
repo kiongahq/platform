@@ -329,7 +329,7 @@ function ConsoleApplication({ view: requestedView }: { view?: string }) {
               navigate("overview");
             }}
           >
-            <img src="/logo.svg" width={30} height={30} alt="" />
+            <img src="/logo.svg" width={87} height={24} alt="" />
             <span>Kionga</span>
           </Link>
           <button

@@ -123,7 +123,7 @@ export function StudioShell({
           className="app-brand"
           onClick={(e) => void navigate(e, "/studio")}
         >
-          <img src="/logo.svg" alt="" width="28" height="28" />
+          <img src="/logo.svg" alt="" width="87" height="24" />
           Kionga Editorial
         </Link>
         <nav aria-label="Publication">

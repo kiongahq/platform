@@ -23,7 +23,7 @@ export function LoginPage() {
   const providers = Array.isArray(options.providers) ? options.providers : [];
   const local = options.local !== false;
   return <div className="login-page">
-    <a className="wordmark" href="/"><img src="/logo.svg" alt="" width="30" height="30" /><strong>Kionga</strong></a>
+    <a className="wordmark" href="/"><img src="/logo.svg" alt="" width="87" height="24" /><strong>Kionga</strong></a>
     <main className="login-shell">
       <section className="login-copy"><h1>Your work, connected.</h1><p>Projects, pipelines, models, agents and persistent workspaces on infrastructure you control.</p><p className="muted">Access is governed by your organization’s platform policies.</p><a href="/api-docs">Read the API reference</a></section>
       <section className="login-card"><h2>Sign in to Kionga</h2><p id="login-hint">{providers.length ? (local ? 'Use your organization account, or a local account.' : 'Use your organization account.') : 'Use your local platform credentials.'}</p>
