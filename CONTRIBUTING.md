@@ -7,7 +7,7 @@ how the code is organized before you make a larger change.
 
 Prerequisites:
 
-- Go 1.26. `go/go.mod` declares `go 1.26.0` with `toolchain go1.26.10`; a newer
+- Go 1.26. `go/go.mod` declares `go 1.26.0` with `toolchain go1.26.11`; a newer
   local Go downloads that toolchain automatically.
 - Node.js 22 and npm, for the console tests (the version CI uses).
 - Docker, for the PostgreSQL integration tests and the images.

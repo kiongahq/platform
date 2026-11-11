@@ -8,7 +8,7 @@ ENV NEXT_PUBLIC_PUBLICATION_URL=${NEXT_PUBLIC_PUBLICATION_URL}
 RUN npm run build
 
 # Gateway image: compile the frontend and embed it in the Go service.
-FROM golang:1.26.10-alpine AS build
+FROM golang:1.26.11-alpine AS build
 WORKDIR /src/go
 COPY go/go.mod go/go.sum ./
 RUN --mount=type=cache,id=kionga-go-mod,target=/go/pkg/mod go mod download
