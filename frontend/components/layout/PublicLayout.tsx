@@ -19,7 +19,7 @@ export function PublicLayout({
       </a>
       <header className="site-header">
         <Link className="wordmark" href="/">
-          <img src="/logo.svg" alt="" width="30" height="30" />
+          <img src="/logo.svg" alt="" width="87" height="24" />
           <strong>Kionga</strong>
         </Link>
         <nav aria-label="Site">
