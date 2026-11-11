@@ -13,6 +13,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { useAutoCollapse } from "@/components/layout/useAutoCollapse";
 import { useQuery } from "@/hooks/useQuery";
 import { UnsavedContext } from "@/hooks/useUnsaved";
 import {
@@ -115,8 +116,20 @@ function ConsoleApplication({ view: requestedView }: { view?: string }) {
     [sidebarWidth, setSidebarWidth] = useState(224);
   const [isMobile, setIsMobile] = useState(false);
   const [navigationHint, setNavigationHint] = useState<{label:string;left:number;top:number} | null>(null);
-  const iconNavigation = !isMobile && sidebarWidth <= 112;
-  useEffect(() => setNavigationHint(null), [sidebarWidth, isMobile, view]);
+  // With a mouse, the sidebar shows icons until the pointer or focus is on it, then
+  // expands over the page. A width already narrowed to icons stays as chosen.
+  const [canHover, setCanHover] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const update = () => setCanHover(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  const autoCollapse = !isMobile && canHover && sidebarWidth > 112;
+  const sidebarPeek = useAutoCollapse({ enabled: autoCollapse });
+  const iconNavigation = !isMobile && (sidebarWidth <= 112 || (autoCollapse && !sidebarPeek.expanded));
+  useEffect(() => setNavigationHint(null), [sidebarWidth, isMobile, view, iconNavigation]);
   function showNavigationHint(target: EventTarget | null) {
     const link = target instanceof Element ? target.closest<HTMLAnchorElement>("a[aria-label]") : null;
     if (!iconNavigation || !link) { setNavigationHint(null); return; }
@@ -282,8 +295,12 @@ function ConsoleApplication({ view: requestedView }: { view?: string }) {
   return (
     <UnsavedContext.Provider value={setDirty}>
       <div
-        className={`app-shell${navOpen ? " nav-open" : ""}${iconNavigation ? " nav-icons" : ""}`}
-        style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+        className={`app-shell${navOpen ? " nav-open" : ""}${iconNavigation ? " nav-icons" : ""}${autoCollapse ? " nav-auto" : ""}${sidebarPeek.expanded ? " nav-peek" : ""}`}
+        style={{
+          // Auto-collapse reserves only the icon column, so expanding never moves the page.
+          "--sidebar-width": `${autoCollapse ? 64 : sidebarWidth}px`,
+          "--sidebar-panel": `${sidebarWidth}px`,
+        } as CSSProperties}
       >
         <a className="skip-link" href="#main">
           Skip to content
@@ -295,9 +312,10 @@ function ConsoleApplication({ view: requestedView }: { view?: string }) {
           id="sidebar"
           aria-label="Console navigation"
           onPointerOver={(event) => showNavigationHint(event.target)}
-          onPointerLeave={() => setNavigationHint(null)}
-          onFocus={(event) => showNavigationHint(event.target)}
-          onBlur={() => setNavigationHint(null)}
+          onPointerEnter={sidebarPeek.handlers.onPointerEnter}
+          onPointerLeave={(event) => { setNavigationHint(null); sidebarPeek.handlers.onPointerLeave(event); }}
+          onFocus={(event) => { showNavigationHint(event.target); sidebarPeek.handlers.onFocus(); }}
+          onBlur={(event) => { setNavigationHint(null); sidebarPeek.handlers.onBlur(event); }}
           onClick={() => setNavigationHint(null)}
           onScroll={() => setNavigationHint(null)}
           onKeyDown={(event) => { if (event.key === "Escape") setNavigationHint(null); }}
@@ -409,8 +427,10 @@ function ConsoleApplication({ view: requestedView }: { view?: string }) {
               const element = event.currentTarget;
               const startX = event.clientX, startWidth = sidebarWidth;
               element.setPointerCapture(event.pointerId);
+              sidebarPeek.hold(true);
               const move = (e: PointerEvent) => resize(startWidth + e.clientX - startX);
               const stop = () => {
+                sidebarPeek.hold(false);
                 element.removeEventListener("pointermove", move);
                 element.removeEventListener("pointerup", stop);
                 element.removeEventListener("pointercancel", stop);

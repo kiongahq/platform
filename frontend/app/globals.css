@@ -597,14 +597,24 @@ button, .button, .button-link { white-space: nowrap; }
 @media (min-width: 961px) {
   .app-sidebar .wordmark, .app-sidebar nav a, .workspace-links a { min-width: 0; }
   .app-sidebar .wordmark > span, .app-sidebar nav a > span, .workspace-links a > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .nav-icons .app-sidebar { padding-inline: 8px; }
-  .nav-icons .app-sidebar .wordmark { justify-content: center; gap: 0; }
-  .nav-icons .app-sidebar .wordmark > span, .nav-icons .app-sidebar nav a > span, .nav-icons .workspace-links a > span { display: none; }
-  .nav-icons .nav-group-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .nav-icons .app-sidebar nav a, .nav-icons .workspace-links a { justify-content: center; gap: 0; min-height: 40px; padding: 8px; }
-  .nav-icons .nav-group { padding-block: 12px; }
-  .nav-icons .workspace-links { gap: 4px; }
+  .nav-icons:not(.nav-auto) .app-sidebar { padding-inline: 8px; }
+  .nav-icons:not(.nav-auto) .app-sidebar .wordmark { justify-content: center; gap: 0; }
+  .nav-icons:not(.nav-auto) .app-sidebar .wordmark > span, .nav-icons:not(.nav-auto) .app-sidebar nav a > span, .nav-icons:not(.nav-auto) .workspace-links a > span { display: none; }
+  .nav-icons:not(.nav-auto) .nav-group-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .nav-icons:not(.nav-auto) .app-sidebar nav a, .nav-icons:not(.nav-auto) .workspace-links a { justify-content: center; gap: 0; min-height: 40px; padding: 8px; }
+  .nav-icons:not(.nav-auto) .nav-group { padding-block: 12px; }
+  .nav-icons:not(.nav-auto) .workspace-links { gap: 4px; }
   .sidebar-resizer { right: 0; touch-action: none; }
+  /* Auto-collapse: the grid keeps the icon column and the expanded panel slides over the page. */
+  .nav-auto .app-sidebar { width: var(--sidebar-panel); z-index: 40; transition: box-shadow .16s ease; }
+  .nav-auto.nav-icons .app-sidebar { width: 64px; }
+  .nav-auto.nav-peek .app-sidebar { box-shadow: 6px 0 24px rgb(0 0 0 / 14%); }
+  /* Collapsed by auto-collapse: the same layout as expanded with the text hidden, so
+     expanding never moves the item under the cursor. */
+  .nav-auto.nav-icons .app-sidebar { overflow-x: hidden; }
+  .nav-auto.nav-icons .app-sidebar .wordmark > span, .nav-auto.nav-icons .app-sidebar nav a > span,
+  .nav-auto.nav-icons .workspace-links a > span, .nav-auto.nav-icons .nav-group-label { visibility: hidden; }
+  .nav-auto .nav-group-label, .nav-auto .app-sidebar .wordmark > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sidebar-resizer:focus-visible { background: var(--color-accent); outline-offset: -2px; }
 }
 .sidebar-tooltip { position: fixed; z-index: 200; transform: translateY(-50%); padding: 7px 11px; border: 1px solid var(--color-rule); border-radius: var(--radius-input); color: var(--color-ink); background: var(--color-paper); box-shadow: var(--shadow-key); font-size: 13px; line-height: 1.4; white-space: nowrap; pointer-events: none; }
