@@ -46,10 +46,12 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run build:frontend
-      - run: npx playwright install --with-deps chromium
+      # The runner image ships Google Chrome. Installing Playwright's Chromium needs
+      # the Ubuntu package mirror, and a mirror outage then fails the build.
+      - run: google-chrome --version
       - run: npm run test:core
         env:
-          PLAYWRIGHT_CHANNEL: chromium
+          PLAYWRIGHT_CHANNEL: chrome
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
