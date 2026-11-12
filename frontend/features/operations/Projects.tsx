@@ -26,6 +26,11 @@ import {
   type RecordData,
 } from "./shared";
 
+const scratchProject: RecordData = {
+  id: "none", name: "Start from scratch", description: "An open project with no generated files or prescribed framework. Add your own code in a workspace or connect an existing repository.",
+  frameworks: [], accelerators: ["cpu", "single-gpu", "multi-gpu"], recommended_profile: "starter", required_services: [],
+};
+
 export function Projects(props: OperationsProps) {
   const { identity, project, resource, onNavigate } = props;
   const query = useResource("/api/v1/projects"),
@@ -98,7 +103,7 @@ export function Projects(props: OperationsProps) {
     Number(grant.compute?.gpus || 0) >=
       (name === "multi-gpu" ? 2 : name === "single-gpu" ? 1 : 0);
   const chooseTemplate = (id: string) =>
-    setTemplate(items(templates.data).find((item) => item.id === id) || null);
+    setTemplate(id === "none" ? scratchProject : items(templates.data).find((item) => item.id === id) || null);
   return (
     <>
       {action.feedback}
@@ -113,7 +118,7 @@ export function Projects(props: OperationsProps) {
               disabled={!can(identity, "projects_write")}
               onClick={() => {
                 setCreating(true);
-                setTemplate(items(templates.data)[0] || null);
+                setTemplate(scratchProject);
               }}
             >
               New project
@@ -305,16 +310,17 @@ export function Projects(props: OperationsProps) {
       {creating && (
         <Modal title="New project" onClose={() => setCreating(false)}>
           <State
-            loading={templates.loading}
-            error={templates.error}
+            loading={template?.id !== "none" && templates.loading}
+            error={template?.id !== "none" ? templates.error : undefined}
             retry={templates.reload}
           >
             <label className="field">
-              Template
+              Starting point
               <Select
                 value={template?.id || ""}
                 onChange={(event) => chooseTemplate(event.target.value)}
               >
+                <option value="none">Start from scratch — no template</option>
                 {items(templates.data).map((item) => (
                   <option value={item.id} key={item.id}>
                     {item.name} v{item.version}
@@ -325,10 +331,10 @@ export function Projects(props: OperationsProps) {
             {template && (
               <>
                 <p>{template.description}</p>
-                <p>
+                {template.id !== "none" && <p>
                   Required services:{" "}
                   {(template.required_services || []).join(", ")}
-                </p>
+                </p>}
                 <Form
                   key={template.id}
                   initial={{
@@ -350,8 +356,8 @@ export function Projects(props: OperationsProps) {
                     },
                     {
                       name: "framework",
-                      label: "Framework",
-                      type: "select",
+                      label: template.id === "none" ? "Framework or language (optional)" : "Framework",
+                      type: template.id === "none" ? "text" : "select",
                       options: (template.frameworks || []).map(option),
                     },
                     {

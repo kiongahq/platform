@@ -62,6 +62,24 @@ function setup(
   };
 }
 afterEach(cleanup);
+test("projects can start without templates even when the catalog is unavailable", async () => {
+  setup({
+    "/api/v1/projects": { items: [] },
+    "/api/v1/project-templates": { __status: 503, body: { message: "Catalog unavailable" } },
+    "/api/v1/workspaces": { items: [] },
+    "POST /api/v1/projects": { id: "custom" },
+  }, "http://localhost/console/projects");
+  const view = app("projects", { identity: { ...identity, permissions: { projects_write: true } } });
+  fireEvent.click(view.getByRole("button", { name: "New project" }));
+  fireEvent.change(view.getByLabelText(/Project name/), { target: { value: "My custom service" } });
+  fireEvent.change(view.getByLabelText(/Framework or language/), { target: { value: "Rust" } });
+  fireEvent.click(view.getByRole("button", { name: "Create project" }));
+  await waitFor(() => assert.ok(calls.some(call => call.method === "POST" && call.path === "/api/v1/projects")));
+  const request = calls.find(call => call.method === "POST" && call.path === "/api/v1/projects")!;
+  assert.equal(request.body.template, "none");
+  assert.equal(request.body.framework, "Rust");
+  assert.equal(request.body.template_version, undefined);
+});
 function app(view: string, extra = {}) {
   return render(
     <OperationsView
