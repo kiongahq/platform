@@ -97,7 +97,7 @@ export function AgentDefinitionsView({ identity, project, resource, onNavigate }
         ) : (
           <div className="empty-state">
             <h2>No agents yet</h2>
-            <p>{writable ? "Create an agent, or start from a team template on the Agent teams page." : "Nobody has defined an agent in this project."}</p>
+            <p>{writable ? "Create an agent from scratch with your own instructions, tools and limits. No template is required." : "Nobody has defined an agent in this project."}</p>
           </div>
         )}
       </DataState>

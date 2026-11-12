@@ -225,7 +225,7 @@ export function PipelineEditor({
             resources: job.resources || {},
             command: job.command || [],
           }))
-        : [blankNode(0)],
+        : [],
       description: value.description || "",
       execution_mode: value.execution_mode || "prefect",
       version: String(value.version || "1"),
@@ -400,6 +400,11 @@ export function PipelineEditor({
           <h2>{resource ? "Edit flow" : "Compose a reusable flow"}</h2>
           <p>Define jobs, dependencies and execution settings.</p>
         </div>
+        {!resource && <button type="button" onClick={() => {
+          if (dirty && !confirm("Start over with an empty pipeline? Unsaved changes will be discarded.")) return;
+          adopt({ ...defaultDefinition(definition.project_id), name: "new-pipeline", jobs: [] });
+          setDirty(true);
+        }}>Start from scratch</button>}
         <button type="button" onClick={() => onNavigate("pipelines")}>
           Back to pipelines
         </button>
