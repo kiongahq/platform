@@ -25,6 +25,7 @@ export function AsciiWordmark() {
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let width = 0, height = 0, footerHeight = 0, cellWidth = 6, cellHeight = 9;
     let accent = "", deep = "", font = "";
+    let wordTop = 0, wordBottom = 0;
     let frame = 0, lastFrame = 0, elapsed = 0, visible = false, disposed = false;
     let points: { x: number; y: number; letter: boolean; seed: number }[] = [];
 
@@ -49,6 +50,8 @@ export function AsciiWordmark() {
       const left = (width - wordWidth) / 2;
       // Keep the utility links above the word, including the stacked mobile layout.
       const top = height - wordHeight - Math.max(24, footerHeight * 0.1);
+      wordTop = top;
+      wordBottom = top + wordHeight;
       points = [];
       for (let y = cellHeight / 2; y < height; y += cellHeight) {
         for (let x = cellWidth / 2; x < width; x += cellWidth) {
@@ -64,10 +67,9 @@ export function AsciiWordmark() {
 
     function draw() {
       if (!width || !height) return;
-      const time = motion.matches ? 6 : elapsed;
-      const bounds = element!.getBoundingClientRect();
-      const visibleTop = Math.max(0, -bounds.top);
-      const visibleBottom = Math.min(height, window.innerHeight - bounds.top);
+      const time = motion.matches ? 14 : elapsed;
+      const fill = Math.min(1, time / 12);
+      const surface = wordBottom - (wordBottom - wordTop + cellHeight * 3) * fill;
       ctx!.clearRect(0, 0, width, height);
       ctx!.font = font;
       ctx!.textAlign = "center";
@@ -75,41 +77,31 @@ export function AsciiWordmark() {
       for (const point of points) {
         const { x, y, letter, seed } = point;
         if (!letter && y < height - footerHeight) continue;
-        const wave = Math.sin(x / width * 11 + y / height * 7 - time * 0.65);
+        const wave = Math.sin(x / width * 11 + y / height * 7 - time * 0.2);
         if (letter) {
-          // Eight origins cover the viewport's edges and corners. Curved streams
-          // gather into a quiet nucleus before one restrained outward release.
-          const gather = Math.max(0, Math.min(1, (time - seed * 0.35) / 1.65));
-          const converge = gather * gather * (3 - 2 * gather);
-          const progress = Math.max(0, Math.min(1, (time - 2.05 - seed * 0.2) / 1.65));
-          const t = progress - 1;
-          const ease = 1 + 1.45 * t * t * t + 0.45 * t * t;
-          const shimmer = Math.sin(x * 0.012 - time * 0.9 + y * 0.018);
-          ctx!.globalAlpha = (progress > 0 ? 0.3 + progress * 0.65 : 0.13 + converge * 0.12) * (0.9 + shimmer * 0.08);
-          ctx!.fillStyle = shimmer > 0.45 ? deep : accent;
-          const gatheredX = width / 2 + Math.sin(seed * 40) * width * 0.035;
-          const gatheredY = height - footerHeight * 0.4 + Math.cos(seed * 31) * footerHeight * 0.045;
-          const edge = Math.floor(seed * 8);
-          const startX = edge === 1 || edge === 5 ? width * seed : edge >= 2 && edge <= 4 ? width + 24 : -24;
-          const startY = edge <= 2 ? visibleTop - 24 : edge >= 4 && edge <= 6 ? visibleBottom + 24 : visibleTop + (visibleBottom - visibleTop) * seed;
-          const curve = Math.sin(converge * Math.PI) * (seed - 0.5);
-          const gatherX = startX + (gatheredX - startX) * converge + curve * width * 0.32
-            + Math.sin(x * 1.7 + y * 0.6) * width * 0.025 * (1 - converge);
-          const gatherY = startY + (gatheredY - startY) * converge - curve * footerHeight * 0.3
-            + Math.cos(x * 0.9 + y * 1.3) * footerHeight * 0.12 * (1 - converge);
-          const drawX = progress > 0 ? gatheredX + (x - gatheredX) * ease : gatherX;
-          const drawY = progress > 0 ? gatheredY + (y - gatheredY) * ease : gatherY;
-          const glyph = "KIONGA01#%@"[Math.floor(seed * 110) % 11];
-          ctx!.fillText(glyph, drawX, drawY);
-          if (gather > 0 && gather < 1 && seed < 0.18) {
-            ctx!.globalAlpha *= 0.25;
-            ctx!.fillText("·", drawX + (startX - drawX) * 0.025, drawY + (startY - drawY) * 0.025);
+          // Rain settles into fixed letter cells as the waterline rises.
+          // Settled glyphs never scatter or replay when the footer re-enters view.
+          const ripple = Math.sin(x / width * 16 + time * 0.35) * cellHeight;
+          const settled = motion.matches ? 1 : Math.max(0, Math.min(1,
+            (y - surface + ripple) / (cellHeight * 2)));
+          const glyph = "KIONGA01#%@"[Math.floor(seed * 100) % 10];
+          if (settled > 0) {
+            ctx!.globalAlpha = settled * 0.85;
+            ctx!.fillStyle = seed > 0.7 ? deep : accent;
+            ctx!.fillText(glyph, x, y);
+          } else if (!motion.matches && seed < 0.045 && fill < 1) {
+            // Sparse vertical drops feed the rising surface from the rain above.
+            const distance = Math.max(cellHeight, surface - (height - footerHeight));
+            const fall = (time * 24 + seed * 12000) % distance;
+            ctx!.globalAlpha = 0.12;
+            ctx!.fillStyle = accent;
+            ctx!.fillText(glyph, x, height - footerHeight + fall);
           }
         } else {
           const strand = Math.pow(Math.max(0, wave), 10);
           ctx!.globalAlpha = y < height - footerHeight ? 0 : 0.02 + strand * 0.08;
           ctx!.fillStyle = accent;
-          ctx!.fillText(".:+*=~"[Math.floor(seed * 13 + time * 1.5) % 6], x, y);
+          ctx!.fillText(".:+*=~"[Math.floor(seed * 13 + time * 0.35) % 6], x, y);
         }
       }
       ctx!.globalAlpha = 1;
