@@ -77,6 +77,30 @@ func ResolveProjectTemplateVersion(id, version string) (ProjectTemplate, error) 
 }
 
 func NormalizeProjectRequest(req *CreateProjectRequest) (ProjectTemplate, error) {
+	// "none" explicitly opts out of scaffolding. Keep the empty value's legacy
+	// default so existing SDK clients continue to create the same projects.
+	if req.Template == "none" {
+		if req.TemplateVersion != "" {
+			return ProjectTemplate{}, errors.New("a project without a template cannot specify template_version")
+		}
+		req.Framework = strings.TrimSpace(req.Framework)
+		if len(req.Framework) > 100 {
+			return ProjectTemplate{}, errors.New("framework must be at most 100 characters")
+		}
+		if req.Accelerator == "" {
+			req.Accelerator = "cpu"
+		}
+		if !slices.Contains([]string{"cpu", "single-gpu", "multi-gpu"}, req.Accelerator) {
+			return ProjectTemplate{}, errors.New("accelerator must be cpu, single-gpu, or multi-gpu")
+		}
+		if req.RequestedProfile == "" {
+			req.RequestedProfile = "starter"
+		}
+		if !slices.Contains([]string{"starter", "team", "power", "gpu", "custom"}, req.RequestedProfile) {
+			return ProjectTemplate{}, errors.New("requested_profile must be starter, team, power, gpu, or custom")
+		}
+		return ProjectTemplate{ID: "none"}, nil
+	}
 	if req.Template == "" {
 		req.Template = "production-ml"
 	}

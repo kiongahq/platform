@@ -69,6 +69,12 @@ func TestScaffoldArgvIsExactAndCatalogDerived(t *testing.T) {
 	}
 }
 
+func TestNoTemplateProjectCannotRunScaffolder(t *testing.T) {
+	if argv, _, err := scaffoldArgv(api.Project{Template: "none", Namespace: "custom-project", Framework: "custom"}); err == nil || argv != nil {
+		t.Fatalf("no-template project produced a scaffold command: %v %v", argv, err)
+	}
+}
+
 func TestScaffoldRejectsInjectionAttempts(t *testing.T) {
 	base := scaffoldProjectFixture(t, store.New())
 	for _, namespace := range []string{"a;rm -rf /", "$(id)", "`id`", "a\nb", "../etc", "a/b", "аbc", "ａｂｃ", "a b", "-rf", "a‮b", "a\x00b", "", strings.Repeat("a", 64)} {

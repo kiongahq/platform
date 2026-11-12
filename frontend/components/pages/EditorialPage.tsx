@@ -1,4 +1,4 @@
-import { StudioShell, type StudioView } from "@/components/studio/StudioShell";
+import { type StudioView } from "@/components/studio/StudioShell";
 import {
   PostsView,
   MediaView,
@@ -8,9 +8,9 @@ import {
 import { PostEditor } from "@/components/studio/PostEditor";
 export function EditorialPage({ view = "posts" }: { view?: StudioView }) {
   return (
-    <StudioShell view={view}>
+    <>
       {view === "new" || view === "edit" ? (
-        <PostEditor isNew={view === "new"} />
+        <PostEditor key={view} isNew={view === "new"} />
       ) : view === "media" ? (
         <MediaView />
       ) : view === "authors" ? (
@@ -20,6 +20,6 @@ export function EditorialPage({ view = "posts" }: { view?: StudioView }) {
       ) : (
         <PostsView view={view} />
       )}
-    </StudioShell>
+    </>
   );
 }

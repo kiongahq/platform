@@ -49,6 +49,9 @@ var scaffoldToken = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,62}$`)
 // scaffoldArgv builds the exact argv for a project. Every value comes from
 // the stored project, normalized and checked against the template catalog.
 func scaffoldArgv(project api.Project) ([]string, projectPath, error) {
+	if project.Template == "none" {
+		return nil, projectPath{}, errors.New("this project has no template; add your own files or connect a repository")
+	}
 	folder, err := resolveProjectPath(project.Namespace)
 	if err != nil {
 		return nil, folder, err

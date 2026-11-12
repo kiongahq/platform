@@ -112,6 +112,37 @@ func TestNormalUserCannotCreateUnprovisionedAgentOrGPUProject(t *testing.T) {
 	}
 }
 
+func TestNoTemplateProjectStillEnforcesAllocationsAndQuota(t *testing.T) {
+	server, repository := accessServer(t)
+	_, err := repository.UpsertUserAccess("user-1", api.UpsertUserAccessRequest{
+		Email: "user@example.com", Role: "user", Services: []string{"overview", "projects"},
+		Storage: api.StorageGrant{SizeGB: 25}, Compute: api.ComputeGrant{VCPUs: 2, MemoryGB: 4, MaxProjects: 1},
+	}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{
+		`{"name":"custom gpu","template":"none","accelerator":"single-gpu"}`,
+		`{"name":"custom power","template":"none","requested_profile":"power"}`,
+	} {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, userRequest(http.MethodPost, "/api/v1/projects", body))
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("allocation bypass: %d %s", response.Code, response.Body.String())
+		}
+	}
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, userRequest(http.MethodPost, "/api/v1/projects", `{"name":"custom service","template":"none","framework":"Rust"}`))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("custom project: %d %s", response.Code, response.Body.String())
+	}
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, userRequest(http.MethodPost, "/api/v1/projects", `{"name":"over quota","template":"none"}`))
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("quota bypass: %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestPipelineDAGCannotExceedProvisionedConcurrentResources(t *testing.T) {
 	server, repository := accessServer(t)
 	denied := httptest.NewRecorder()

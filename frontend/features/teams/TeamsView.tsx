@@ -113,7 +113,7 @@ export function TeamsView({ identity, project, resource, onNavigate }: ViewProps
         ) : (
           <div className="empty-state">
             <h2>No teams yet</h2>
-            <p>{writable ? "Create a team, or start from the code-change or research template." : "Nobody has defined a team in this project."}</p>
+            <p>{writable ? "Create a team from scratch with your own agents and rules, or optionally use a starter template." : "Nobody has defined a team in this project."}</p>
           </div>
         )}
       </DataState>

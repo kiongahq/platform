@@ -13,7 +13,7 @@ import { useUnsaved } from "@/hooks/useUnsaved";
 import { items, hasService, type Entity } from "@/lib/types";
 import { DataState, Feedback, type ViewProps } from "@/features/shared/View";
 import {
-  blankGraph,
+  blankGraph as starterGraph,
   connectionIssue,
   fromGraph,
   graphIssues,
@@ -23,6 +23,9 @@ import {
   type GraphEdge,
 } from "./graph";
 import { DesignStudio } from "./DesignStudio";
+function blankGraph(project = ""): GraphDraft {
+  return { ...starterGraph(project), nodes: [], edges: [] };
+}
 type History = { draft: GraphDraft; past: GraphDraft[]; future: GraphDraft[] };
 function history(
   state: History,
@@ -507,7 +510,7 @@ export function AgentDesigner({ identity, project, resource }: ViewProps) {
           </Select>
         </label>
         <label className="field">
-          Template
+          Template (optional)
           <Select
             id="design-template"
             value=""
@@ -522,7 +525,7 @@ export function AgentDesigner({ identity, project, resource }: ViewProps) {
                 );
             }}
           >
-            <option value="">Choose template</option>
+            <option value="">Choose a starter (optional)</option>
             {items(templates.data).map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
@@ -535,7 +538,7 @@ export function AgentDesigner({ identity, project, resource }: ViewProps) {
             id="design-new"
             onClick={() => open(blankGraph(project || draft.project_id))}
           >
-            New design
+            Start from scratch
           </button>
           <button onClick={() => file.current?.click()}>Import graph</button>
           <button
