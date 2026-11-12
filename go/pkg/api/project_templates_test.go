@@ -2,6 +2,23 @@ package api
 
 import "testing"
 
+func TestProjectWithoutTemplate(t *testing.T) {
+	req := CreateProjectRequest{Template: "none", Framework: "Rust / custom runtime"}
+	template, err := NormalizeProjectRequest(&req)
+	if err != nil || template.ID != "none" || len(template.RequiredServices) != 0 || len(template.Capabilities) != 0 || req.Framework != "Rust / custom runtime" || req.Accelerator != "cpu" || req.RequestedProfile != "starter" {
+		t.Fatalf("unexpected no-template project: %+v %+v %v", req, template, err)
+	}
+	for _, invalid := range []CreateProjectRequest{
+		{Template: "none", TemplateVersion: "1.0.0"},
+		{Template: "none", Accelerator: "unlimited"},
+		{Template: "none", RequestedProfile: "unlimited"},
+	} {
+		if _, err := NormalizeProjectRequest(&invalid); err == nil {
+			t.Fatalf("accepted invalid request: %+v", invalid)
+		}
+	}
+}
+
 func TestNormalizeProjectRequestAppliesVersionedDefaults(t *testing.T) {
 	req := CreateProjectRequest{Template: "production-agent"}
 	template, err := NormalizeProjectRequest(&req)

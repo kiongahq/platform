@@ -47,6 +47,19 @@ func TestStorePersistsResourcesAndAudit(t *testing.T) {
 	}
 }
 
+func TestProjectWithoutTemplatePersistsWithoutScaffolding(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "platform.json")
+	repository := New(path)
+	project, err := repository.CreateProject(api.CreateProjectRequest{Name: "Custom Rust service", Template: "none", Framework: "Rust"}, "test-user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := New(path).Project(project.ID)
+	if err != nil || saved.Template != "none" || saved.TemplateVersion != "" || saved.ScaffoldCommand != "" || len(saved.Capabilities) != 0 || saved.Framework != "Rust" {
+		t.Fatalf("unexpected persisted project: %+v %v", saved, err)
+	}
+}
+
 func TestRegisterModelRejectsUnsafeServingImage(t *testing.T) {
 	repository := New()
 	for _, image := range []string{"   ", "ghcr.io/acme/model:1\n", "ghcr.io/acme/bad image:1"} {

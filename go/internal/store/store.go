@@ -238,6 +238,9 @@ func (s *Store) CreateProject(req api.CreateProjectRequest, actor ...string) (ap
 }
 
 func scaffoldCommand(namespace string, template api.ProjectTemplate, req api.CreateProjectRequest) string {
+	if template.ID == "none" {
+		return ""
+	}
 	return fmt.Sprintf(
 		"kionga scaffold %s --template %s --template-version %s --framework %s --accelerator %s --profile %s",
 		namespace, template.ID, template.Version, req.Framework, req.Accelerator, req.RequestedProfile,
