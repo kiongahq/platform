@@ -118,8 +118,8 @@ export function AsciiFlow() {
           }
       }
       const glyphs = "01{}[]<>/\\:;=+*#KIONGA";
-      // An illustrative cycle: unstructured input resolves into connected layers.
-      const intelligence = motion.matches ? 1 : Math.min(1, (0.5 + 0.5 * Math.sin(clock * 0.55)) * 1.7);
+      // Keep the network intact while signals move gently through it.
+      const intelligence = motion.matches ? 1 : Math.min(1, 0.85 + clock / 12);
       const bounds = element!.getBoundingClientRect();
       const firstRow = Math.max(0, Math.floor(-bounds.top / cellHeight) - 1);
       const lastRow = Math.min(rows, Math.ceil((window.innerHeight - bounds.top) / cellHeight) + 1);
@@ -133,7 +133,7 @@ export function AsciiFlow() {
           // tails. Keep the text mask and pointer wake independent of the field.
           const seed = (col * 73 + 19) % 127;
           const cycle = 78;
-          const head = (seed + clock * (3 + (seed % 7))) % cycle;
+          const head = (seed + clock * (1.5 + (seed % 5) * 0.5)) % cycle;
           const behind = ((head - row) % cycle + cycle) % cycle;
           const length = 14 + (seed % 25);
           const stream = behind < length ? (1 - behind / length) ** 1.7 : 0;
@@ -146,7 +146,7 @@ export function AsciiFlow() {
           if (density < 0.08) continue;
           ctx!.fillStyle = colors.tints[Math.min(4, Math.floor(density * 5))];
           ctx!.fillText(
-            glyphs[(seed + row * 13 + Math.floor(clock * 2)) % glyphs.length],
+            glyphs[(seed + row * 13 + Math.floor(clock * 0.5)) % glyphs.length],
             x,
             y,
           );
@@ -165,16 +165,11 @@ export function AsciiFlow() {
             const steps = Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / 7);
             for (let step = 0; step <= steps; step++) {
               const t = step / steps;
-              const pulse = ((t - clock * 0.22 + layer * 0.25) % 1 + 1) % 1 < 0.12;
+              const pulse = ((t - clock * 0.08 + layer * 0.25) % 1 + 1) % 1 < 0.12;
               ctx!.fillStyle = pulse ? colors.signal : colors.tints[3];
-              const loose = 1 - intelligence;
               const x = from.x + (to.x - from.x) * t;
               const y = from.y + (to.y - from.y) * t;
-              // The same glyphs fall loose, converge into connections, and
-              // release back into rain as the cycle recedes.
-              const driftX = Math.sin(step * 2.4 + from.y) * (compact ? 14 : 44);
-              const driftY = ((step * 37 + clock * 65) % 150) - 75;
-              ctx!.fillText(loose > 0.35 ? glyphs[step % glyphs.length] : pulse ? "+" : ":", x + loose * driftX, y + loose * driftY);
+              ctx!.fillText(pulse ? "+" : ":", x, y);
             }
           }
         }
@@ -192,7 +187,7 @@ export function AsciiFlow() {
       }
       // Packet labels are examples, not service telemetry. One illustrates a retry.
       for (let lane = 0; lane < 6; lane++) {
-        const phase = (clock * 0.032 + lane * 0.163 + 0.06) % 1;
+        const phase = (clock * 0.015 + lane * 0.163 + 0.06) % 1;
         const waiting = lane === 3 && phase > 0.63 && phase < 0.75;
         const progress =
           lane === 3
@@ -382,7 +377,7 @@ export function AsciiFlow() {
       <figcaption className="sr-only">
         Project files flow through training and evaluation into versioned models
         and agents. Falling characters resolve into connected encode, reason and
-        act layers before dispersing. This is an illustration, not live platform activity.
+        act layers that remain connected. This is an illustration, not live platform activity.
       </figcaption>
     </figure>
   );
