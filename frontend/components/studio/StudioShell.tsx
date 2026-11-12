@@ -10,7 +10,8 @@ import React, {
   useState,
 } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { Icon } from "@/components/ui/Icon";
 import {
   editorial,
   EditorialError,
@@ -37,12 +38,11 @@ export type StudioView =
   | "new"
   | "edit";
 export function StudioShell({
-  view,
   children,
 }: {
-  view: StudioView;
   children: React.ReactNode;
 }) {
+  const view = usePathname().split("/")[2] || "posts";
   const [session, setSession] = useState<Session | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -113,7 +113,7 @@ export function StudioShell({
     "settings",
   ];
   return (
-    <div className="studio-shell app-shell">
+    <div className={`studio-shell app-shell${session ? "" : " studio-welcome"}`}>
       <a href="#ed-main" className="skip-link">
         Skip to content
       </a>
@@ -124,7 +124,7 @@ export function StudioShell({
           onClick={(e) => void navigate(e, "/studio")}
         >
           <img src="/logo.svg" alt="" width="87" height="24" />
-          Kionga Editorial
+          <span>Kionga <strong>Studio</strong></span>
         </Link>
         <nav aria-label="Publication">
           <a
@@ -142,10 +142,10 @@ export function StudioShell({
               }
             }}
           >
-            View publication
+            <Icon name="blogs" /> View publication
           </a>
           <Link href="/console" onClick={(e) => void navigate(e, "/console")}>
-            ML console
+            <Icon name="overview" /> ML console
           </Link>
         </nav>
         {session && (
@@ -182,6 +182,7 @@ export function StudioShell({
                 aria-current={view === item ? "page" : undefined}
                 onClick={(e) => void navigate(e, `/studio/${item}`)}
               >
+                <Icon name={({ posts: "blogs", drafts: "edit", reviews: "check", media: "media", authors: "profile", settings: "settings" } as Record<string, string>)[item]} />
                 {item[0].toUpperCase() + item.slice(1)}
               </Link>
             ))}
@@ -200,7 +201,7 @@ export function StudioShell({
               editorial administrator to add your account.
             </p>
             {denied.bootstrap_available && denied.can_bootstrap && (
-              <div>
+              <div className="studio-bootstrap">
                 <p>
                   No editorial administrator exists yet. A platform
                   administrator can claim the first membership; this is recorded

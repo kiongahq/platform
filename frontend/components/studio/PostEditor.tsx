@@ -2,6 +2,8 @@
 import {CodeEditor} from "@/components/ui/CodeEditor";
 import {Icon} from "@/components/ui/Icon";
 import React, { useEffect, useRef, useState } from "react";
+import UndoIcon from "@mui/icons-material/Undo";
+import RedoIcon from "@mui/icons-material/Redo";
 import Link from "next/link";
 import type { Editor } from "@tiptap/react";
 import { Writer } from "./Writer";
@@ -367,20 +369,24 @@ function EditorWork({ initial }: { initial: EditorialPost }) {
         <button
           type="button"
           id="ed-undo"
+          title="Undo"
+          className="icon-button"
           aria-label="Undo"
           disabled={readonly}
           onClick={() => editorRef.current?.chain().focus().undo().run()}
         >
-          Undo
+          <UndoIcon fontSize="small" aria-hidden="true" />
         </button>
         <button
           type="button"
           id="ed-redo"
+          title="Redo"
+          className="icon-button"
           aria-label="Redo"
           disabled={readonly}
           onClick={() => editorRef.current?.chain().focus().redo().run()}
         >
-          Redo
+          <RedoIcon fontSize="small" aria-hidden="true" />
         </button>
         <button
           id="ed-preview"

@@ -1,4 +1,48 @@
 "use client";
+import TitleIcon from "@mui/icons-material/Title";
+import TextFieldsIcon from "@mui/icons-material/TextFields";
+import FormatBoldIcon from "@mui/icons-material/FormatBold";
+import FormatItalicIcon from "@mui/icons-material/FormatItalic";
+import FormatUnderlinedIcon from "@mui/icons-material/FormatUnderlined";
+import FormatStrikethroughIcon from "@mui/icons-material/FormatStrikethrough";
+import HighlightIcon from "@mui/icons-material/Highlight";
+import FormatListBulletedIcon from "@mui/icons-material/FormatListBulleted";
+import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
+import FormatQuoteIcon from "@mui/icons-material/FormatQuote";
+import CodeIcon from "@mui/icons-material/Code";
+import DataObjectIcon from "@mui/icons-material/DataObject";
+import HorizontalRuleIcon from "@mui/icons-material/HorizontalRule";
+import LinkIcon from "@mui/icons-material/Link";
+import ChecklistIcon from "@mui/icons-material/Checklist";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
+import SmartDisplayOutlinedIcon from "@mui/icons-material/SmartDisplayOutlined";
+import UndoIcon from "@mui/icons-material/Undo";
+import RedoIcon from "@mui/icons-material/Redo";
+const toolIcons = {
+  "Heading": TitleIcon,
+  "Subheading": TextFieldsIcon,
+  "Bold": FormatBoldIcon,
+  "Italic": FormatItalicIcon,
+  "Underline": FormatUnderlinedIcon,
+  "Strike": FormatStrikethroughIcon,
+  "Highlight": HighlightIcon,
+  "Bullets": FormatListBulletedIcon,
+  "Numbered list": FormatListNumberedIcon,
+  "Quote": FormatQuoteIcon,
+  "Inline code": CodeIcon,
+  "Code": DataObjectIcon,
+  "Divider": HorizontalRuleIcon,
+  "Link": LinkIcon,
+  "Checklist": ChecklistIcon,
+  "Callout": InfoOutlinedIcon,
+  "Table": TableChartOutlinedIcon,
+  "Image": ImageOutlinedIcon,
+  "Embed": SmartDisplayOutlinedIcon,
+  "Undo": UndoIcon,
+  "Redo": RedoIcon,
+};
 import React, { useEffect, useRef, useState } from "react";
 import {
   Editor,
@@ -305,19 +349,26 @@ export function Writer({
         role="toolbar"
         aria-label="Text formatting"
       >
-        {buttons.map(([label, run, active]) => (
+        {buttons.map(([label, run, active]) => {
+          const ToolIcon = toolIcons[label as keyof typeof toolIcons];
+          const pressed = label === "Heading" ? editor.isActive("heading", { level: 2 })
+            : label === "Subheading" ? editor.isActive("heading", { level: 3 })
+            : active ? editor.isActive(active) : undefined;
+          return (
           <button
             key={label}
             type="button"
             disabled={readOnly || uploading}
             aria-label={label}
-            aria-pressed={!!active && editor.isActive(active)}
+            aria-pressed={pressed}
+            data-tooltip={label}
             onMouseDown={(e) => e.preventDefault()}
             onClick={run}
           >
-            {label}
+            <ToolIcon fontSize="small" aria-hidden="true" />
           </button>
-        ))}
+          );
+        })}
       </div>
       <input
         ref={file}
