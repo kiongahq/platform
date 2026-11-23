@@ -33,7 +33,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/swagger-ui-react": "^5.18.0",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.2",
     "jsdom": "^26.1.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
