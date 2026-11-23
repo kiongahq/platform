@@ -24,7 +24,7 @@ import (
 // applies a KiongaModelDeployment (one per model name and project). The
 // operator resolves the version's artifact through MLflow and creates a
 // KServe InferenceService in raw mode; a canary is a second
-// InferenceService. The gateway reads Ready, status.url / canaryURL and the endpoint
+// InferenceService. The gateway reads Ready / CanaryReady, status.url / canaryURL and the endpoint
 // URLs back, and splits model invocations by the recorded canary weight.
 
 func init() {
@@ -43,20 +43,21 @@ var modelServingSteps = []string{
 // liveDeploymentStatuses are the statuses refreshed from the cluster.
 var liveDeploymentStatuses = []string{"pending", "deploying", "serving", "failed"}
 
-// modelDeploymentSpec builds the KiongaModelDeployment spec. A canary is
-// spec.canary {version, weight}; without one the field is absent.
+// modelDeploymentSpec builds the KiongaModelDeployment spec: modelName,
+// version, canaryWeight and, for a canary, canaryVersion.
 func modelDeploymentSpec(name, version, canaryVersion string, weight int) map[string]any {
-	spec := map[string]any{"modelName": name, "version": version}
+	spec := map[string]any{"modelName": name, "version": version, "canaryWeight": int64(0)}
 	if canaryVersion != "" && weight > 0 && weight < 100 {
-		spec["canary"] = map[string]any{"version": canaryVersion, "weight": int64(weight)}
+		spec["canaryVersion"] = canaryVersion
+		spec["canaryWeight"] = int64(weight)
 	}
 	return spec
 }
 
-// specCanary reads spec.canary.
+// specCanary reads spec.canaryVersion and spec.canaryWeight.
 func specCanary(object *unstructured.Unstructured) (string, int) {
-	version, _, _ := unstructured.NestedString(object.Object, "spec", "canary", "version")
-	weight, _, _ := unstructured.NestedFieldNoCopy(object.Object, "spec", "canary", "weight")
+	version, _, _ := unstructured.NestedString(object.Object, "spec", "canaryVersion")
+	weight, _, _ := unstructured.NestedFieldNoCopy(object.Object, "spec", "canaryWeight")
 	return version, int(asInt64(weight))
 }
 
@@ -131,9 +132,9 @@ func (s *Server) stableVersion(ctx context.Context, access *kubeAccess, model ap
 }
 
 // mapModelDeployment derives one model version's deployment status from
-// the KiongaModelDeployment for its name. The operator reports one Ready
-// condition for the whole deployment (stable and canary InferenceServices),
-// status.url for the stable version and status.canaryURL for the canary.
+// the KiongaModelDeployment for its name: status.url and the Ready condition
+// for the stable version, status.canaryURL and CanaryReady for the canary
+// (Ready when the operator reports no CanaryReady condition).
 //
 //   - A status written for an older generation is ignored.
 //   - The stable version is serving when Ready=True with a URL. While a
@@ -154,7 +155,13 @@ func mapModelDeployment(model api.Model, object *unstructured.Unstructured) api.
 	status := readWorkloadStatus(object)
 	canaryURL, _, _ := unstructured.NestedString(object.Object, "status", "canaryURL")
 	stale := object.GetGeneration() > 0 && status.ObservedGeneration < object.GetGeneration()
-	ready, hasReady := status.condition("Ready")
+	readyType := "Ready"
+	if model.Version == canaryVersion && model.Version != version {
+		if _, has := status.condition("CanaryReady"); has {
+			readyType = "CanaryReady"
+		}
+	}
+	ready, hasReady := status.condition(readyType)
 	isReady := !stale && hasReady && strings.EqualFold(ready.Status, "True")
 	waiting := "waiting for the model server to become ready"
 	if stale {
@@ -174,7 +181,7 @@ func mapModelDeployment(model api.Model, object *unstructured.Unstructured) api.
 		return model
 	}
 	if !stale {
-		if reason := status.failureReason("Ready"); reason != "" {
+		if reason := status.failureReason(readyType); reason != "" {
 			model.DeploymentStatus, model.EndpointURL, model.DeploymentMessage = "failed", "", reason
 			return model
 		}
@@ -334,9 +341,11 @@ func (s *Server) modelTarget(ctx context.Context, r *http.Request, model api.Mod
 	if model.Version != stableVersion && model.Version != canaryVersion {
 		return "", "", nil
 	}
-	// The weight the operator applied, not the one requested.
-	weightValue, _, _ := unstructured.NestedFieldNoCopy(object.Object, "status", "canaryWeight")
-	weight := int(asInt64(weightValue))
+	// The weight the operator applied when it reports one, else the spec.
+	_, weight := specCanary(object)
+	if applied, found, _ := unstructured.NestedFieldNoCopy(object.Object, "status", "canaryWeight"); found {
+		weight = int(asInt64(applied))
+	}
 	record := func(version string) api.Model {
 		for _, item := range s.store.Models() {
 			if item.ProjectID == model.ProjectID && item.Name == model.Name && item.Version == version {

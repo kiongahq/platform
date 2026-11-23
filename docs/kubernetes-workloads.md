@@ -96,19 +96,19 @@ operator publishes it, the gateway falls back to the agent's Service.
 ## Model deployment
 
 `POST /api/v1/models/{id}/deploy` applies one `KiongaModelDeployment` per
-model name and project with `modelName`, `version` and, for a canary,
-`canary {version, weight}`. The operator reports one `Ready` condition for the
-whole deployment, `status.url` for the stable version and `status.canaryURL`
-for the canary. A version is `serving` once `Ready=True` with its URL. While a
-canary or another change rolls out, a stable version that was serving keeps
-serving. Status written for an older generation is ignored. Phase `Failed`, or
-`Ready=False` with reason `Failed`, makes it `failed` with the reason in
-`deployment_message`.
+model name and project with `modelName`, `version`, `canaryWeight` and, for a
+canary, `canaryVersion`. The stable version is `serving` once `Ready=True`
+with `status.url`; the canary once `CanaryReady=True` (or `Ready=True` when
+the operator reports no `CanaryReady`) with `status.canaryURL`. While a canary
+or another change rolls out, a stable version that was serving keeps serving.
+Status written for an older generation is ignored. Phase `Failed`, or the
+readiness condition `False` with reason `Failed`, makes it `failed` with the
+reason in `deployment_message`.
 `GET /api/v1/models/{id}/deployment` returns the live status.
 
 A canary weight from 1 to 99 needs a serving stable version. Invocations
 through `POST /api/v1/models/{id}/predict` for either version are split by the
-weight the operator applied (`status.canaryWeight`): without a routing key, exactly `w` of every 100 consecutive calls go to
+weight (`status.canaryWeight` when the operator reports it, else `spec.canaryWeight`): without a routing key, exactly `w` of every 100 consecutive calls go to
 the canary, evenly spread; with an `X-Kionga-Routing-Key` header the choice is
 sticky for that key. The `X-Kionga-Model-Version` response header names the
 version that answered.

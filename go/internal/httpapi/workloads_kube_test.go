@@ -216,7 +216,7 @@ func TestKubernetesModelDeployIsPendingUntilReady(t *testing.T) {
 	}
 	name := api.ModelDeploymentDNSName(projectID, "churn-classifier")
 	spec := harness.object(t, modelDeploymentsGVR, name).Object["spec"].(map[string]any)
-	if _, hasCanary := spec["canary"]; spec["modelName"] != "churn-classifier" || spec["version"] != "3" || hasCanary {
+	if _, hasCanary := spec["canaryVersion"]; spec["modelName"] != "churn-classifier" || spec["version"] != "3" || hasCanary || spec["canaryWeight"] != int64(0) {
 		t.Fatalf("unexpected KiongaModelDeployment spec: %#v", spec)
 	}
 	if row := modelRow(t, harness, modelID); row["deployment_status"] != "pending" {
@@ -290,7 +290,7 @@ func TestKubernetesCanarySplitsInvocationsByWeight(t *testing.T) {
 		t.Fatalf("canary deploy: %d %s", deployed.Code, deployed.Body.String())
 	}
 	spec := harness.object(t, modelDeploymentsGVR, name).Object["spec"].(map[string]any)
-	if canarySpec, _ := spec["canary"].(map[string]any); spec["version"] != "3" || canarySpec["version"] != "4" || canarySpec["weight"] != int64(20) {
+	if spec["version"] != "3" || spec["canaryVersion"] != "4" || spec["canaryWeight"] != int64(20) {
 		t.Fatalf("canary spec: %#v", spec)
 	}
 	// While the canary rolls out the operator reports Ready=False for the
@@ -307,8 +307,8 @@ func TestKubernetesCanarySplitsInvocationsByWeight(t *testing.T) {
 		t.Fatalf("unready canary received traffic: %s", predicted.Body.String())
 	}
 	harness.setStatus(t, modelDeploymentsGVR, name, map[string]any{
-		"phase": "Ready", "url": stable.URL, "canaryURL": canary.URL, "canaryWeight": int64(20),
-		"conditions": []any{readyCondition("Ready", "True", "InferenceServiceReady", "")},
+		"phase": "Ready", "url": stable.URL, "canaryURL": canary.URL,
+		"conditions": []any{readyCondition("Ready", "True", "", ""), readyCondition("CanaryReady", "True", "", "")},
 	})
 	mu.Lock()
 	counts = map[string]int{}
@@ -335,7 +335,7 @@ func TestKubernetesCanarySplitsInvocationsByWeight(t *testing.T) {
 		t.Fatalf("rollback: %d %s", rolled.Code, rolled.Body.String())
 	}
 	spec = harness.object(t, modelDeploymentsGVR, name).Object["spec"].(map[string]any)
-	if _, has := spec["canary"]; has {
+	if _, has := spec["canaryVersion"]; has || spec["canaryWeight"] != int64(0) {
 		t.Fatalf("rollback must remove the canary: %#v", spec)
 	}
 }
@@ -389,7 +389,7 @@ func TestModelDeploymentStatusMapping(t *testing.T) {
 	object := func(generation int64, canary bool, status map[string]any) *unstructured.Unstructured {
 		spec := map[string]any{"modelName": "m", "version": "1"}
 		if canary {
-			spec["canary"] = map[string]any{"version": "2", "weight": int64(10)}
+			spec["canaryVersion"], spec["canaryWeight"] = "2", int64(10)
 		}
 		value := &unstructured.Unstructured{Object: map[string]any{"spec": spec, "status": status}}
 		value.SetGeneration(generation)
@@ -413,6 +413,8 @@ func TestModelDeploymentStatusMapping(t *testing.T) {
 		{"stale failure is not trusted", api.Model{Version: "1"}, object(3, false, map[string]any{"observedGeneration": int64(2), "phase": "Failed"}), "pending", ""},
 		{"canary ready", api.Model{Version: "2"}, object(1, true, map[string]any{"observedGeneration": int64(1), "url": "http://stable", "canaryURL": "http://canary", "conditions": ready}), "serving", "http://canary"},
 		{"canary without url", api.Model{Version: "2"}, object(1, true, map[string]any{"observedGeneration": int64(1), "url": "http://stable", "conditions": ready}), "pending", ""},
+		{"canary not ready while stable is", api.Model{Version: "2"}, object(1, true, map[string]any{"observedGeneration": int64(1), "url": "http://stable", "canaryURL": "http://canary", "conditions": []any{readyCondition("Ready", "True", "", ""), readyCondition("CanaryReady", "False", "Loading", "loading")}}), "pending", ""},
+		{"canary ready by its own condition", api.Model{Version: "2"}, object(1, true, map[string]any{"observedGeneration": int64(1), "url": "http://stable", "canaryURL": "http://canary", "conditions": []any{readyCondition("Ready", "True", "", ""), readyCondition("CanaryReady", "True", "", "")}}), "serving", "http://canary"},
 		{"failed", api.Model{Version: "1"}, object(1, false, map[string]any{"observedGeneration": int64(1), "phase": "Failed", "conditions": []any{readyCondition("Ready", "False", "ArtifactNotFound", "no artifact")}}), "failed", ""},
 		{"other version retired", api.Model{Version: "7"}, object(1, false, map[string]any{}), "retired", ""},
 	} {
