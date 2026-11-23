@@ -153,6 +153,7 @@ func (r *ModelDeploymentReconciler) Reconcile(ctx context.Context, request ctrl.
 	if reason != "" {
 		status.Phase = "Failed"
 		apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{Type: ConditionReady, Status: metav1.ConditionFalse, Reason: reason, Message: err.Error(), ObservedGeneration: deployment.Generation})
+		status.Message = err.Error()
 		if updateErr := updateStatusIfChanged(ctx, r.Client, &deployment, before, &deployment.Status); updateErr != nil {
 			return ctrl.Result{}, updateErr
 		}
@@ -161,6 +162,7 @@ func (r *ModelDeploymentReconciler) Reconcile(ctx context.Context, request ctrl.
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	status.Message = readyMessage(status.Conditions)
 	return result, updateStatusIfChanged(ctx, r.Client, &deployment, before, &deployment.Status)
 }
 
@@ -176,7 +178,7 @@ func (r *ModelDeploymentReconciler) reconcile(ctx context.Context, deployment *k
 	// Resolve through MLflow once per spec generation, so an MLflow outage
 	// does not disturb a model that is already serving.
 	resolved := deployment.Status.ObservedGeneration == deployment.Generation && deployment.Status.Phase != "Failed" && deployment.Status.StorageURI != "" &&
-		(deployment.Spec.Canary == nil || deployment.Status.CanaryStorageURI != "")
+		(deployment.Spec.CanaryVersion == "" || deployment.Status.CanaryStorageURI != "")
 	stableURI, canaryURI := deployment.Status.StorageURI, deployment.Status.CanaryStorageURI
 	if !resolved {
 		var err error
@@ -184,8 +186,8 @@ func (r *ModelDeploymentReconciler) reconcile(ctx context.Context, deployment *k
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, "ModelResolutionFailed", err
 		}
 		canaryURI = ""
-		if canary := deployment.Spec.Canary; canary != nil {
-			if canaryURI, err = ResolveModelStorageURI(ctx, r.MLflow, r.Storage.ArtifactsDestination, deployment.Spec.ModelName, canary.Version); err != nil {
+		if canary := deployment.Spec.CanaryVersion; canary != "" {
+			if canaryURI, err = ResolveModelStorageURI(ctx, r.MLflow, r.Storage.ArtifactsDestination, deployment.Spec.ModelName, canary); err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, "ModelResolutionFailed", err
 			}
 		}
@@ -207,14 +209,14 @@ func (r *ModelDeploymentReconciler) reconcile(ctx context.Context, deployment *k
 	stableURL, stableReady, stableMessage := inferenceServiceState(stable)
 	status.URL = stableURL
 	ready, message := stableReady, stableMessage
-	if deployment.Spec.Canary != nil {
-		canary, err := r.applyInferenceService(ctx, deployment, CanaryName(deployment.Name), deployment.Spec.Canary.Version, canaryURI, serviceAccount, "canary")
+	if deployment.Spec.CanaryVersion != "" {
+		canary, err := r.applyInferenceService(ctx, deployment, CanaryName(deployment.Name), deployment.Spec.CanaryVersion, canaryURI, serviceAccount, "canary")
 		if err != nil {
 			return ctrl.Result{}, "", err
 		}
 		canaryURL, canaryReady, canaryMessage := inferenceServiceState(canary)
 		status.CanaryURL, status.CanaryStorageURI, status.CanaryInferenceServiceRef = canaryURL, canaryURI, CanaryName(deployment.Name)
-		status.CanaryWeight = deployment.Spec.Canary.Weight
+		status.CanaryWeight = deployment.Spec.CanaryWeight
 		ready = ready && canaryReady
 		message = "stable: " + stableMessage + "; canary: " + canaryMessage
 	} else {
@@ -424,4 +426,13 @@ func (r *ModelDeploymentReconciler) deploymentsUsingStorageSecret(ctx context.Co
 		requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&deployments.Items[i])})
 	}
 	return requests
+}
+
+// readyMessage is the Ready condition message, mirrored into status.message
+// for clients that read one line.
+func readyMessage(conditions []metav1.Condition) string {
+	if ready := apimeta.FindStatusCondition(conditions, ConditionReady); ready != nil {
+		return ready.Message
+	}
+	return ""
 }

@@ -5,16 +5,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ModelCanarySpec serves a second registered version next to the stable one.
-type ModelCanarySpec struct {
-	// +kubebuilder:validation:MinLength=1
-	Version string `json:"version"`
-	// Weight is the percent of requests the gateway sends to the canary.
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=100
-	Weight int32 `json:"weight"`
-}
-
 // KiongaModelDeploymentSpec serves an MLflow registered model version with
 // KServe in RawDeployment mode.
 type KiongaModelDeploymentSpec struct {
@@ -32,13 +22,22 @@ type KiongaModelDeploymentSpec struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 	// +optional
 	Replicas *WorkloadReplicaSpec `json:"replicas,omitempty"`
+	// CanaryVersion serves a second registered version next to the stable
+	// one. Empty means no canary.
 	// +optional
-	Canary *ModelCanarySpec `json:"canary,omitempty"`
+	CanaryVersion string `json:"canaryVersion,omitempty"`
+	// CanaryWeight is the percent of requests the gateway sends to the canary.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	CanaryWeight int32 `json:"canaryWeight,omitempty"`
 }
 
 type KiongaModelDeploymentStatus struct {
 	// Phase is Pending, Progressing, Ready or Failed.
 	Phase string `json:"phase,omitempty"`
+	// Message repeats the Ready condition message.
+	Message string `json:"message,omitempty"`
 	// URL is the stable InferenceService address.
 	URL string `json:"url,omitempty"`
 	// StorageURI is the s3:// location KServe loads the stable version from.

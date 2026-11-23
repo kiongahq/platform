@@ -62,6 +62,8 @@ func routeHosts(workload, namespace string, public ...string) []any {
 }
 
 // scalingTarget names what an autoscaler drives and where its traffic lands.
+// applyScaling returns the in-cluster URL to call and, for requests scaling,
+// the Host header the interceptor routes on.
 type scalingTarget struct {
 	Deployment  string
 	Service     string
@@ -72,7 +74,7 @@ type scalingTarget struct {
 // applyScaling creates the autoscaler the plan calls for and deletes the
 // other kinds the owner left behind. It returns the in-cluster URL callers
 // use: through the interceptor for requests scaling, the Service otherwise.
-func applyScaling(ctx context.Context, c client.Client, owner client.Object, plan ScalingPlan, target scalingTarget, config WorkloadConfig, publicHosts ...string) (string, error) {
+func applyScaling(ctx context.Context, c client.Client, owner client.Object, plan ScalingPlan, target scalingTarget, config WorkloadConfig, publicHosts ...string) (string, string, error) {
 	namespace := owner.GetNamespace()
 	hpaKey := client.ObjectKey{Name: target.Deployment, Namespace: namespace}
 	routeKey := client.ObjectKey{Name: RouteServiceName(target.Deployment), Namespace: namespace}
@@ -82,7 +84,7 @@ func applyScaling(ctx context.Context, c client.Client, owner client.Object, pla
 	}
 	if plan.Metric == kiongav1.ScalingMetricRequests {
 		if err := deleteIfOwned(ctx, c, &autoscalingv2.HorizontalPodAutoscaler{}, hpaKey, owner); err != nil {
-			return "", err
+			return "", "", err
 		}
 		route := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: routeKey.Name, Namespace: namespace}}
 		if _, err := controllerutil.CreateOrUpdate(ctx, c, route, func() error {
@@ -94,7 +96,7 @@ func applyScaling(ctx context.Context, c client.Client, owner client.Object, pla
 			route.Spec.Ports = []corev1.ServicePort{{Name: "http", Port: config.InterceptorPort, TargetPort: intstr.FromInt32(config.InterceptorPort)}}
 			return controllerutil.SetControllerReference(owner, route, c.Scheme())
 		}); err != nil {
-			return "", err
+			return "", "", err
 		}
 		scaled := &unstructured.Unstructured{}
 		scaled.SetGroupVersionKind(HTTPScaledObjectGVK)
@@ -103,7 +105,9 @@ func applyScaling(ctx context.Context, c client.Client, owner client.Object, pla
 		if _, err := controllerutil.CreateOrUpdate(ctx, c, scaled, func() error {
 			scaled.SetLabels(target.Labels)
 			scaled.Object["spec"] = map[string]any{
-				"hosts": routeHosts(target.Deployment, namespace, publicHosts...),
+				// The Service FQDN is accepted too: callers that have not read
+				// status.host send it.
+				"hosts": routeHosts(target.Deployment, namespace, append([]string{serviceFQDN(target.Service, namespace)}, publicHosts...)...),
 				"scaleTargetRef": map[string]any{
 					"apiVersion": "apps/v1", "kind": "Deployment", "name": target.Deployment,
 					"service": target.Service, "port": int64(target.ServicePort),
@@ -114,18 +118,18 @@ func applyScaling(ctx context.Context, c client.Client, owner client.Object, pla
 			}
 			return controllerutil.SetControllerReference(owner, scaled, c.Scheme())
 		}); err != nil {
-			return "", err
+			return "", "", err
 		}
-		return fmt.Sprintf("http://%s:%d", serviceFQDN(routeKey.Name, namespace), config.InterceptorPort), nil
+		return fmt.Sprintf("http://%s:%d", serviceFQDN(routeKey.Name, namespace), config.InterceptorPort), serviceFQDN(routeKey.Name, namespace), nil
 	}
 	if err := deleteHTTPScaledObject(ctx, c, target.Deployment, owner); err != nil {
-		return "", err
+		return "", "", err
 	}
 	if err := deleteIfOwned(ctx, c, &corev1.Service{}, routeKey, owner); err != nil {
-		return "", err
+		return "", "", err
 	}
 	if plan.Max <= plan.Min {
-		return direct, deleteIfOwned(ctx, c, &autoscalingv2.HorizontalPodAutoscaler{}, hpaKey, owner)
+		return direct, "", deleteIfOwned(ctx, c, &autoscalingv2.HorizontalPodAutoscaler{}, hpaKey, owner)
 	}
 	hpa := &autoscalingv2.HorizontalPodAutoscaler{ObjectMeta: metav1.ObjectMeta{Name: hpaKey.Name, Namespace: namespace}}
 	_, err := controllerutil.CreateOrUpdate(ctx, c, hpa, func() error {
@@ -140,7 +144,7 @@ func applyScaling(ctx context.Context, c client.Client, owner client.Object, pla
 		}
 		return controllerutil.SetControllerReference(owner, hpa, c.Scheme())
 	})
-	return direct, err
+	return direct, "", err
 }
 
 // deleteHTTPScaledObject removes an owned HTTPScaledObject. On a cluster

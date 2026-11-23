@@ -43,8 +43,8 @@ var digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 // BuildJobName is the Job that builds one source revision of a workload.
 func BuildJobName(workload, sourceHash string) string { return workload + "-build-" + sourceHash }
 
-// SourceHash identifies a build request: the source fields plus the
-// redeploy annotation, so a redeploy of a moving ref builds again.
+// SourceHash identifies a build request: the source fields plus
+// spec.restartedAt, so a redeploy of a moving ref builds again.
 func SourceHash(source *kiongav1.SourceSpec, redeploy string) string {
 	sum := sha256.Sum256([]byte(strings.Join([]string{source.Git, source.Ref, source.ContextDir, source.Dockerfile, redeploy}, "\x00")))
 	return fmt.Sprintf("%x", sum)[:10]
@@ -82,7 +82,7 @@ func (r *WorkloadReconciler) resolveImage(ctx context.Context, object client.Obj
 	if r.Config.Build.Registry == "" {
 		return "", invalid("BuildNotConfigured", "source builds need KIONGA_BUILD_REGISTRY on the operator")
 	}
-	hash := SourceHash(spec.Source, object.GetAnnotations()[RedeployAnnotation])
+	hash := SourceHash(spec.Source, spec.RestartedAt)
 	current := status.Image
 	if build := status.LastBuild; build != nil && build.SourceHash == hash && build.Phase == "Succeeded" && build.Image != "" {
 		return build.Image, nil

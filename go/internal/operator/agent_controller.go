@@ -282,7 +282,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 	} else if err != nil && !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, err
 	}
-	agentURL, err := applyScaling(ctx, r.Client, &agent, scaling, scalingTarget{Deployment: deployment.Name, Service: service.Name, ServicePort: 80, Labels: plan.Workload.Labels}, r.Config)
+	agentURL, _, err := applyScaling(ctx, r.Client, &agent, scaling, scalingTarget{Deployment: deployment.Name, Service: service.Name, ServicePort: 80, Labels: plan.Workload.Labels}, r.Config)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
