@@ -165,7 +165,7 @@ func withLiveStatus(app api.Application, object *unstructured.Unstructured) api.
 
 func (s *Server) recordLiveStatus(app api.Application) {
 	if _, err := store.RecordApplicationStatus(s.store, app.Name, app); err != nil && !errors.Is(err, store.ErrNotFound) {
-		log.Printf("record application %s status: %v", app.Name, err)
+		log.Printf("record application %q status: %v", app.Name, err)
 	}
 }
 
@@ -324,7 +324,8 @@ func (s *Server) saveApplication(w http.ResponseWriter, r *http.Request, access 
 	if err != nil {
 		if create {
 			if cleanupErr := deleteWorkload(context.WithoutCancel(r.Context()), access.dynamic, applicationsGVR, access.namespace, applicationObjectName(req.Name)); cleanupErr != nil {
-				log.Printf("remove KiongaApplication %s after a failed save: %v", req.Name, cleanupErr)
+				// %q keeps a name from forging a log line, whatever validation let through.
+				log.Printf("remove KiongaApplication %q after a failed save: %v", req.Name, cleanupErr)
 			}
 		}
 		writeMutation(w, saved, err, http.StatusAccepted)

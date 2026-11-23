@@ -174,6 +174,7 @@ func TestApplicationValidation(t *testing.T) {
 		{"reserved name", strings.Replace(createAppBody(projectID, ""), `"name":"billing"`, `"name":"console"`, 1), "name"},
 		{"workspace host family", strings.Replace(createAppBody(projectID, ""), `"name":"billing"`, `"name":"workbench-abc"`, 1), "name"},
 		{"not a DNS label", strings.Replace(createAppBody(projectID, ""), `"name":"billing"`, `"name":"Billing_App"`, 1), "name"},
+		{"newline in name", strings.Replace(createAppBody(projectID, ""), `"name":"billing"`, `"name":"billing\nlevel=error"`, 1), "name"},
 		{"image and source", createAppBody(projectID, `"source":{"git":"https://github.com/acme/a.git"}`), "image"},
 		{"bad port", strings.Replace(createAppBody(projectID, ""), `"port":3000`, `"port":70000`, 1), "port"},
 		{"cpu cannot scale to zero", strings.Replace(createAppBody(projectID, ""), `"metric":"requests","target":50`, `"metric":"cpu","target":70`, 1), "replicas.min"},
