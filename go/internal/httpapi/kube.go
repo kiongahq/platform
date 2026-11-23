@@ -222,9 +222,16 @@ func (status workloadStatus) failureReason(readyCondition string) string {
 	return "the operator reported the workload as failed"
 }
 
-// mapApplicationStatus turns a KiongaApplication status into the API status:
-// failed, ready (Ready=True), scaled-to-zero (Ready=True, no replicas while
-// min is 0), or pending until the operator reports otherwise.
+// mapApplicationStatus turns a KiongaApplication or KiongaFunction status
+// into the API status. The operator's phases are Building, Progressing,
+// Ready, Degraded and Failed:
+//
+//	Failed (or Ready=False with reason Failed) -> failed
+//	Ready with ready replicas                  -> ready
+//	Ready with none (scaled to zero)           -> scaled-to-zero
+//	Building, Progressing, Degraded, unknown   -> pending, with the reason
+//
+// A status for an older generation is pending whatever it says.
 func mapApplicationStatus(object *unstructured.Unstructured) (state string, message string) {
 	if object == nil {
 		return "missing", "the KiongaApplication resource does not exist"
@@ -239,16 +246,39 @@ func mapApplicationStatus(object *unstructured.Unstructured) (state string, mess
 	if reason := status.failureReason("Ready"); reason != "" {
 		return "failed", reason
 	}
-	if ready, ok := status.condition("Ready"); ok && strings.EqualFold(ready.Status, "True") {
-		if status.ReadyReplicas == 0 {
-			return "scaled-to-zero", ready.Message
+	ready, hasReady := status.condition("Ready")
+	detail := status.Message
+	if hasReady && ready.Message != "" {
+		detail = ready.Message
+	}
+	isReady := hasReady && strings.EqualFold(ready.Status, "True")
+	switch strings.ToLower(status.Phase) {
+	case "ready":
+		isReady = true
+	case "building":
+		if build, ok := status.condition("BuildSucceeded"); ok && build.Message != "" {
+			detail = build.Message
 		}
-		return "ready", ready.Message
+		return "pending", prefixed("building", detail)
+	case "progressing":
+		return "pending", prefixed("rolling out", detail)
+	case "degraded":
+		return "pending", prefixed("degraded", detail)
 	}
-	if ready, ok := status.condition("Ready"); ok && ready.Message != "" {
-		return "pending", ready.Message
+	if isReady {
+		if status.ReadyReplicas == 0 {
+			return "scaled-to-zero", detail
+		}
+		return "ready", detail
 	}
-	return "pending", status.Message
+	return "pending", detail
+}
+
+func prefixed(label, detail string) string {
+	if detail == "" {
+		return label
+	}
+	return label + ": " + detail
 }
 
 func asInt64(value any) int64 {
