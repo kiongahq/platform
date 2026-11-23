@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/kiongahq/platform/compare/v0.2.0...v0.2.1) (2026-11-23)
+
+
+### Fixes
+
+* **security:** gorilla/websocket with the GO-2026-6278 fix ([#143](https://github.com/kiongahq/platform/issues/143)) ([63919db](https://github.com/kiongahq/platform/commit/63919db24f48a84ea18663e7e827a6f09191b5ae))
+
 ## [0.2.0](https://github.com/kiongahq/platform/compare/v0.1.0...v0.2.0) (2026-11-23)
 
 
