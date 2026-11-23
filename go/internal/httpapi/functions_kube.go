@@ -184,6 +184,9 @@ func (s *Server) deployKubernetesFunction(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusServiceUnavailable, "kubernetes_unavailable", errKubernetesUnavailable.Error())
 		return
 	}
+	if req.Visibility == "" {
+		req.Visibility = "internal" // recorded as applied, not left empty
+	}
 	if len(req.Name) > api.MaxWorkloadNameLength {
 		writeError(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("function names on Kubernetes are at most %d characters", api.MaxWorkloadNameLength))
 		return

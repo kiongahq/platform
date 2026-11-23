@@ -35,6 +35,9 @@ func TestKubernetesFunctionDeployCreatesKiongaFunction(t *testing.T) {
 	if spec["visibility"] != "internal" {
 		t.Fatalf("functions default to internal visibility: %#v", spec)
 	}
+	if listed := harness.do(t, http.MethodGet, "/api/v1/functions", ""); !strings.Contains(listed.Body.String(), `"visibility":"internal"`) {
+		t.Fatalf("the default must be recorded too: %s", listed.Body.String())
+	}
 	if spec["image"] != "registry/fn:1" || minimum != 0 || metric != "requests" || target != api.DefaultRequestsTarget {
 		t.Fatalf("functions must default to scale-to-zero on requests: %#v", spec)
 	}
