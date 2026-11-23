@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -53,8 +54,17 @@ func main() {
 	// Private registries: Secret names in each workload namespace, referenced
 	// by every pod the operator creates.
 	pullSecrets := platformoperator.ParseImagePullSecrets(os.Getenv("KIONGA_IMAGE_PULL_SECRETS"))
+	workloads, err := platformoperator.LoadWorkloadConfig(os.Getenv)
+	must(err)
+	// KEDA's HTTP add-on and KServe are optional. Detect them once; a missing
+	// one degrades the affected resources with a status condition.
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(manager.GetConfig())
+	must(err)
+	capabilities, err := platformoperator.DetectCapabilities(discoveryClient)
+	must(err)
+	log.Printf("cluster capabilities: %s", capabilities)
 	must((&platformoperator.AgentReconciler{Client: manager.GetClient(), TraceProxyImage: env("TRACE_PROXY_IMAGE", "ghcr.io/kiongahq/trace-proxy:latest"), LangflowSidecarImage: env("LANGFLOW_SIDECAR_IMAGE", "ghcr.io/kiongahq/langflow-sidecar:latest"), GatewayURL: env("KIONGA_URL", "http://kionga-gateway.kionga-system:8080"),
-		ImagePullSecrets: pullSecrets, ProviderKeySecret: os.Getenv("KIONGA_LLM_PROVIDER_SECRET")}).SetupWithManager(manager))
+		ImagePullSecrets: pullSecrets, ProviderKeySecret: os.Getenv("KIONGA_LLM_PROVIDER_SECRET"), Config: workloads, Capabilities: capabilities}).SetupWithManager(manager))
 	must((&platformoperator.WorkspaceReconciler{
 		Client: manager.GetClient(), WorkbenchImage: env("WORKBENCH_IMAGE", "ghcr.io/kiongahq/jupyter:latest"),
 		IDEImage: env("IDE_IMAGE", "ghcr.io/kiongahq/ide:latest"), LangflowImage: env("LANGFLOW_IMAGE", "ghcr.io/kiongahq/langflow:latest"), LangflowSidecarImage: env("LANGFLOW_SIDECAR_IMAGE", "ghcr.io/kiongahq/langflow-sidecar:latest"), GatewayURL: env("KIONGA_URL", "http://kionga-gateway.kionga-system:8080"),
@@ -65,12 +75,18 @@ func main() {
 		AllowedStorageClasses: platformoperator.ParseStorageClasses(os.Getenv("WORKSPACE_ALLOWED_STORAGE_CLASSES")),
 		ImagePullSecrets:      pullSecrets,
 	}).SetupWithManager(manager))
-	must((&platformoperator.PipelineReconciler{
-		Client: manager.GetClient(), KFP: integrations.NewKFP(os.Getenv("KFP_URL"), os.Getenv("KFP_TOKEN")),
-		ExperimentID: os.Getenv("KFP_EXPERIMENT_ID"),
-	}).SetupWithManager(manager))
-	must((&platformoperator.ModelPromotionReconciler{
-		Client: manager.GetClient(), MLflow: integrations.NewMLflow(os.Getenv("MLFLOW_URL"), os.Getenv("MLFLOW_TOKEN")),
+	for _, kind := range []platformoperator.WorkloadKind{platformoperator.ApplicationKind, platformoperator.FunctionKind} {
+		must((&platformoperator.WorkloadReconciler{Client: manager.GetClient(), Kind: kind, Config: workloads, Capabilities: capabilities}).SetupWithManager(manager))
+	}
+	mlflow := integrations.NewMLflow(os.Getenv("MLFLOW_URL"), os.Getenv("MLFLOW_TOKEN"))
+	must((&platformoperator.ModelPromotionReconciler{Client: manager.GetClient(), MLflow: mlflow}).SetupWithManager(manager))
+	must((&platformoperator.ModelDeploymentReconciler{
+		Client: manager.GetClient(), MLflow: mlflow, Capabilities: capabilities,
+		Storage: platformoperator.ModelStorageConfig{
+			CredentialsSecret: os.Getenv("KIONGA_MODEL_STORAGE_SECRET"), Endpoint: os.Getenv("KIONGA_MODEL_S3_ENDPOINT"),
+			UseHTTPS: os.Getenv("KIONGA_MODEL_S3_USE_HTTPS"), Region: os.Getenv("KIONGA_MODEL_S3_REGION"),
+			ArtifactsDestination: os.Getenv("KIONGA_MLFLOW_ARTIFACTS_DESTINATION"), DeploymentMode: os.Getenv("KIONGA_KSERVE_DEPLOYMENT_MODE"),
+		},
 	}).SetupWithManager(manager))
 	must(manager.AddHealthzCheck("healthz", healthz.Ping))
 	must(manager.AddReadyzCheck("readyz", healthz.Ping))

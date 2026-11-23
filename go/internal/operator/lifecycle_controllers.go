@@ -6,52 +6,22 @@ import (
 	"strings"
 	"time"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kiongahq/platform/internal/integrations"
 	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
 
-type PipelineReconciler struct {
-	client.Client
-	KFP          integrations.KFP
-	ExperimentID string
+// StageTransitioner moves a registered model version to an MLflow stage.
+type StageTransitioner interface {
+	TransitionStage(ctx context.Context, name, version, stage string) error
 }
 
-func (r *PipelineReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	var run kiongav1.KiongaPipelineRun
-	if err := r.Get(ctx, request.NamespacedName, &run); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-	if run.Status.WorkflowRef != "" || run.Status.Phase == "Succeeded" {
-		return ctrl.Result{}, nil
-	}
-	now := metav1.Now()
-	run.Status.Phase, run.Status.StartedAt = "Submitting", &now
-	_ = r.Status().Update(ctx, &run)
-	result, err := r.KFP.Submit(ctx, r.ExperimentID, run.Spec.PipelineRef, run.Name, run.Spec.Parameters)
-	if err != nil {
-		run.Status.Phase, run.Status.Message = "Failed", err.Error()
-		_ = r.Status().Update(ctx, &run)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, err
-	}
-	reference := stringValue(result, "run_id", "runId", "id")
-	run.Status.Phase, run.Status.WorkflowRef, run.Status.Message = "Running", reference, "Submitted to KFP"
-	return ctrl.Result{}, r.Status().Update(ctx, &run)
-}
-
-func (r *PipelineReconciler) SetupWithManager(manager ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(manager).For(&kiongav1.KiongaPipelineRun{}).Complete(r)
-}
-
+// ModelPromotionReconciler applies a KiongaModelPromotion as an MLflow stage
+// transition. Serving a version is KiongaModelDeployment's job.
 type ModelPromotionReconciler struct {
 	client.Client
-	MLflow integrations.MLflow
+	MLflow StageTransitioner
 }
 
 func (r *ModelPromotionReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
@@ -64,27 +34,17 @@ func (r *ModelPromotionReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 	if promotion.Spec.TargetStage == "" {
 		promotion.Status.Phase, promotion.Status.Message = "Failed", "targetStage is required"
-		_ = r.Status().Update(ctx, &promotion)
-		return ctrl.Result{}, fmt.Errorf("targetStage is required")
+		return ctrl.Result{}, r.Status().Update(ctx, &promotion)
 	}
-	stage := strings.ToUpper(string(promotion.Spec.TargetStage[0])) + promotion.Spec.TargetStage[1:]
+	stage := strings.ToUpper(promotion.Spec.TargetStage[:1]) + promotion.Spec.TargetStage[1:]
 	if err := r.MLflow.TransitionStage(ctx, promotion.Spec.ModelName, promotion.Spec.Version, stage); err != nil {
 		promotion.Status.Phase, promotion.Status.Message = "Failed", err.Error()
-		_ = r.Status().Update(ctx, &promotion)
-		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
+		if updateErr := r.Status().Update(ctx, &promotion); updateErr != nil {
+			return ctrl.Result{}, updateErr
+		}
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 	}
-	name := dnsLabel(promotion.Spec.ModelName + "-" + promotion.Spec.Version)
-	service := &unstructured.Unstructured{}
-	service.SetGroupVersionKind(schema.GroupVersionKind{Group: "serving.kserve.io", Version: "v1beta1", Kind: "InferenceService"})
-	service.SetName(name)
-	service.SetNamespace(promotion.Namespace)
-	service.Object["spec"] = map[string]any{"predictor": map[string]any{"model": map[string]any{
-		"modelFormat": map[string]any{"name": "mlflow"}, "storageUri": fmt.Sprintf("models:/%s/%s", promotion.Spec.ModelName, promotion.Spec.Version),
-	}}}
-	if err := r.Create(ctx, service); err != nil && !apierrors.IsAlreadyExists(err) {
-		return ctrl.Result{}, err
-	}
-	promotion.Status.Phase, promotion.Status.Message, promotion.Status.InferenceServiceRef = "Succeeded", "MLflow stage transitioned and KServe resource created", name
+	promotion.Status.Phase, promotion.Status.Message = "Succeeded", fmt.Sprintf("MLflow version %s of %s moved to %s", promotion.Spec.Version, promotion.Spec.ModelName, stage)
 	return ctrl.Result{}, r.Status().Update(ctx, &promotion)
 }
 
@@ -92,14 +52,6 @@ func (r *ModelPromotionReconciler) SetupWithManager(manager ctrl.Manager) error 
 	return ctrl.NewControllerManagedBy(manager).For(&kiongav1.KiongaModelPromotion{}).Complete(r)
 }
 
-func stringValue(values map[string]any, keys ...string) string {
-	for _, key := range keys {
-		if value, ok := values[key].(string); ok {
-			return value
-		}
-	}
-	return ""
-}
 func dnsLabel(value string) string {
 	value = strings.ToLower(strings.NewReplacer(".", "-", "_", "-", "/", "-").Replace(value))
 	return strings.Trim(value, "-")

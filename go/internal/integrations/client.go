@@ -63,25 +63,56 @@ func (c *Client) jsonWithMediaType(ctx context.Context, method, path string, inp
 	return json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(output)
 }
 
-type KFP struct{ client *Client }
-
-func NewKFP(baseURL, token string) KFP { return KFP{client: New(baseURL, token)} }
-func (k KFP) Submit(ctx context.Context, experimentID, pipelineVersionID, name string, parameters map[string]string) (map[string]any, error) {
-	inputs := make([]map[string]string, 0, len(parameters))
-	for key, value := range parameters {
-		inputs = append(inputs, map[string]string{"name": key, "value": value})
-	}
-	payload := map[string]any{"display_name": name, "experiment_id": experimentID, "pipeline_version_reference": map[string]string{"pipeline_version_id": pipelineVersionID}, "runtime_config": map[string]any{"parameters": inputs}}
-	var result map[string]any
-	err := k.client.JSON(ctx, http.MethodPost, "/apis/v2beta1/runs", payload, &result)
-	return result, err
-}
-
 type MLflow struct{ client *Client }
 
 func NewMLflow(baseURL, token string) MLflow { return MLflow{client: New(baseURL, token)} }
 func (m MLflow) TransitionStage(ctx context.Context, name, version, stage string) error {
 	return m.client.JSON(ctx, http.MethodPost, "/api/2.0/mlflow/model-versions/transition-stage", map[string]any{"name": name, "version": version, "stage": stage, "archive_existing_versions": stage == "Production"}, &map[string]any{})
+}
+
+// ModelVersionDownloadURI returns where MLflow stores a registered model
+// version's artifacts (GET model-versions/get-download-uri). The server
+// resolves runs:/ and models:/ sources to the backing store location.
+func (m MLflow) ModelVersionDownloadURI(ctx context.Context, name, version string) (string, error) {
+	var result struct {
+		ArtifactURI string `json:"artifact_uri"`
+	}
+	query := url.Values{"name": {name}, "version": {version}}
+	if err := m.client.JSON(ctx, http.MethodGet, "/api/2.0/mlflow/model-versions/get-download-uri?"+query.Encode(), nil, &result); err != nil {
+		return "", err
+	}
+	return result.ArtifactURI, nil
+}
+
+// RunArtifactURI returns a run's artifact root (GET runs/get).
+func (m MLflow) RunArtifactURI(ctx context.Context, runID string) (string, error) {
+	var result struct {
+		Run struct {
+			Info struct {
+				ArtifactURI string `json:"artifact_uri"`
+			} `json:"info"`
+		} `json:"run"`
+	}
+	if err := m.client.JSON(ctx, http.MethodGet, "/api/2.0/mlflow/runs/get?"+url.Values{"run_id": {runID}}.Encode(), nil, &result); err != nil {
+		return "", err
+	}
+	return result.Run.Info.ArtifactURI, nil
+}
+
+// LoggedModelArtifactURI returns an MLflow 3 logged model's artifact location
+// (GET logged-models/{model_id}).
+func (m MLflow) LoggedModelArtifactURI(ctx context.Context, modelID string) (string, error) {
+	var result struct {
+		Model struct {
+			Info struct {
+				ArtifactURI string `json:"artifact_uri"`
+			} `json:"info"`
+		} `json:"model"`
+	}
+	if err := m.client.JSON(ctx, http.MethodGet, "/api/2.0/mlflow/logged-models/"+url.PathEscape(modelID), nil, &result); err != nil {
+		return "", err
+	}
+	return result.Model.Info.ArtifactURI, nil
 }
 
 type Langfuse struct{ client *Client }
@@ -92,8 +123,8 @@ func (l Langfuse) Ingest(ctx context.Context, batch []map[string]any) error {
 }
 
 // Prefect drives real pipeline execution against a self-hosted Prefect
-// server (the Compose-native fulfilment of the pipeline engine; KFP
-// remains the Kubernetes path).
+// server (the Compose-native fulfilment of the pipeline engine; Kubernetes
+// runs pipeline nodes as Jobs, see internal/k8sexec).
 type Prefect struct{ client *Client }
 
 // NewPrefect accepts the Prefect convention (PREFECT_API_URL ends in /api)
