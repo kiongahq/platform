@@ -291,3 +291,30 @@ func TestModelDeploymentRepeatedFailureDoesNotRewriteStatus(t *testing.T) {
 		t.Fatalf("identical failure rewrote status: rv %s -> %s", first.ResourceVersion, second.ResourceVersion)
 	}
 }
+
+type failingTransitioner struct{ calls int }
+
+func (f *failingTransitioner) TransitionStage(context.Context, string, string, string) error {
+	f.calls++
+	return errors.New("integration returned 503: unavailable")
+}
+
+// A promotion that keeps failing retries on its 15 second schedule and does
+// not rewrite an unchanged status, which would queue an immediate retry.
+func TestModelPromotionRepeatedFailureDoesNotRewriteStatus(t *testing.T) {
+	promotion := &kiongav1.KiongaModelPromotion{ObjectMeta: metav1.ObjectMeta{Name: "churn-3", Namespace: testNamespace}, Spec: kiongav1.KiongaModelPromotionSpec{ModelName: "churn", Version: "3", TargetStage: "production"}}
+	c := testClient(testScheme(t), promotion)
+	mlflow := &failingTransitioner{}
+	reconciler := &ModelPromotionReconciler{Client: c, MLflow: mlflow}
+	if result := reconcileOnce(t, reconciler, "churn-3"); result.RequeueAfter == 0 {
+		t.Fatal("a failed transition must be retried")
+	}
+	var first kiongav1.KiongaModelPromotion
+	get(t, c, "churn-3", &first)
+	reconcileOnce(t, reconciler, "churn-3")
+	var second kiongav1.KiongaModelPromotion
+	get(t, c, "churn-3", &second)
+	if first.Status.Phase != "Failed" || second.ResourceVersion != first.ResourceVersion {
+		t.Fatalf("repeated failure rewrote status: phase=%s rv %s -> %s", first.Status.Phase, first.ResourceVersion, second.ResourceVersion)
+	}
+}
