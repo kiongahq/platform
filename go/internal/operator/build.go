@@ -190,7 +190,7 @@ func (r *WorkloadReconciler) buildJob(object client.Object, source *kiongav1.Sou
 	if config.Insecure {
 		output += ",registry.insecure=true"
 	}
-	args := []string{"build", "--frontend", "dockerfile.v0", "--opt", "context=" + BuildContext(source)}
+	args := []string{"--frontend", "dockerfile.v0", "--opt", "context=" + BuildContext(source)}
 	if source.Dockerfile != "" {
 		args = append(args, "--opt", "filename="+source.Dockerfile)
 	}

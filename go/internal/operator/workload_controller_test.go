@@ -537,3 +537,29 @@ func TestSteadyStateReconcileDoesNotRewriteStatus(t *testing.T) {
 		t.Fatalf("steady state rewrote status: phase=%s rv %s -> %s", first.Status.Phase, first.ResourceVersion, second.ResourceVersion)
 	}
 }
+
+// The script runs `buildctl-daemonless.sh build "$@"`, so the Job's
+// positional arguments must start at the first flag: a leading "build" would
+// make buildctl run `build build`, which fails.
+func TestBuildJobCommandIsExact(t *testing.T) {
+	reconciler := applicationReconciler(nil, false)
+	app := application("billing", kiongav1.WorkloadSpec{})
+	source := &kiongav1.SourceSpec{Git: "https://github.com/acme/billing.git", Ref: "v2", Dockerfile: "Dockerfile"}
+	job := reconciler.buildJob(app, source, "billing-build-abc", "abc")
+	command := job.Spec.Template.Spec.Containers[0].Command
+	if len(command) < 4 || command[0] != "sh" || command[1] != "-c" || command[3] != "kionga-build" {
+		t.Fatalf("command prefix: %q", command)
+	}
+	if !strings.Contains(command[2], `buildctl-daemonless.sh build "$@"`) {
+		t.Fatalf("script must pass the arguments to buildctl build: %s", command[2])
+	}
+	want := []string{
+		"--frontend", "dockerfile.v0",
+		"--opt", "context=https://github.com/acme/billing.git#v2",
+		"--opt", "filename=Dockerfile",
+		"--output", "type=image,name=registry.example.net/kionga/team-a-billing:abc,push=true",
+	}
+	if got := command[4:]; strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("buildctl arguments:\n got  %q\n want %q", got, want)
+	}
+}
