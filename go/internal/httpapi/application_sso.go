@@ -139,16 +139,47 @@ func verifyAppToken(raw, kind, app string, now time.Time) (appToken, error) {
 	return token, nil
 }
 
-// safeAppNext accepts only a local absolute path.
+// safeAppNext returns next when it is a local path on the application host,
+// otherwise "/". It accepts only a path that starts with exactly one "/",
+// and rejects:
+//   - "//" and "/\" starts (protocol-relative and browser-normalised hosts);
+//   - any backslash, control character, space or non-ASCII byte, raw or
+//     percent-encoded (tab and newline injection, %2f%2f and %5c tricks);
+//   - anything url.Parse reads as having a scheme, host, user or opaque part;
+//   - the sign-in endpoint itself.
+//
+// The result is rebuilt from the parsed path and query, never from the input.
 func safeAppNext(next string) string {
-	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.Contains(next, "\\") || strings.HasPrefix(next, appSSOPath) {
+	if len(next) > 2048 || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
 		return "/"
+	}
+	decoded, err := url.PathUnescape(next)
+	if err != nil {
+		return "/"
+	}
+	for _, candidate := range []string{next, decoded} {
+		if strings.HasPrefix(candidate, "//") || strings.HasPrefix(candidate, "/\\") || strings.ContainsAny(candidate, "\\") {
+			return "/"
+		}
+		for _, char := range candidate {
+			if char <= ' ' || char >= 0x7f {
+				return "/"
+			}
+		}
 	}
 	parsed, err := url.Parse(next)
-	if err != nil || parsed.IsAbs() || parsed.Host != "" {
+	if err != nil || parsed.Scheme != "" || parsed.Host != "" || parsed.User != nil || parsed.Opaque != "" || parsed.Fragment != "" {
 		return "/"
 	}
-	return parsed.RequestURI()
+	if !strings.HasPrefix(parsed.Path, "/") || strings.HasPrefix(parsed.Path, "//") || parsed.Path == appSSOPath || strings.HasPrefix(parsed.Path, appSSOPath+"/") {
+		return "/"
+	}
+	local := &url.URL{Path: parsed.Path, RawPath: parsed.RawPath, RawQuery: parsed.RawQuery}
+	result := local.String()
+	if !strings.HasPrefix(result, "/") || strings.HasPrefix(result, "//") || strings.HasPrefix(result, "/\\") {
+		return "/"
+	}
+	return result
 }
 
 func applicationConsoleOrigin() string {

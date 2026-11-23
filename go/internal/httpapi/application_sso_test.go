@@ -213,9 +213,47 @@ func TestAppTokens(t *testing.T) {
 			t.Fatalf("%s token accepted", name)
 		}
 	}
-	for next, want := range map[string]string{"/a?b=1": "/a?b=1", "//evil.test/": "/", "https://evil.test/": "/", "/_kionga/sso?ticket=x": "/", "": "/", `/\evil`: "/"} {
+	for next, want := range map[string]string{"/a?b=1": "/a?b=1", "/": "/", "/dashboard/settings": "/dashboard/settings", "/a%2Fb": "/a%2Fb"} {
 		if got := safeAppNext(next); got != want {
-			t.Fatalf("safeAppNext(%q) = %q", next, got)
+			t.Fatalf("safeAppNext(%q) = %q, want %q", next, got, want)
+		}
+	}
+}
+
+func TestSafeAppNextRejectsOpenRedirects(t *testing.T) {
+	for _, payload := range []string{
+		"", "dashboard", "//evil.com", "//evil.com/path", "/\\evil.com", "/\\/evil.com", "\\evil.com", "https://evil.com", "http://evil.com/",
+		"HTTPS://evil.com", "javascript:alert(1)", "/%2f%2fevil.com", "%2f%2fevil.com", "/%5cevil.com", "/%5c%5cevil.com",
+		"/\tevil.com", "/\t/evil.com", "/\n/evil.com", "/\r\n//evil.com", "/ /evil.com", "/%09/evil.com", "/%0a/evil.com",
+		"//user@evil.com", "/@evil.com/..", "https://billing.apps.example.com@evil.com/", "//billing.apps.example.com@evil.com",
+		"/_kionga/sso?ticket=x", "/_kionga/sso/../x", "/a#frag", "/caf\u00e9", "/%ff",
+	} {
+		got := safeAppNext(payload)
+		parsed, err := url.Parse(got)
+		if err != nil || parsed.Host != "" || parsed.Scheme != "" || !strings.HasPrefix(got, "/") || strings.HasPrefix(got, "//") || strings.Contains(got, "\\") {
+			t.Fatalf("safeAppNext(%q) = %q escapes the host", payload, got)
+		}
+		if got != "/" && payload != "/@evil.com/.." {
+			t.Fatalf("safeAppNext(%q) = %q, want /", payload, got)
+		}
+	}
+	// A local path that merely contains an @ stays on the application host.
+	if got := safeAppNext("/@evil.com/.."); got != "/@evil.com/.." {
+		t.Fatalf("local @ path: %q", got)
+	}
+}
+
+func TestSignInRedirectsStayOnTheApplicationHost(t *testing.T) {
+	h := newSSOHarness(t)
+	for _, next := range []string{"//evil.com", "/\\evil.com", "https://evil.com", "%2f%2fevil.com", "/%2f%2fevil.com", "/\t/evil.com"} {
+		handoff := h.get("https://console.example.com/applications/billing/sso?next="+url.QueryEscape(next), person("alice", "prj-demo"))
+		location, _ := url.Parse(handoff.Header().Get("Location"))
+		if handoff.Code != http.StatusFound || location.Host != "billing.apps.example.com" {
+			t.Fatalf("%q handoff: %d %s", next, handoff.Code, handoff.Header().Get("Location"))
+		}
+		redeemed := h.get("http://billing.apps.example.com"+location.RequestURI(), nil)
+		if redeemed.Code != http.StatusSeeOther || redeemed.Header().Get("Location") != "/" {
+			t.Fatalf("%q: redirected to %q", next, redeemed.Header().Get("Location"))
 		}
 	}
 }
