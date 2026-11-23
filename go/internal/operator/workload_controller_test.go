@@ -86,7 +86,7 @@ func TestApplicationCreatesOwnedWorkloadWithProbesIngressAndBudget(t *testing.T)
 	if rule.Host != "billing.kionga.example.net" || *ingress.Spec.IngressClassName != "traefik" || ingress.Spec.TLS[0].SecretName != "kionga-wildcard-tls" || ingress.Spec.TLS[0].Hosts[0] != rule.Host {
 		t.Fatalf("ingress host/class/tls: %#v", ingress.Spec)
 	}
-	if backend.Name != "billing" || backend.Port.Number != 80 {
+	if backend.Name != "billing" || backend.Port.Number != 9000 {
 		t.Fatalf("cpu-scaled public ingress must hit the Service directly: %#v", backend)
 	}
 	var budget policyv1.PodDisruptionBudget
@@ -104,7 +104,7 @@ func TestApplicationCreatesOwnedWorkloadWithProbesIngressAndBudget(t *testing.T)
 
 	var stored kiongav1.KiongaApplication
 	get(t, c, "billing", &stored)
-	if stored.Status.Phase != "Progressing" || stored.Status.URL != "https://billing.kionga.example.net" || stored.Status.InternalURL != "http://billing.team-a.svc.cluster.local" || stored.Status.Image != "registry.example.net/billing:1" {
+	if stored.Status.Phase != "Progressing" || stored.Status.URL != "https://billing.kionga.example.net" || stored.Status.InternalURL != "http://billing.team-a.svc.cluster.local:9000" || stored.Status.Host != "" || stored.Status.Image != "registry.example.net/billing:1" {
 		t.Fatalf("status before rollout: %#v", stored.Status)
 	}
 	markAvailable(t, c, "billing", 2)
@@ -245,7 +245,7 @@ func TestApplicationSSORoutesThroughGateway(t *testing.T) {
 	var ingress networkingv1.Ingress
 	get(t, c, "admin", &ingress)
 	backend := ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service
-	if backend.Name != "admin-sso" || backend.Port.Number != 8080 || ingress.Annotations[VisibilityAnnotation] != "sso" || ingress.Annotations[UpstreamAnnotation] != "http://admin.team-a.svc.cluster.local" {
+	if backend.Name != "admin-sso" || backend.Port.Number != 8080 || ingress.Annotations[VisibilityAnnotation] != "sso" || ingress.Annotations[UpstreamAnnotation] != "http://admin.team-a.svc.cluster.local:8080" {
 		t.Fatalf("sso ingress: backend=%#v annotations=%v", backend, ingress.Annotations)
 	}
 	var gateway corev1.Service
@@ -354,7 +354,7 @@ func TestFunctionWithoutKEDAKeepsOneReplica(t *testing.T) {
 	}
 	var stored kiongav1.KiongaFunction
 	get(t, c, "resize", &stored)
-	if stored.Status.InternalURL != "http://resize.team-a.svc.cluster.local" {
+	if stored.Status.InternalURL != "http://resize.team-a.svc.cluster.local:8080" || stored.Status.Host != "" {
 		t.Fatalf("without KEDA the gateway calls the Service directly: %s", stored.Status.InternalURL)
 	}
 }
@@ -465,12 +465,12 @@ func TestSourceBuildRunsJobThenRollsToDigest(t *testing.T) {
 	}
 
 	// A redeploy builds again; a failed build keeps the running image.
-	stored.Annotations = map[string]string{RedeployAnnotation: "2"}
+	stored.Spec.RestartedAt = "2026-11-24T09:00:00Z"
 	if err := c.Update(context.Background(), &stored); err != nil {
 		t.Fatal(err)
 	}
 	reconcileOnce(t, reconciler, "billing")
-	second := BuildJobName("billing", SourceHash(source, "2"))
+	second := BuildJobName("billing", SourceHash(source, "2026-11-24T09:00:00Z"))
 	get(t, c, second, &job)
 	job.Status = batchv1.JobStatus{Failed: 1, Conditions: []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Message: "BackoffLimitExceeded"}}}
 	if err := c.Status().Update(context.Background(), &job); err != nil {
@@ -642,5 +642,62 @@ func TestRevokedSecretLeavesRunningPods(t *testing.T) {
 	get(t, c, "billing", &stored)
 	if condition(stored.Status.Conditions, ConditionReady).Reason != "SecretNotAllowed" {
 		t.Fatalf("status: %#v", stored.Status)
+	}
+}
+
+// The gateway (internal/httpapi) builds against these fields with
+// unstructured objects: pods labelled kionga.dev/application=<name> for logs,
+// a Service on the container port for CPU-scaled calls, status.host for the
+// interceptor Host header, status.message, and spec.restartedAt for redeploy.
+func TestGatewayContractFields(t *testing.T) {
+	replicas := kiongav1.WorkloadReplicaSpec{Min: 0, Max: 2}
+	app := application("billing", kiongav1.WorkloadSpec{Image: "billing:1", Port: 3000, Visibility: kiongav1.VisibilityPublic, Replicas: &replicas})
+	c := testClient(testScheme(t, HTTPScaledObjectGVK), app)
+	reconciler := applicationReconciler(c, true)
+	reconcileOnce(t, reconciler, "billing")
+
+	var deployment appsv1.Deployment
+	get(t, c, "billing", &deployment)
+	if deployment.Spec.Template.Labels["kionga.dev/application"] != "billing" || deployment.Spec.Selector.MatchLabels["kionga.dev/application"] != "" {
+		t.Fatalf("pods need the application label, outside the immutable selector: template=%v selector=%v", deployment.Spec.Template.Labels, deployment.Spec.Selector.MatchLabels)
+	}
+	var service corev1.Service
+	get(t, c, "billing", &service)
+	if service.Spec.Ports[0].Port != 3000 {
+		t.Fatalf("the Service must listen on the container port: %d", service.Spec.Ports[0].Port)
+	}
+	scaled := unstructuredOf(HTTPScaledObjectGVK)
+	get(t, c, "billing", scaled)
+	hosts, _, _ := unstructured.NestedStringSlice(scaled.Object, "spec", "hosts")
+	port, _, _ := unstructured.NestedInt64(scaled.Object, "spec", "scaleTargetRef", "port")
+	if !contains(hosts, "billing.team-a.svc.cluster.local") || port != 3000 {
+		t.Fatalf("the interceptor must accept the Service FQDN and forward to the container port: hosts=%v port=%d", hosts, port)
+	}
+	var stored kiongav1.KiongaApplication
+	get(t, c, "billing", &stored)
+	if stored.Status.Host != "billing-route.team-a.svc.cluster.local" || stored.Status.Message == "" || stored.Status.Message != condition(stored.Status.Conditions, ConditionReady).Message {
+		t.Fatalf("status.host and status.message: %#v", stored.Status)
+	}
+
+	// A redeploy of an image workload sets spec.restartedAt; the pods roll.
+	stored.Spec.RestartedAt = "2026-11-24T09:00:00Z"
+	if err := c.Update(context.Background(), &stored); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, reconciler, "billing")
+	get(t, c, "billing", &deployment)
+	if deployment.Spec.Template.Annotations[RestartedAtAnnotation] != "2026-11-24T09:00:00Z" {
+		t.Fatalf("redeploy did not change the pod template: %v", deployment.Spec.Template.Annotations)
+	}
+}
+
+func TestFunctionPodsCarryFunctionLabel(t *testing.T) {
+	fn := &kiongav1.KiongaFunction{ObjectMeta: metav1.ObjectMeta{Name: "resize", Namespace: testNamespace}, Spec: kiongav1.WorkloadSpec{Image: "resize:1"}}
+	c := testClient(testScheme(t), fn)
+	reconcileOnce(t, &WorkloadReconciler{Client: c, Kind: FunctionKind, Config: testConfig()}, "resize")
+	var deployment appsv1.Deployment
+	get(t, c, "resize", &deployment)
+	if deployment.Spec.Template.Labels["kionga.dev/function"] != "resize" {
+		t.Fatalf("function pods need kionga.dev/function: %v", deployment.Spec.Template.Labels)
 	}
 }

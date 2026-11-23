@@ -190,15 +190,21 @@ reference, so deleting the custom resource deletes them.
 - **Applications and functions** (`workload_controller.go`) share one
   reconciler. Each gets a Deployment with startup, readiness and liveness
   probes on `healthPath`. Without `healthPath` the probes use TCP. Rollouts
-  never take a pod away before its replacement is ready. Each also gets a
-  ClusterIP Service on port 80, and a PodDisruptionBudget when min >= 2.
+  never take a pod away before its replacement is ready. Pods carry
+  `kionga.dev/application=<name>` or `kionga.dev/function=<name>`, which the
+  gateway uses for logs and events. Each workload also gets a ClusterIP Service
+  on the container port, and a PodDisruptionBudget when min >= 2.
+  `spec.restartedAt` (set by a redeploy) rolls the pods. `status.message`
+  repeats the Ready condition message.
   Applications default to `visibility: sso` and one replica. Functions default
   to `internal`, scale to zero on requests and have no Ingress.
 - **Scaling** (`workload_scaling.go`, `workload_objects.go`). `requests` creates
   a KEDA HTTP add-on `HTTPScaledObject` and an ExternalName Service
   `<name>-route` pointing at the interceptor. Callers reach the workload
-  through `status.internalURL`, and the interceptor counts each request and can
-  wake a scaled-to-zero Deployment. The `HTTPScaledObject` names its
+  through `status.internalURL` (or the interceptor with `status.host` as the
+  `Host` header), and the interceptor counts each request and can wake a
+  scaled-to-zero Deployment. It also accepts the Service name,
+  `<name>.<namespace>.svc.cluster.local`. The `HTTPScaledObject` names its
   Deployment in `scaleTargetRef.name` (with `apiVersion`, `kind`, `service`
   and `port`), the shape of HTTP add-on 0.8 and later; tested against the
   v0.16.0 CRD. `cpu` creates a HorizontalPodAutoscaler,
@@ -222,8 +228,8 @@ reference, so deleting the custom resource deletes them.
   (`KIONGA_BUILDKIT_IMAGE`) builds `source.git` and pushes the image to
   `KIONGA_BUILD_REGISTRY` with the credentials in `KIONGA_BUILD_PUSH_SECRET`.
   It writes the digest to its termination message. The Deployment then rolls
-  to `<registry>/<namespace>-<name>@<digest>`. Changing the annotation
-  `kionga.dev/redeploy` rebuilds the same ref. A failed build keeps the
+  to `<registry>/<namespace>-<name>@<digest>`. A new `spec.restartedAt`
+  rebuilds the same ref. A failed build keeps the
   previous image running. Builds carry no Git credentials, so `source.git`
   must be a public `https://` URL. SSH URLs and URLs with credentials in them
   are rejected. Rootless BuildKit needs unconfined seccomp and
@@ -237,9 +243,9 @@ reference, so deleting the custom resource deletes them.
   `serving.kserve.io/s3-*` annotations, bound through a ServiceAccount for
   KServe's storage initializer. It then creates the `InferenceService` in
   `RawDeployment` mode. Raw mode has no `canaryTrafficPercent` (KServe 0.21
-  documents canary as serverless-only), so a canary is a second
-  `InferenceService`, `<name>-canary`, and the gateway splits traffic by
-  `status.canaryWeight`. Promotion only changes the MLflow stage.
+  documents canary as serverless-only), so `spec.canaryVersion` becomes a
+  second `InferenceService`, `<name>-canary`, and the gateway sends
+  `spec.canaryWeight` percent of requests to `status.canaryURL`. Promotion only changes the MLflow stage.
 - **Pipelines.** On Kubernetes the gateway runs pipeline nodes as Jobs
   (`k8sexec`). There is no pipeline custom resource.
 
