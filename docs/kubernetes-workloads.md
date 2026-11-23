@@ -45,8 +45,18 @@ The gateway reads `status.phase`, `status.url`, `status.readyReplicas`,
 `status.message`, `status.conditions` and `status.lastBuild`. Status maps to
 `failed` (phase `Failed`, or `Ready=False` with reason `Failed`), `ready`
 (`Ready=True`), `scaled-to-zero` (`Ready=True` with no ready replicas) and
-otherwise `pending`. Logs and events come from pods labelled
-`kionga.dev/application=<name>`.
+otherwise `pending`. Responses carry `generation` (`metadata.generation`) and
+`observed_generation` (`status.observedGeneration`); while the operator has
+not observed the current generation the status is `pending`, so a client
+waiting after an update never reads the previous rollout. The operator must
+write `status.observedGeneration`.
+
+Logs and events come from pods labelled `kionga.dev/application=<name>`;
+events are matched by object UID. `GET …/logs?follow=true` is a Server-Sent
+Events stream: each line is `id: <RFC 3339 timestamp>`, `event: log`,
+`data: {"pod", "container", "time", "line"}`, and the stream ends with
+`event: end` and a reason. It is bounded (20 pods, `max_seconds` default 600,
+at most 3600) and resumes from `Last-Event-ID` or `?since=`.
 
 ## Functions
 
@@ -66,6 +76,13 @@ replica and is called on its Service directly.
 `invoke-async` on Kubernetes accepts the call and runs it in the background of
 the gateway replica that received it. There is no queue: a call is lost if
 that replica stops before it completes. The outcome is logged with the call id.
+
+## Agents
+
+Agent deploys (`POST /api/v1/agents` and `POST /api/v1/agent-versions/{id}/deploy`)
+accept `scaling {metric, target}`: `requests` (1 to 10000 concurrent requests
+per replica, default 100) or `cpu` (1 to 100 percent). It becomes
+`spec.scaling` on the `KiongaAgent`.
 
 ## Model deployment
 
