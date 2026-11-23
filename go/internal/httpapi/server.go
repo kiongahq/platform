@@ -26,6 +26,8 @@ import (
 	"github.com/kiongahq/platform/internal/runtimeconfig"
 	"github.com/kiongahq/platform/internal/store"
 	"github.com/kiongahq/platform/pkg/api"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type Server struct {
@@ -1435,18 +1437,62 @@ func (s *Server) agentTraffic(w http.ResponseWriter, r *http.Request) {
 	writeMutation(w, item, err, http.StatusOK)
 }
 
-// agentRuntimeEndpoint keeps Compose's shared runtime override while routing
-// Kubernetes traffic to the immutable ID-derived Service reconciled for the
-// selected agent.
-func agentRuntimeEndpoint(agentID string) string {
+// agentRuntimeEndpoint keeps Compose's shared runtime override. On
+// Kubernetes it is the agent's status.url, which the operator points at the
+// KEDA HTTP interceptor (through an ExternalName Service) when the agent
+// scales on requests: calling the agent's own Service would bypass the
+// interceptor and the agent would never scale on load. Before the operator
+// has published status.url it falls back to the ID-derived Service.
+func agentRuntimeEndpoint(ctx context.Context, agentID string) string {
+	return agentRuntimeEndpoints(ctx, []string{agentID})[agentID]
+}
+
+// agentRuntimeEndpoints resolves several agents with one list call.
+func agentRuntimeEndpoints(ctx context.Context, agentIDs []string) map[string]string {
+	endpoints := make(map[string]string, len(agentIDs))
 	if override := strings.TrimSpace(os.Getenv("AGENT_RUNTIME_URL")); override != "" {
-		return strings.TrimRight(override, "/")
+		for _, id := range agentIDs {
+			endpoints[id] = strings.TrimRight(override, "/")
+		}
+		return endpoints
 	}
-	namespace := strings.TrimSpace(os.Getenv("KIONGA_AGENT_NAMESPACE"))
-	if namespace == "" {
-		namespace = "default"
+	namespace := agentNamespace()
+	for _, id := range agentIDs {
+		endpoints[id] = fmt.Sprintf("http://%s.%s.svc", api.AgentDNSName(id), namespace)
 	}
-	return fmt.Sprintf("http://%s.%s.svc", api.AgentDNSName(agentID), namespace)
+	if !kubernetesMode() || len(agentIDs) == 0 {
+		return endpoints
+	}
+	access, err := kubeAccessFactory()
+	if err != nil {
+		return endpoints
+	}
+	resources := access.dynamic.Resource(agentIdentityResource).Namespace(namespace)
+	published := map[string]string{}
+	if len(agentIDs) == 1 {
+		if object, getErr := resources.Get(ctx, api.AgentDNSName(agentIDs[0]), metav1.GetOptions{}); getErr == nil {
+			published[object.GetName()], _, _ = unstructured.NestedString(object.Object, "status", "url")
+		}
+	} else if list, listErr := resources.List(ctx, metav1.ListOptions{}); listErr == nil {
+		for i := range list.Items {
+			published[list.Items[i].GetName()], _, _ = unstructured.NestedString(list.Items[i].Object, "status", "url")
+		}
+	}
+	for _, id := range agentIDs {
+		if value := published[api.AgentDNSName(id)]; value != "" {
+			if parsed, parseErr := url.Parse(value); parseErr == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" && parsed.User == nil {
+				endpoints[id] = strings.TrimRight(parsed.String(), "/")
+			}
+		}
+	}
+	return endpoints
+}
+
+func agentNamespace() string {
+	if namespace := strings.TrimSpace(os.Getenv("KIONGA_AGENT_NAMESPACE")); namespace != "" {
+		return namespace
+	}
+	return "default"
 }
 
 func setAgentRuntimeHeaders(request *http.Request, agent *api.Agent) {
@@ -1482,8 +1528,13 @@ func enrichAgentRuntimeReadiness(parent context.Context, agents []api.Agent) {
 	if len(agents) == 0 {
 		return
 	}
+	ids := make([]string, len(agents))
 	for index := range agents {
-		agents[index].EndpointURL = agentRuntimeEndpoint(agents[index].ID)
+		ids[index] = agents[index].ID
+	}
+	endpoints := agentRuntimeEndpoints(parent, ids)
+	for index := range agents {
+		agents[index].EndpointURL = endpoints[agents[index].ID]
 		agents[index].Status = "pending"
 	}
 	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
@@ -1538,7 +1589,7 @@ func (s *Server) invokeAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "validation_error", "message is required")
 		return
 	}
-	runtime := agentRuntimeEndpoint(agent.ID)
+	runtime := agentRuntimeEndpoint(r.Context(), agent.ID)
 	if err := agentRuntimeReady(r.Context(), runtime, agent, 3*time.Second); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "agent_not_ready", "agent runtime is not ready")
 		return

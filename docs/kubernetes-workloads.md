@@ -78,7 +78,9 @@ that replica stops before it completes. The outcome is logged with the call id.
 Agent deploys (`POST /api/v1/agents` and `POST /api/v1/agent-versions/{id}/deploy`)
 accept `scaling {metric, target}`: `requests` (1 to 10000 concurrent requests
 per replica, default 100) or `cpu` (1 to 100 percent). It becomes
-`spec.scaling` on the `KiongaAgent`.
+`spec.scaling` on the `KiongaAgent`. The gateway invokes an agent at its `status.url`, which leads
+through the KEDA HTTP interceptor when the agent scales on requests; until the
+operator publishes it, the gateway falls back to the agent's Service.
 
 ## Model deployment
 

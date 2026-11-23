@@ -286,7 +286,7 @@ func (s *Server) activateLangflowDeployment(w http.ResponseWriter, r *http.Reque
 		writeError(w, 404, "not_found", "snapshot deployment not found")
 		return
 	}
-	if err := agentRuntimeReady(r.Context(), agentRuntimeEndpoint(selected.ID), selected, 3*time.Second); err != nil {
+	if err := agentRuntimeReady(r.Context(), agentRuntimeEndpoint(r.Context(), selected.ID), selected, 3*time.Second); err != nil {
 		writeError(w, 503, "agent_not_ready", "Wait for this deployment to pass its runtime health check")
 		return
 	}
