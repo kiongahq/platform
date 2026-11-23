@@ -49,9 +49,12 @@ func (d *Dispatcher) Dispatch(ctx context.Context, record KafkaRecord) error {
 	var plural, kind string
 	var spec map[string]any
 	switch command.Kind {
-	case "pipeline_run":
-		plural, kind = "kiongapipelineruns", "KiongaPipelineRun"
-		spec = map[string]any{"pipelineRef": resource["name"], "parameters": map[string]any{"project_id": resource["project_id"]}}
+	case "pipeline_run", "agent_session", "agent_trace":
+		// Not cluster resources. On Kubernetes the gateway runs pipeline nodes
+		// as Jobs itself (internal/k8sexec); sessions and traces are records.
+		// They share command topics with resources, so acknowledge them here
+		// instead of failing the batch and stopping the worker.
+		return nil
 	case "model":
 		if command.Action != "model.promoted" {
 			return nil

@@ -117,3 +117,25 @@ func TestDispatcherUpsertsAndDeletesWorkspaceCRD(t *testing.T) {
 		t.Fatal("workspace should be deleted when access is revoked")
 	}
 }
+
+// Pipeline runs execute as Jobs driven by the gateway, and agent sessions and
+// traces are records. Their events share command topics with real resources;
+// the dispatcher must acknowledge them without creating anything, or the
+// worker stops on the first one.
+func TestDispatcherAcknowledgesNonResourceCommands(t *testing.T) {
+	client := fake.NewSimpleDynamicClient(runtime.NewScheme())
+	dispatcher := NewDispatcher(client, "team-a")
+	for _, command := range []LifecycleCommand{
+		{ID: "run-1", Kind: "pipeline_run", Action: "pipeline.submitted", Resource: json.RawMessage(`{"name":"train","project_id":"prj-1"}`), Tenant: "team-a"},
+		{ID: "trc-1", Kind: "agent_trace", Action: "agent.trace_recorded", Resource: json.RawMessage(`{"id":"trc-1"}`), Tenant: "team-a"},
+		{ID: "ses-1", Kind: "agent_session", Action: "agent.session_updated", Resource: json.RawMessage(`{"id":"ses-1"}`), Tenant: "team-a"},
+	} {
+		raw, _ := json.Marshal(command)
+		if err := dispatcher.Dispatch(context.Background(), KafkaRecord{Topic: "kionga.pipeline.commands", Value: raw}); err != nil {
+			t.Fatalf("%s: %v", command.Kind, err)
+		}
+	}
+	if actions := client.Actions(); len(actions) != 0 {
+		t.Fatalf("non-resource commands must not touch the cluster: %v", actions)
+	}
+}
