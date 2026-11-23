@@ -268,7 +268,7 @@ func TestApplicationStatusMapping(t *testing.T) {
 
 func appPod(name, app, owner string) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace, UID: types.UID("uid-" + name), Labels: map[string]string{"kionga.dev/workload": app, "kionga.dev/component": "application"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace, UID: types.UID("uid-" + name), Labels: map[string]string{"kionga.dev/application": app},
 			OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: owner, UID: types.UID("uid-" + owner)}}},
 		Spec:   corev1.PodSpec{Containers: []corev1.Container{{Name: "app"}}},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning},

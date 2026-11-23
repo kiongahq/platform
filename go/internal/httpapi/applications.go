@@ -394,17 +394,14 @@ func (s *Server) redeployApplication(w http.ResponseWriter, r *http.Request) {
 }
 
 // applicationPods lists the pods the operator labels for an application:
-// kionga.dev/workload=<name> and kionga.dev/component=application. Build
-// pods carry component=build and are left out.
+// kionga.dev/application=<name>.
 func applicationPods(ctx context.Context, access *kubeAccess, name string) ([]corev1.Pod, error) {
-	pods, err := access.core.CoreV1().Pods(access.namespace).List(ctx, metav1.ListOptions{LabelSelector: "kionga.dev/workload=" + name + ",kionga.dev/component=application"})
+	pods, err := access.core.CoreV1().Pods(access.namespace).List(ctx, metav1.ListOptions{LabelSelector: "kionga.dev/application=" + name})
 	if err != nil {
 		return nil, err
 	}
-	// Defence in depth: keep only pods that really carry both labels.
-	return slices.DeleteFunc(pods.Items, func(pod corev1.Pod) bool {
-		return pod.Labels["kionga.dev/workload"] != name || pod.Labels["kionga.dev/component"] != "application"
-	}), nil
+	// Defence in depth: keep only pods that really carry the label.
+	return slices.DeleteFunc(pods.Items, func(pod corev1.Pod) bool { return pod.Labels["kionga.dev/application"] != name }), nil
 }
 
 const (
