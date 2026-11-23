@@ -39,6 +39,8 @@ Object.assign(environment, {
   KIONGA_LANGFLOW_UPSTREAM: `http://127.0.0.1:${upstream.address().port}`,
   KIONGA_LOCAL_USERNAME: 'admin',
   KIONGA_LOCAL_PASSWORD: 'core-backend-test-password',
+  // A configured website link; the install itself serves no marketing pages.
+  KIONGA_WEBSITE_URL: 'https://website.example.test/',
 });
 const gateway = spawn('go', ['run', './cmd/gateway'], {
   cwd: resolve('go'), env: environment, stdio: ['ignore', 'inherit', 'inherit'], detached: true,

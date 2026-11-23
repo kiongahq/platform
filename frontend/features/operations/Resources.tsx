@@ -95,7 +95,11 @@ export function Functions({ identity, project }: OperationsProps) {
   return (
     <>
       <header className="page-header">
-        <p>OCI functions deployed through OpenFaaS.</p>
+        <p>
+          {query.data?.runtime === "kubernetes"
+            ? "OCI functions on Kubernetes, scaled to zero when idle and woken by the first request."
+            : "OCI functions deployed through faasd (OpenFaaS API)."}
+        </p>
         <button
           className="primary"
           disabled={
@@ -109,7 +113,12 @@ export function Functions({ identity, project }: OperationsProps) {
       {action.feedback}
       <State {...query} retry={query.reload}>
         <p className="feedback">
-          Runtime: {query.data?.configured ? "Connected" : "Not configured"}
+          Runtime:{" "}
+          {query.data?.runtime === "kubernetes"
+            ? "Kubernetes"
+            : query.data?.configured
+              ? "Connected"
+              : "Not configured"}
         </p>
         <Table
           rows={rows}
@@ -122,6 +131,11 @@ export function Functions({ identity, project }: OperationsProps) {
               render: (row) => <Status value={row.status} />,
             },
             { key: "replicas", label: "Replicas" },
+            {
+              key: "message",
+              label: "Detail",
+              render: (row) => row.message || "—",
+            },
             {
               key: "annotations",
               label: "Trigger",
@@ -275,7 +289,8 @@ export function Models({ identity, project, resource, onNavigate }: OperationsPr
     [output, setOutput] = useState<unknown>(),
     [search, setSearch] = useState<RecordData[]>([]),
     [notebook, setNotebook] = useState(""),
-    [notebookProject, setNotebookProject] = useState(project);
+    [notebookProject, setNotebookProject] = useState(project),
+    [deploying, setDeploying] = useState<RecordData | null>(null);
   const action = useAction(query.reload);
   const rows = scoped(items(query.data), project);
   useEffect(() => {
@@ -319,7 +334,17 @@ export function Models({ identity, project, resource, onNavigate }: OperationsPr
               {
                 key: "deployment_status",
                 label: "Deployment",
-                render: (row) => <Status value={row.deployment_status} />,
+                render: (row) => (
+                  <>
+                    <Status value={row.deployment_status} />
+                    {row.canary_weight > 0 && row.canary_weight < 100 && (
+                      <small> canary {row.canary_weight}%</small>
+                    )}
+                    {row.deployment_message && (
+                      <small className="deployment-message"> {row.deployment_message}</small>
+                    )}
+                  </>
+                ),
               },
               {
                 key: "metrics",
@@ -353,6 +378,7 @@ export function Models({ identity, project, resource, onNavigate }: OperationsPr
                       key={operation}
                       disabled={!can(identity, "models_write") || action.busy}
                       onClick={() =>
+                        operation === "deploy" ? setDeploying(row) :
                         void action
                           .run(
                             () =>
@@ -499,6 +525,34 @@ export function Models({ identity, project, resource, onNavigate }: OperationsPr
           ) : (
             <Facts value={selected} />
           )}
+        </Modal>
+      )}
+      {deploying && (
+        <Modal title={`Deploy ${deploying.name} v${deploying.version}`} onClose={() => setDeploying(null)}>
+          <p>
+            The deployment stays pending until the model server reports
+            ready. A canary weight between 1 and 99 sends that share of
+            invocations to this version and the rest to the version already
+            serving.
+          </p>
+          <Form
+            initial={{ canary_weight: 0 }}
+            fields={[
+              { name: "canary_weight", label: "Canary weight (%)", type: "number", min: 0, max: 100, help: "0 or 100 replaces the serving version." },
+            ]}
+            submit="Deploy"
+            onSubmit={async (value) => {
+              await action.run(
+                () =>
+                  request(`/api/v1/models/${encode(deploying.id)}/deploy`, {
+                    method: "POST",
+                    body: { canary_weight: Number(value.canary_weight || 0) },
+                  }),
+                "Deployment requested; it shows serving once the model server is ready.",
+              );
+              setDeploying(null);
+            }}
+          />
         </Modal>
       )}
       {predict && (

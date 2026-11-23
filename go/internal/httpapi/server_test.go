@@ -28,22 +28,44 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-func TestLandingAndConsoleRoutes(t *testing.T) {
+// The install ships no landing page: "/" sends signed-in users to the
+// console, and sign-in middleware sends everyone else to the sign-in page.
+func TestRootRedirectsToConsole(t *testing.T) {
 	static, _ := fs.Sub(fstest.MapFS{
 		"index.html":   &fstest.MapFile{Data: []byte("<h1>Kionga landing</h1>")},
 		"console.html": &fstest.MapFile{Data: []byte("<h1>Kionga console</h1>")},
 	}, ".")
 	server := New(store.New(), static)
-	for _, test := range []struct {
-		path, expected string
-	}{
-		{"/", "Kionga landing"},
-		{"/console", "Kionga console"},
+	root := httptest.NewRecorder()
+	server.ServeHTTP(root, newTestRequest(http.MethodGet, "/", nil))
+	if root.Code != http.StatusFound || root.Header().Get("Location") != "/console" || strings.Contains(root.Body.String(), "landing") {
+		t.Fatalf("GET /: %d %s %s", root.Code, root.Header().Get("Location"), root.Body.String())
+	}
+	console := httptest.NewRecorder()
+	server.ServeHTTP(console, newTestRequest(http.MethodGet, "/console", nil))
+	if console.Code != http.StatusOK || !strings.Contains(console.Body.String(), "Kionga console") {
+		t.Fatalf("GET /console: %d %s", console.Code, console.Body.String())
+	}
+	post := httptest.NewRecorder()
+	server.ServeHTTP(post, newTestRequest(http.MethodPost, "/", nil))
+	if post.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST /: %d", post.Code)
+	}
+}
+
+func TestSiteExposesOnlyAValidWebsiteURL(t *testing.T) {
+	for _, tc := range []struct{ env, want string }{
+		{"", ""},
+		{"https://kionga.dev", "https://kionga.dev"},
+		{"javascript:alert(1)", ""},
+		{"https://user:pass@kionga.dev", ""},
+		{"/relative", ""},
 	} {
+		t.Setenv("KIONGA_WEBSITE_URL", tc.env)
 		response := httptest.NewRecorder()
-		server.ServeHTTP(response, newTestRequest(http.MethodGet, test.path, nil))
-		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), test.expected) {
-			t.Fatalf("GET %s: %d %s", test.path, response.Code, response.Body.String())
+		testServer().ServeHTTP(response, newTestRequest(http.MethodGet, "/api/v1/site", nil))
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"website_url":"`+tc.want+`"`) {
+			t.Fatalf("%q: %d %s", tc.env, response.Code, response.Body.String())
 		}
 	}
 }

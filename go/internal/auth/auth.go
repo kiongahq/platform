@@ -154,10 +154,10 @@ func publicPath(method, path string) bool {
 			return true
 		}
 		switch strings.TrimSuffix(path, "/") {
-		case "", "/login", "/api-docs", "/blog", "/blog/read", "/index.txt", "/login.txt", "/api-docs.txt", "/blog.txt", "/blog/read.txt", "/logo.svg", "/favicon.svg", "/favicon-cobalt.svg", "/icons.svg", "/api/v1/health", "/api/v1/ready", "/api/openapi.json":
+		case "", "/login", "/api-docs", "/index.txt", "/login.txt", "/api-docs.txt", "/logo.svg", "/favicon.svg", "/favicon-cobalt.svg", "/icons.svg", "/api/v1/health", "/api/v1/ready", "/api/v1/site", "/api/openapi.json":
 			return true
 		}
-		if strings.HasPrefix(path, "/blog/__next.") || strings.HasPrefix(path, "/blog/read/__next.") || strings.HasPrefix(path, "/login/__next.") || strings.HasPrefix(path, "/api-docs/__next.") {
+		if strings.HasPrefix(path, "/login/__next.") || strings.HasPrefix(path, "/api-docs/__next.") {
 			return true
 		}
 		if path == "/api/v1/blogs" || strings.HasPrefix(path, "/api/v1/blogs/") || strings.HasPrefix(path, "/media/blog/") {
@@ -192,7 +192,7 @@ type AccessResolver func(string) (roles, services, projectIDs []string, disabled
 func RBACWithResolver(next http.Handler, resolve AccessResolver) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if (!strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/workspaces/")) || path == "/api/v1/health" || path == "/api/v1/ready" || path == "/api/openapi.json" {
+		if (!strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/workspaces/")) || path == "/api/v1/health" || path == "/api/v1/ready" || path == "/api/v1/site" || path == "/api/openapi.json" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -396,7 +396,7 @@ func (v *Verifier) refresh(ctx context.Context) error {
 // but not platform configuration (connections stay admin/operator-only).
 var engineerWrite = []string{
 	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agents", "/api/v1/agent-designs", "/api/v1/agent-versions", "/api/v1/agent-evaluations", "/api/v1/agent-approvals", "/api/v1/agent-definitions", "/api/v1/agent-teams", "/api/v1/team-runs", "/api/v1/langflow-workspaces", "/api/v1/langflow-snapshots", "/api/v1/knowledge-bases", "/api/v1/agent-api-connections",
-	"/api/v1/tools", "/api/v1/features", "/api/v1/traces", "/api/v1/functions",
+	"/api/v1/tools", "/api/v1/features", "/api/v1/traces", "/api/v1/functions", "/api/v1/applications",
 	"/api/v1/realtime",
 }
 
@@ -409,7 +409,7 @@ var serviceWrite = []string{
 
 var userWrite = []string{
 	"/api/v1/projects", "/api/v1/pipelines", "/api/v1/models", "/api/v1/agent-designs", "/api/v1/agent-versions", "/api/v1/agent-evaluations", "/api/v1/agent-approvals", "/api/v1/agent-definitions", "/api/v1/agent-teams", "/api/v1/team-runs", "/api/v1/agents", "/api/v1/langflow-workspaces", "/api/v1/knowledge-bases", "/api/v1/agent-api-connections",
-	"/api/v1/tools", "/api/v1/features", "/api/v1/traces", "/api/v1/functions",
+	"/api/v1/tools", "/api/v1/features", "/api/v1/traces", "/api/v1/functions", "/api/v1/applications",
 	"/api/v1/realtime",
 }
 
@@ -570,6 +570,8 @@ func serviceForPath(path string) string {
 		return "platform"
 	case strings.HasPrefix(path, "/api/v1/functions"):
 		return "functions"
+	case strings.HasPrefix(path, "/api/v1/applications"):
+		return "applications"
 	}
 	return ""
 }
@@ -588,17 +590,18 @@ func hasAnyPrefix(path string, prefixes []string) bool {
 // what the API actually enforces.
 func Permissions(principal Principal) map[string]bool {
 	return map[string]bool{
-		"projects_write":    Allowed(principal, http.MethodPost, "/api/v1/projects"),
-		"pipelines_write":   Allowed(principal, http.MethodPost, "/api/v1/pipelines/submit"),
-		"models_write":      Allowed(principal, http.MethodPost, "/api/v1/models"),
-		"agents_write":      Allowed(principal, http.MethodPost, "/api/v1/agents"),
-		"tools_write":       Allowed(principal, http.MethodPost, "/api/v1/tools"),
-		"features_write":    Allowed(principal, http.MethodPost, "/api/v1/features"),
-		"functions_write":   Allowed(principal, http.MethodPost, "/api/v1/functions"),
-		"git_write":         Allowed(principal, http.MethodPut, "/api/v1/projects/example/repository"),
-		"connections_write": Allowed(principal, http.MethodPost, "/api/v1/connections"),
-		"access_manage":     Allowed(principal, http.MethodPut, "/api/v1/admin/users/example"),
-		"iam_manage":        Allowed(principal, http.MethodPut, "/api/v1/admin/iam/policies/example"),
+		"projects_write":     Allowed(principal, http.MethodPost, "/api/v1/projects"),
+		"pipelines_write":    Allowed(principal, http.MethodPost, "/api/v1/pipelines/submit"),
+		"models_write":       Allowed(principal, http.MethodPost, "/api/v1/models"),
+		"agents_write":       Allowed(principal, http.MethodPost, "/api/v1/agents"),
+		"tools_write":        Allowed(principal, http.MethodPost, "/api/v1/tools"),
+		"features_write":     Allowed(principal, http.MethodPost, "/api/v1/features"),
+		"functions_write":    Allowed(principal, http.MethodPost, "/api/v1/functions"),
+		"applications_write": Allowed(principal, http.MethodPost, "/api/v1/applications"),
+		"git_write":          Allowed(principal, http.MethodPut, "/api/v1/projects/example/repository"),
+		"connections_write":  Allowed(principal, http.MethodPost, "/api/v1/connections"),
+		"access_manage":      Allowed(principal, http.MethodPut, "/api/v1/admin/users/example"),
+		"iam_manage":         Allowed(principal, http.MethodPut, "/api/v1/admin/iam/policies/example"),
 	}
 }
 

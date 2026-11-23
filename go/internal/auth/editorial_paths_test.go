@@ -5,15 +5,16 @@ import (
 	"testing"
 )
 
-// Readers must reach published blog media and the highlighter without a
-// login; the editorial workspace itself must never be public.
+// Published blog media, the blog API (read by the separate website) and the
+// highlighter stay public; the install no longer serves blog pages, and the
+// editorial workspace itself must never be public.
 func TestBlogReaderPathsArePublicEditorialIsNot(t *testing.T) {
-	for _, path := range []string{"/media/blog/med-abcdef12/960", "/vendor/highlight/core.min.js", "/api/v1/blogs", "/blog", "/blog/read", "/_next/static/app.js", "/login.txt"} {
+	for _, path := range []string{"/media/blog/med-abcdef12/960", "/vendor/highlight/core.min.js", "/api/v1/blogs", "/api/v1/site", "/", "/_next/static/app.js", "/login.txt"} {
 		if !publicPath(http.MethodGet, path) {
 			t.Errorf("%s should be public", path)
 		}
 	}
-	for _, path := range []string{"/studio", "/studio/", "/console", "/workspace", "/console/langflow", "/studio/edit", "/api/v1/editorial/posts"} {
+	for _, path := range []string{"/blog", "/blog/read", "/studio", "/studio/", "/console", "/console/applications", "/workspace", "/console/langflow", "/studio/edit", "/api/v1/editorial/posts"} {
 		if publicPath(http.MethodGet, path) {
 			t.Errorf("%s must require sign-in", path)
 		}

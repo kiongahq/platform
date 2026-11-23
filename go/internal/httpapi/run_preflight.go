@@ -289,7 +289,7 @@ func (s *Server) preflight(principal auth.Principal, req api.SubmitPipelineReque
 		result.add("image pinning", "pass", "Every container image is pinned by digest.")
 	}
 	switch {
-	case definition.ExecutionMode == "functions" && s.openfaas() == nil:
+	case definition.ExecutionMode == "functions" && s.functionRuntime() == nil:
 		result.add("engine", "fail", "OpenFaaS is not configured (set OPENFAAS_URL or activate an OpenFaaS connection on the Platform page).")
 	case definition.ExecutionMode != "functions" && !engineReady:
 		result.add("engine", "fail", "No pipeline engine is configured (set PREFECT_API_URL or activate a Prefect connection on the Platform page).")

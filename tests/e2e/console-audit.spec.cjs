@@ -3,7 +3,7 @@
 // screenshots as evidence under artifacts/screenshots/<project>/.
 const {test, expect, ADMIN, USER, signIn, ensureNormalUser, assertLayout, screenshotPath} = require('./fixtures.cjs');
 
-const adminViews = ['overview', 'projects', 'pipelines', 'functions', 'models', 'agents', 'features', 'storage', 'realtime', 'catalog', 'platform', 'access', 'profile', 'settings', 'blogs'];
+const adminViews = ['overview', 'projects', 'pipelines', 'functions', 'applications', 'models', 'agents', 'features', 'storage', 'realtime', 'catalog', 'platform', 'access', 'profile', 'settings', 'blogs'];
 const userViews = ['overview', 'projects', 'pipelines', 'models', 'features', 'storage', 'catalog', 'profile', 'settings'];
 
 async function openView(page, view) {

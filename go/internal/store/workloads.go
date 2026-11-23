@@ -36,6 +36,20 @@ func ValidateFunctionRequest(req api.DeployFunctionRequest) error {
 	if req.Memory != "" && !resourceQuantity.MatchString(req.Memory) {
 		return errors.New("memory must be a quantity such as 512Mi or 2Gi")
 	}
+	if req.Replicas != nil {
+		if req.Replicas.Min < 0 || req.Replicas.Max < 1 || req.Replicas.Max > api.MaxWorkloadReplicas || req.Replicas.Max < req.Replicas.Min {
+			return errors.New("replicas must satisfy 0 <= min <= max <= 100 and max >= 1")
+		}
+	}
+	if req.Scaling != nil {
+		scaling := *req.Scaling
+		if err := api.NormalizeScaling(&scaling); err != nil {
+			return err
+		}
+		if scaling.Metric == "cpu" && (req.Replicas == nil || req.Replicas.Min == 0) {
+			return errors.New("cpu scaling keeps at least one replica: set replicas.min to 1 or more")
+		}
+	}
 	mode := req.Annotations["io.kionga.invocation"]
 	if mode != "" && mode != "sync" && mode != "async" {
 		return errors.New("io.kionga.invocation must be sync or async")
@@ -119,6 +133,9 @@ func NormalizeAgentRequest(req *api.DeployAgentRequest) error {
 	}
 	if req.Resources.GPU == 0 {
 		req.Resources.GPUType = ""
+	}
+	if err := api.NormalizeScaling(&req.Scaling); err != nil {
+		return errors.New("agent scaling: " + err.Error())
 	}
 	if req.LLMBackend == "" {
 		req.LLMBackend = "mock"
@@ -387,12 +404,12 @@ func (s *Store) UpsertFunction(req api.DeployFunctionRequest, owner, actor strin
 			if fn.ProjectID != req.ProjectID {
 				return api.Function{}, ErrConflict
 			}
-			fn.Image, fn.EnvVars, fn.Labels, fn.Annotations, fn.CPU, fn.Memory, fn.Status, fn.UpdatedAt = req.Image, req.EnvVars, req.Labels, req.Annotations, req.CPU, req.Memory, "deployed", now
+			fn.Image, fn.EnvVars, fn.Labels, fn.Annotations, fn.CPU, fn.Memory, fn.Status, fn.UpdatedAt, fn.ReplicaRange, fn.Scaling = req.Image, req.EnvVars, req.Labels, req.Annotations, req.CPU, req.Memory, "deployed", now, req.Replicas, req.Scaling
 			s.record("function.updated", "function", fn.Name, actor, nil)
 			return *fn, s.persist()
 		}
 	}
-	fn := api.Function{Name: req.Name, ProjectID: req.ProjectID, Image: req.Image, EnvVars: req.EnvVars, Labels: req.Labels, Annotations: req.Annotations, CPU: req.CPU, Memory: req.Memory, OwnerSubject: owner, Status: "deployed", CreatedAt: now, UpdatedAt: now}
+	fn := api.Function{Name: req.Name, ProjectID: req.ProjectID, Image: req.Image, EnvVars: req.EnvVars, Labels: req.Labels, Annotations: req.Annotations, CPU: req.CPU, Memory: req.Memory, ReplicaRange: req.Replicas, Scaling: req.Scaling, OwnerSubject: owner, Status: "deployed", CreatedAt: now, UpdatedAt: now}
 	s.data.Functions = append([]api.Function{fn}, s.data.Functions...)
 	s.record("function.deployed", "function", fn.Name, actor, nil)
 	return fn, s.persist()
@@ -486,11 +503,11 @@ func (p *Postgres) UpsertFunction(req api.DeployFunctionRequest, owner, actor st
 			if fn.ProjectID != req.ProjectID {
 				return api.Function{}, ErrConflict
 			}
-			fn.Image, fn.EnvVars, fn.Labels, fn.Annotations, fn.CPU, fn.Memory, fn.Status, fn.UpdatedAt = req.Image, req.EnvVars, req.Labels, req.Annotations, req.CPU, req.Memory, "deployed", now
+			fn.Image, fn.EnvVars, fn.Labels, fn.Annotations, fn.CPU, fn.Memory, fn.Status, fn.UpdatedAt, fn.ReplicaRange, fn.Scaling = req.Image, req.EnvVars, req.Labels, req.Annotations, req.CPU, req.Memory, "deployed", now, req.Replicas, req.Scaling
 			return fn, p.write("function", fn.Name, fn, "function.updated", actor, nil)
 		}
 	}
-	fn := api.Function{Name: req.Name, ProjectID: req.ProjectID, Image: req.Image, EnvVars: req.EnvVars, Labels: req.Labels, Annotations: req.Annotations, CPU: req.CPU, Memory: req.Memory, OwnerSubject: owner, Status: "deployed", CreatedAt: now, UpdatedAt: now}
+	fn := api.Function{Name: req.Name, ProjectID: req.ProjectID, Image: req.Image, EnvVars: req.EnvVars, Labels: req.Labels, Annotations: req.Annotations, CPU: req.CPU, Memory: req.Memory, ReplicaRange: req.Replicas, Scaling: req.Scaling, OwnerSubject: owner, Status: "deployed", CreatedAt: now, UpdatedAt: now}
 	return fn, p.write("function", fn.Name, fn, "function.deployed", actor, nil)
 }
 func (p *Postgres) DeleteFunction(name, actor string) error {

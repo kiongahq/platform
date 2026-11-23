@@ -75,6 +75,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, record KafkaRecord) error {
 		spec = map[string]any{
 			"version": resource["version"], "image": resource["image"], "graphModule": resource["graph_module"],
 			"replicas": map[string]any{"min": minimum, "max": maximum},
+			"scaling":  agentScaling(resource["scaling"]),
 			"llm":      map[string]any{"backend": resource["llm_backend"]}, "tools": toolRefs(resource["tools"]),
 			"trafficPolicy": map[string]any{"canaryWeight": resource["canary_weight"]},
 		}
@@ -206,4 +207,25 @@ func dnsName(name, fallback string) string {
 	}
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(raw)))[:8]
 	return strings.Trim(value[:54], "-") + "-" + digest
+}
+
+// agentScaling maps the agent record's scaling to spec.scaling. Records
+// written before scaling existed, or with an unknown metric, get the
+// default: requests at the KEDA HTTP add-on's default target.
+func agentScaling(value any) map[string]any {
+	scaling, _ := value.(map[string]any)
+	metric, _ := scaling["metric"].(string)
+	target := integer(scaling["target"])
+	switch metric {
+	case "cpu":
+		if target < 1 || target > 100 {
+			target = platformapi.DefaultCPUTarget
+		}
+	default:
+		metric = "requests"
+		if target < 1 || target > 10000 {
+			target = platformapi.DefaultRequestsTarget
+		}
+	}
+	return map[string]any{"metric": metric, "target": target}
 }

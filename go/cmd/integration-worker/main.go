@@ -68,7 +68,8 @@ func run(ctx context.Context) error {
 	}
 	namespace := env("KIONGA_TARGET_NAMESPACE", "default")
 	consumer := integrations.NewKafkaConsumer(env("KAFKA_REST_URL", "http://kafka-rest:8082"), "kionga-integration", env("HOSTNAME", "worker"), os.Getenv("KAFKA_REST_TOKEN"))
-	topics := []string{"kionga.pipeline.commands", "kionga.model.commands", "kionga.agent.commands", "kionga.tool.commands", "kionga.connection.commands", "kionga.workspace.commands"}
+	// Pipeline runs are not dispatched here: the gateway executes them.
+	topics := []string{"kionga.model.commands", "kionga.agent.commands", "kionga.tool.commands", "kionga.connection.commands", "kionga.workspace.commands"}
 	if err := consumer.Connect(ctx, topics); err != nil {
 		return err
 	}

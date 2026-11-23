@@ -125,9 +125,9 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 			failed, _ := s.reportStep(run.ID, api.UpdateRunStepRequest{Step: "load-definition", Status: "failed", Message: err.Error()}, "system")
 			return failed
 		}
-		if s.openfaas() == nil {
+		if s.functionRuntime() == nil {
 			for _, job := range definition.Jobs {
-				run, _ = s.reportStep(run.ID, api.UpdateRunStepRequest{Step: job.Name, Status: "failed", Message: "Not run: OpenFaaS is not configured (set OPENFAAS_URL or activate an OpenFaaS connection)"}, "system")
+				run, _ = s.reportStep(run.ID, api.UpdateRunStepRequest{Step: job.Name, Status: "failed", Message: "Not run: no function runtime is configured (Kubernetes, or OPENFAAS_URL / an OpenFaaS connection on Compose)"}, "system")
 			}
 			return run
 		}
@@ -176,7 +176,7 @@ func (s *Server) dispatchPipeline(ctx context.Context, run api.PipelineRun) api.
 }
 
 func (s *Server) executeFunctionPipeline(ctx context.Context, run api.PipelineRun, definition api.PipelineDefinition) {
-	client := s.openfaas()
+	client := s.functionRuntime()
 	if client == nil {
 		return
 	}

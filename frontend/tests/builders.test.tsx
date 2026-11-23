@@ -18,7 +18,10 @@ test('capture choices track flow and project and include current snapshot revisi
 });
 test('deployment payload whitelists Go DTO fields and reserves capacity at maximum replicas',()=>{
  const values={project_id:'p1',name:'Help',version:'1',image:'registry/agent:1',graph_module:'agent:build',llm_backend:'mock',min_replicas:'1',max_replicas:'2',cpu:'500m',memory:'1Gi',gpu:0,gpu_type:'nvidia.com/gpu',tools:['search','search'],owner_subject:'intruder',snapshot_id:'forbidden'};
- assert.deepEqual(buildAgentDeployment(values,identity),{project_id:'p1',name:'Help',version:'1',image:'registry/agent:1',graph_module:'agent:build',llm_backend:'mock',replicas:1,autoscaling:{min_replicas:1,max_replicas:2},resources:{cpu:'500m',memory:'1Gi',gpu:0,gpu_type:'nvidia.com/gpu'},tools:['search']});
+ assert.deepEqual(buildAgentDeployment(values,identity),{project_id:'p1',name:'Help',version:'1',image:'registry/agent:1',graph_module:'agent:build',llm_backend:'mock',replicas:1,autoscaling:{min_replicas:1,max_replicas:2},scaling:{metric:'requests',target:100},resources:{cpu:'500m',memory:'1Gi',gpu:0,gpu_type:'nvidia.com/gpu'},tools:['search']});
+ assert.deepEqual(buildAgentDeployment({...values,scaling_metric:'cpu',scaling_target:65},identity).scaling,{metric:'cpu',target:65});
+ assert.throws(()=>buildAgentDeployment({...values,scaling_metric:'cpu',scaling_target:150},identity),/percentage/);
+ assert.throws(()=>buildAgentDeployment({...values,scaling_metric:'memory'},identity),/requests or CPU/);
  assert.throws(()=>buildAgentDeployment(values,{subject:'owner',roles:['user'],entitlements:{compute:{max_vms:2,gpus:0}}},[{owner_subject:'owner',replicas:1}]),/existing deployments/);
  assert.throws(()=>buildAgentDeployment({...values,max_replicas:0},identity),/positive minimum/);
  const imported=agentContractPayload({kind:'KiongaAgent',metadata:{name:'Imported'},spec:{replicas:{min:1,max:3},resources:{requests:{cpu:'1',memory:'2Gi','nvidia.com/gpu':1}},tools:[{name:'search'}]}});assert.deepEqual(imported.tools,['search']);assert.deepEqual(imported.autoscaling,{min_replicas:1,max_replicas:3});assert.equal(imported.resources.gpu,1);
@@ -26,7 +29,7 @@ test('deployment payload whitelists Go DTO fields and reserves capacity at maxim
 test('framework selection retains entered fields and deployment posts registered tool names',async()=>{
  const calls=api();let deployed=false;const view=render(<DeployAgentForm identity={identity} project="p1" projects={projects} tools={[{name:'search',description:'Lookup'}]} existing={[]} onDeployed={()=>{deployed=true}}/>);
  fireEvent.change(view.getByLabelText('Name'),{target:{value:'Support'}});fireEvent.change(view.getByLabelText('Image'),{target:{value:'registry/support:1'}});fireEvent.change(view.getByLabelText('Framework'),{target:{value:'agno'}});assert.equal((view.getByLabelText('Name') as HTMLInputElement).value,'Support');
- fireEvent.click(view.getByRole('checkbox',{name:/search/}));fireEvent.click(view.getByRole('button',{name:'Deploy agent'}));await waitFor(()=>assert.equal(deployed,true));assert.equal(calls[0].body.graph_module,'agents.framework_examples:build_agno');assert.deepEqual(calls[0].body.tools,['search']);assert.deepEqual(calls[0].body.autoscaling,{min_replicas:1,max_replicas:1});assert.equal('min_replicas' in calls[0].body,false);
+ fireEvent.click(view.getByRole('checkbox',{name:/search/}));fireEvent.click(view.getByRole('button',{name:'Deploy agent'}));await waitFor(()=>assert.equal(deployed,true));assert.equal(calls[0].body.graph_module,'agents.framework_examples:build_agno');assert.deepEqual(calls[0].body.tools,['search']);assert.deepEqual(calls[0].body.autoscaling,{min_replicas:1,max_replicas:1});assert.deepEqual(calls[0].body.scaling,{metric:'requests',target:100});assert.equal('min_replicas' in calls[0].body,false);
 });
 test('NOOA guidance says the runtime keeps it disabled with no opt-in flag',()=>{
  api();const view=render(<DeployAgentForm identity={identity} project="p1" projects={projects} tools={[]} existing={[]} onDeployed={()=>{}}/>);

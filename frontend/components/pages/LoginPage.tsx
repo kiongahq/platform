@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useWebsiteURL } from "@/lib/site";
 
 interface Provider { id: string; name: string; type?: string }
 interface SignInOptions { local?: boolean; providers?: Provider[] }
@@ -20,12 +21,13 @@ export function LoginPage() {
       .then(response => response.ok ? response.json() : undefined).then(value => { if (value) setOptions(value); }).catch(() => {});
     return () => controller.abort();
   }, []);
+  const website = useWebsiteURL();
   const providers = Array.isArray(options.providers) ? options.providers : [];
   const local = options.local !== false;
   return <div className="login-page">
-    <a className="wordmark" href="/"><img src="/logo.svg" alt="" width="87" height="24" /><strong>Kionga</strong></a>
+    <a className="wordmark" href="/console"><img src="/logo.svg" alt="" width="87" height="24" /><strong>Kionga</strong></a>
     <main className="login-shell">
-      <section className="login-copy"><h1>Your work, connected.</h1><p>Projects, pipelines, models, agents and persistent workspaces on infrastructure you control.</p><p className="muted">Access is governed by your organization’s platform policies.</p><a href="/api-docs">Read the API reference</a></section>
+      <section className="login-copy"><h1>Your work, connected.</h1><p>Projects, pipelines, models, agents and persistent workspaces on infrastructure you control.</p><p className="muted">Access is governed by your organization’s platform policies.</p><a href="/api-docs">Read the API reference</a>{website && <p><a id="website-link" href={website} target="_blank" rel="noopener noreferrer">About Kionga</a></p>}</section>
       <section className="login-card"><h2>Sign in to Kionga</h2><p id="login-hint">{providers.length ? (local ? 'Use your organization account, or a local account.' : 'Use your organization account.') : 'Use your local platform credentials.'}</p>
         <div className="sso-options" id="sso-options" hidden={!providers.length} aria-label="Single sign-on">{providers.map(provider => <a key={provider.id} className="button" data-provider={provider.id} data-type={provider.type} href={`/auth/sso/login?${new URLSearchParams({ connector: provider.id, return_to: returnTo })}`}>Sign in with {provider.name}</a>)}</div>
         <p className="login-divider" id="login-divider" hidden={!(local && providers.length)}>Or use a local account</p>

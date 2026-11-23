@@ -408,19 +408,24 @@ type UpsertPipelineDefinitionRequest struct {
 }
 
 type Function struct {
-	Name         string            `json:"name"`
-	ProjectID    string            `json:"project_id"`
-	Image        string            `json:"image"`
-	Status       string            `json:"status"`
-	Replicas     int               `json:"replicas"`
-	EnvVars      map[string]string `json:"env_vars,omitempty"`
-	Labels       map[string]string `json:"labels,omitempty"`
-	Annotations  map[string]string `json:"annotations,omitempty"`
-	CPU          string            `json:"cpu,omitempty"`
-	Memory       string            `json:"memory,omitempty"`
-	OwnerSubject string            `json:"owner_subject,omitempty"`
-	CreatedAt    time.Time         `json:"created_at"`
-	UpdatedAt    time.Time         `json:"updated_at"`
+	Name        string            `json:"name"`
+	ProjectID   string            `json:"project_id"`
+	Image       string            `json:"image"`
+	Status      string            `json:"status"`
+	Replicas    int               `json:"replicas"`
+	EnvVars     map[string]string `json:"env_vars,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+	CPU         string            `json:"cpu,omitempty"`
+	Memory      string            `json:"memory,omitempty"`
+	// ReplicaRange and Scaling apply on Kubernetes (KiongaFunction); faasd
+	// ignores them.
+	ReplicaRange *ReplicaRange    `json:"replica_range,omitempty"`
+	Scaling      *WorkloadScaling `json:"scaling,omitempty"`
+	Message      string           `json:"message,omitempty"`
+	OwnerSubject string           `json:"owner_subject,omitempty"`
+	CreatedAt    time.Time        `json:"created_at"`
+	UpdatedAt    time.Time        `json:"updated_at"`
 }
 
 type DeployFunctionRequest struct {
@@ -432,6 +437,10 @@ type DeployFunctionRequest struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 	CPU         string            `json:"cpu,omitempty"`
 	Memory      string            `json:"memory,omitempty"`
+	// Kubernetes only: replica bounds (min 0 = scale to zero, the default)
+	// and the scaling trigger (requests by default).
+	Replicas *ReplicaRange    `json:"replicas,omitempty"`
+	Scaling  *WorkloadScaling `json:"scaling,omitempty"`
 }
 
 type Component struct {
@@ -457,7 +466,9 @@ type Model struct {
 	DeploymentStatus string             `json:"deployment_status"`
 	CanaryWeight     int                `json:"canary_weight"`
 	EndpointURL      string             `json:"endpoint_url,omitempty"`
-	PreviousStage    string             `json:"previous_stage,omitempty"`
+	// DeploymentMessage explains a failed or pending deployment.
+	DeploymentMessage string `json:"deployment_message,omitempty"`
+	PreviousStage     string `json:"previous_stage,omitempty"`
 }
 
 type RegisterModelRequest struct {
@@ -503,6 +514,7 @@ type Agent struct {
 	EndpointURL  string           `json:"endpoint_url,omitempty"`
 	Replicas     int              `json:"replicas"`
 	Autoscaling  AgentAutoscaling `json:"autoscaling"`
+	Scaling      WorkloadScaling  `json:"scaling"`
 	Resources    AgentResources   `json:"resources"`
 	CanaryWeight int              `json:"canary_weight"`
 	Tools        []string         `json:"tools"`
@@ -522,8 +534,10 @@ type DeployAgentRequest struct {
 	LLMBackend   string           `json:"llm_backend"`
 	Replicas     int              `json:"replicas,omitempty"`
 	Autoscaling  AgentAutoscaling `json:"autoscaling,omitempty"`
-	Resources    AgentResources   `json:"resources,omitempty"`
-	Tools        []string         `json:"tools"`
+	// Scaling picks the autoscaling trigger; requests is the default.
+	Scaling   WorkloadScaling `json:"scaling,omitempty"`
+	Resources AgentResources  `json:"resources,omitempty"`
+	Tools     []string        `json:"tools"`
 }
 
 type AgentAutoscaling struct {

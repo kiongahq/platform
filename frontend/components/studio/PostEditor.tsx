@@ -7,7 +7,7 @@ import RedoIcon from "@mui/icons-material/Redo";
 import Link from "next/link";
 import type { Editor } from "@tiptap/react";
 import { Writer } from "./Writer";
-import { ArticleBlocks } from "../blog/ArticleBlocks";
+import { ArticleBlocks } from "./ArticleBlocks";
 import { useStudio } from "./StudioShell";
 import { createSaveController, type SaveState } from "@/lib/editorial-save";
 import {
