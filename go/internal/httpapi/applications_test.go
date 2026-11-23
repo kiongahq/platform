@@ -129,8 +129,12 @@ func TestApplicationLifecycleOnKubernetes(t *testing.T) {
 	if redeployed.Code != http.StatusAccepted || jsonBody(t, redeployed)["status"] != "pending" {
 		t.Fatalf("redeploy: %d %s", redeployed.Code, redeployed.Body.String())
 	}
-	if restarted, _, _ := unstructured.NestedString(harness.object(t, applicationsGVR, "billing").Object, "spec", "restartedAt"); restarted == "" {
-		t.Fatal("redeploy must set spec.restartedAt")
+	afterRedeploy := harness.object(t, applicationsGVR, "billing")
+	if afterRedeploy.GetAnnotations()["kionga.dev/redeploy"] == "" {
+		t.Fatal("redeploy must set the kionga.dev/redeploy annotation")
+	}
+	if _, has, _ := unstructured.NestedString(afterRedeploy.Object, "spec", "restartedAt"); has {
+		t.Fatal("the operator reads no spec.restartedAt")
 	}
 
 	deleted := harness.do(t, http.MethodDelete, "/api/v1/applications/billing", "")

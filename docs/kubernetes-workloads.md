@@ -40,7 +40,7 @@ host equals the console host is refused.
 The `KiongaApplication` spec carries `image` or `source {git, ref, contextDir,
 dockerfile}`, `port`, `env [{name, value}]`, `secretRefs [{name}]`,
 `resources {requests, limits}`, `replicas {min, max}`, `scaling {metric,
-target}`, `healthPath`, `visibility` and, after a redeploy, `restartedAt`.
+target}`, `healthPath` and `visibility`. A redeploy sets the annotation `kionga.dev/redeploy` to the request time; the operator rebuilds a git source when it changes.
 The gateway reads `status.phase`, `status.url`, `status.readyReplicas`,
 `status.message`, `status.conditions` and `status.lastBuild`. Status maps to
 `failed` (phase `Failed`, or `Ready=False` with reason `Failed`), `ready`
