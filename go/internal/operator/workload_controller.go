@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -211,6 +212,15 @@ func (r *WorkloadReconciler) reconcile(ctx context.Context, object client.Object
 	}
 	secretHash, err := r.workloadSecrets(ctx, namespace, spec.SecretRefs)
 	if err != nil {
+		var bad errInvalid
+		if errors.As(err, &bad) {
+			// Fail closed: a Secret that is gone or no longer labelled for
+			// workloads leaves the running pod template now, not on the next
+			// valid spec.
+			if revokeErr := r.revokeSecrets(ctx, object, spec.SecretRefs); revokeErr != nil {
+				return ctrl.Result{}, revokeErr
+			}
+		}
 		return ctrl.Result{}, err
 	}
 	image, err := r.resolveImage(ctx, object, spec, status)
@@ -480,9 +490,7 @@ func (r *WorkloadReconciler) SetupWithManager(manager ctrl.Manager) error {
 		Owns(&policyv1.PodDisruptionBudget{}).Owns(&autoscalingv2.HorizontalPodAutoscaler{}).Owns(&batchv1.Job{}).
 		// A rotated workload Secret must roll the pods that load it.
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.workloadsUsingSecret),
-			builder.WithPredicates(predicate.NewPredicateFuncs(func(object client.Object) bool {
-				return object.GetLabels()[WorkloadSecretLabel] == "true"
-			})))
+			builder.WithPredicates(workloadSecretChanged))
 	if r.Capabilities.KEDAHTTP {
 		scaled := &unstructured.Unstructured{}
 		scaled.SetGroupVersionKind(HTTPScaledObjectGVK)
@@ -523,4 +531,58 @@ func (r *WorkloadReconciler) workloadsUsingSecret(ctx context.Context, secret cl
 		}
 	}
 	return requests
+}
+
+func labelledWorkloadSecret(object client.Object) bool {
+	return object != nil && object.GetLabels()[WorkloadSecretLabel] == "true"
+}
+
+// workloadSecretChanged passes events for Secrets that are, or were until
+// this update, labelled for workloads. Removing the label must reconcile the
+// workloads that load the Secret so they stop loading it.
+var workloadSecretChanged = predicate.Funcs{
+	CreateFunc:  func(e event.CreateEvent) bool { return labelledWorkloadSecret(e.Object) },
+	DeleteFunc:  func(e event.DeleteEvent) bool { return labelledWorkloadSecret(e.Object) },
+	GenericFunc: func(e event.GenericEvent) bool { return labelledWorkloadSecret(e.Object) },
+	UpdateFunc: func(e event.UpdateEvent) bool {
+		return labelledWorkloadSecret(e.ObjectOld) || labelledWorkloadSecret(e.ObjectNew)
+	},
+}
+
+// revokeSecrets removes from the owned Deployment every envFrom Secret that
+// is missing or not labelled for workloads, which rolls the pods without it.
+func (r *WorkloadReconciler) revokeSecrets(ctx context.Context, object client.Object, refs []kiongav1.SecretReference) error {
+	var deployment appsv1.Deployment
+	if err := r.Get(ctx, client.ObjectKeyFromObject(object), &deployment); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	if !metav1.IsControlledBy(&deployment, object) {
+		return nil
+	}
+	allowed := map[string]bool{}
+	for _, ref := range refs {
+		var secret corev1.Secret
+		err := r.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: object.GetNamespace()}, &secret)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+		allowed[ref.Name] = err == nil && labelledWorkloadSecret(&secret)
+	}
+	changed := false
+	for i := range deployment.Spec.Template.Spec.Containers {
+		container := &deployment.Spec.Template.Spec.Containers[i]
+		kept := container.EnvFrom[:0]
+		for _, source := range container.EnvFrom {
+			if source.SecretRef != nil && !allowed[source.SecretRef.Name] {
+				changed = true
+				continue
+			}
+			kept = append(kept, source)
+		}
+		container.EnvFrom = kept
+	}
+	if !changed {
+		return nil
+	}
+	return r.Update(ctx, &deployment)
 }

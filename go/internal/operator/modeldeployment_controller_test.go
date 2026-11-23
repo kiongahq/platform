@@ -318,3 +318,28 @@ func TestModelPromotionRepeatedFailureDoesNotRewriteStatus(t *testing.T) {
 		t.Fatalf("repeated failure rewrote status: phase=%s rv %s -> %s", first.Status.Phase, first.ResourceVersion, second.ResourceVersion)
 	}
 }
+
+// Rotating the object store keys maps to every model deployment in the
+// namespace and refreshes the derived KServe storage Secret.
+func TestStorageSecretRotationRefreshesDerivedSecret(t *testing.T) {
+	source := &fakeMLflow{versions: map[string]string{"churn/3": "s3://kionga-models/v3"}}
+	credentials := storageSecret()
+	c := testClient(testScheme(t, InferenceServiceGVK), modelDeployment(kiongav1.KiongaModelDeploymentSpec{ModelName: "churn", Version: "3"}), credentials)
+	reconciler := modelReconciler(c, source)
+	reconcileOnce(t, reconciler, "churn")
+
+	requests := reconciler.deploymentsUsingStorageSecret(context.Background(), credentials)
+	if len(requests) != 1 || requests[0].Name != "churn" {
+		t.Fatalf("the storage Secret must map to the deployment: %v", requests)
+	}
+	credentials.Data["AWS_SECRET_ACCESS_KEY"] = []byte("rotated")
+	if err := c.Update(context.Background(), credentials); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, reconciler, "churn")
+	var derived corev1.Secret
+	get(t, c, "churn-storage", &derived)
+	if string(derived.Data["AWS_SECRET_ACCESS_KEY"]) != "rotated" {
+		t.Fatalf("derived Secret kept the old key: %s", derived.Data["AWS_SECRET_ACCESS_KEY"])
+	}
+}

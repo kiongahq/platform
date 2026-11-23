@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
@@ -608,5 +609,38 @@ func TestSecretRotationRollsReferencingWorkloads(t *testing.T) {
 	get(t, c, "billing", &deployment)
 	if after := deployment.Spec.Template.Annotations["kionga.dev/secret-hash"]; after == before || after == "" {
 		t.Fatalf("rotation did not change the pod template hash: %s -> %s", before, after)
+	}
+}
+
+// Revoking a Secret's workload label must reach the workload (the update
+// predicate sees the old labelled object) and drop the Secret from the pods.
+func TestRevokedSecretLeavesRunningPods(t *testing.T) {
+	labelled := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "billing-db", Namespace: testNamespace, Labels: map[string]string{WorkloadSecretLabel: "true"}}, Data: map[string][]byte{"PASSWORD": []byte("one")}}
+	app := application("billing", kiongav1.WorkloadSpec{Image: "billing:1", Visibility: kiongav1.VisibilityInternal, SecretRefs: []kiongav1.SecretReference{{Name: "billing-db"}}})
+	c := testClient(testScheme(t), labelled, app)
+	reconciler := applicationReconciler(c, false)
+	reconcileOnce(t, reconciler, "billing")
+
+	revoked := labelled.DeepCopy()
+	revoked.Labels = nil
+	if !workloadSecretChanged.Update(event.UpdateEvent{ObjectOld: labelled, ObjectNew: revoked}) {
+		t.Fatal("removing the label must trigger a reconcile")
+	}
+	if workloadSecretChanged.Update(event.UpdateEvent{ObjectOld: revoked, ObjectNew: revoked}) {
+		t.Fatal("unrelated Secrets must not trigger reconciles")
+	}
+	if err := c.Update(context.Background(), revoked); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, reconciler, "billing")
+	var deployment appsv1.Deployment
+	get(t, c, "billing", &deployment)
+	if from := deployment.Spec.Template.Spec.Containers[0].EnvFrom; len(from) != 0 {
+		t.Fatalf("the revoked Secret is still loaded: %#v", from)
+	}
+	var stored kiongav1.KiongaApplication
+	get(t, c, "billing", &stored)
+	if condition(stored.Status.Conditions, ConditionReady).Reason != "SecretNotAllowed" {
+		t.Fatalf("status: %#v", stored.Status)
 	}
 }

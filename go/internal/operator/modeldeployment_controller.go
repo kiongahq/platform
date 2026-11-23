@@ -18,7 +18,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
@@ -393,10 +395,33 @@ func (r *ModelDeploymentReconciler) storageAccount(ctx context.Context, deployme
 func (r *ModelDeploymentReconciler) SetupWithManager(manager ctrl.Manager) error {
 	controller := ctrl.NewControllerManagedBy(manager).For(&kiongav1.KiongaModelDeployment{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&corev1.ServiceAccount{}).Owns(&corev1.Secret{})
+	if r.Storage.CredentialsSecret != "" {
+		// Rotating the object store keys refreshes every derived storage
+		// Secret, which new predictor pods load.
+		controller = controller.Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.deploymentsUsingStorageSecret),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(object client.Object) bool {
+				return object.GetName() == r.Storage.CredentialsSecret
+			})))
+	}
 	if r.Capabilities.KServe {
 		service := &unstructured.Unstructured{}
 		service.SetGroupVersionKind(InferenceServiceGVK)
 		controller = controller.Owns(service)
 	}
 	return controller.Complete(r)
+}
+
+// deploymentsUsingStorageSecret maps the configured object store Secret to
+// every model deployment in its namespace.
+func (r *ModelDeploymentReconciler) deploymentsUsingStorageSecret(ctx context.Context, secret client.Object) []reconcile.Request {
+	var deployments kiongav1.KiongaModelDeploymentList
+	if err := r.List(ctx, &deployments, client.InNamespace(secret.GetNamespace())); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "list model deployments for storage Secret", "secret", secret.GetName())
+		return nil
+	}
+	requests := make([]reconcile.Request, 0, len(deployments.Items))
+	for i := range deployments.Items {
+		requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&deployments.Items[i])})
+	}
+	return requests
 }
