@@ -18,6 +18,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,6 +43,10 @@ type AgentReconciler struct {
 	// provider (KIONGA_LLM_PROVIDER_SECRET, default kionga-llm-provider).
 	// Self-hosted upstreams without a key leave it absent.
 	ProviderKeySecret string
+	// Config and Capabilities drive requests-based scaling through the KEDA
+	// HTTP add-on; without it agents scale on CPU.
+	Config       WorkloadConfig
+	Capabilities Capabilities
 }
 
 const (
@@ -210,13 +215,14 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 	traceKeyHash := fmt.Sprintf("%x", sha256.Sum256(traceSecret.Data["key"]))
+	scaling := PlanScaling(agent.Spec.Scaling, kiongav1.WorkloadReplicaSpec{Min: int32(plan.Workload.Replicas), Max: agent.Spec.Replicas.Max}, "", r.Capabilities.KEDAHTTP) // #nosec G115 -- replica count fits int32
 	deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: plan.Workload.Name, Namespace: agent.Namespace}}
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		replicas := int32(plan.Workload.Replicas) // #nosec G115 -- source is an int32 replica count
+		replicas := scaling.InitialReplicas()
 		deployment.Labels = plan.Workload.Labels
-		// HorizontalPodAutoscaler owns spec.replicas after creation. Reapplying
-		// the minimum on every owned Deployment event would fight every scale.
-		if agent.Spec.Replicas.Max <= agent.Spec.Replicas.Min || deployment.ResourceVersion == "" {
+		// The autoscaler owns spec.replicas after creation. Reapplying the
+		// minimum on every owned Deployment event would fight every scale.
+		if !scaling.Autoscaled() || deployment.ResourceVersion == "" {
 			deployment.Spec.Replicas = &replicas
 		}
 		deployment.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"kionga.dev/agent": agent.Name, "kionga.dev/version": agent.Spec.Version}}
@@ -270,30 +276,19 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, request ctrl.Request) (
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	hpa := &autoscalingv2.HorizontalPodAutoscaler{ObjectMeta: metav1.ObjectMeta{Name: plan.Workload.Name, Namespace: agent.Namespace}}
-	if agent.Spec.Replicas.Max > agent.Spec.Replicas.Min {
-		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hpa, func() error {
-			minimum, utilization := agent.Spec.Replicas.Min, int32(70)
-			hpa.Spec = autoscalingv2.HorizontalPodAutoscalerSpec{
-				ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: deployment.Name},
-				MinReplicas:    &minimum, MaxReplicas: agent.Spec.Replicas.Max,
-				Metrics: []autoscalingv2.MetricSpec{{Type: autoscalingv2.ResourceMetricSourceType, Resource: &autoscalingv2.ResourceMetricSource{Name: corev1.ResourceCPU, Target: autoscalingv2.MetricTarget{Type: autoscalingv2.UtilizationMetricType, AverageUtilization: &utilization}}}},
-			}
-			return controllerutil.SetControllerReference(&agent, hpa, r.Scheme())
-		})
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-	} else if err := r.Get(ctx, client.ObjectKey{Name: plan.Workload.Name, Namespace: agent.Namespace}, hpa); err == nil {
-		if !metav1.IsControlledBy(hpa, &agent) {
-			return r.fail(ctx, &agent, "ResourceCollision", fmt.Errorf("HorizontalPodAutoscaler %s is not owned by agent", hpa.Name))
-		}
-		if err := r.Delete(ctx, hpa); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, err
-		}
-	} else if !apierrors.IsNotFound(err) {
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{}
+	if err := r.Get(ctx, client.ObjectKey{Name: plan.Workload.Name, Namespace: agent.Namespace}, hpa); err == nil && !metav1.IsControlledBy(hpa, &agent) {
+		return r.fail(ctx, &agent, "ResourceCollision", fmt.Errorf("HorizontalPodAutoscaler %s is not owned by agent", hpa.Name))
+	} else if err != nil && !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, err
 	}
+	agentURL, err := applyScaling(ctx, r.Client, &agent, scaling, scalingTarget{Deployment: deployment.Name, Service: service.Name, ServicePort: 80, Labels: plan.Workload.Labels}, r.Config)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	agent.Status.URL = agentURL
+	scaling.Condition.ObservedGeneration = agent.Generation
+	apimeta.SetStatusCondition(&agent.Status.Conditions, scaling.Condition)
 	ready := deployment.Status.AvailableReplicas >= agent.Spec.Replicas.Min
 	agent.Status.Phase = "Progressing"
 	agent.Status.WorkloadRef = plan.Workload.Name
@@ -324,7 +319,13 @@ func (r *AgentReconciler) fail(ctx context.Context, agent *kiongav1.KiongaAgent,
 }
 
 func (r *AgentReconciler) SetupWithManager(manager ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(manager).For(&kiongav1.KiongaAgent{}).Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&corev1.ConfigMap{}).Owns(&corev1.Secret{}).Owns(&autoscalingv2.HorizontalPodAutoscaler{}).Complete(r)
+	builder := ctrl.NewControllerManagedBy(manager).For(&kiongav1.KiongaAgent{}).Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&corev1.ConfigMap{}).Owns(&corev1.Secret{}).Owns(&autoscalingv2.HorizontalPodAutoscaler{})
+	if r.Capabilities.KEDAHTTP {
+		scaled := &unstructured.Unstructured{}
+		scaled.SetGroupVersionKind(HTTPScaledObjectGVK)
+		builder = builder.Owns(scaled)
+	}
+	return builder.Complete(r)
 }
 
 func resolvedAgentResources(value corev1.ResourceRequirements) (corev1.ResourceRequirements, error) {

@@ -9,13 +9,23 @@ import (
 
 var GroupVersion = schema.GroupVersion{Group: "kionga.dev", Version: "v1alpha1"}
 
+// ReplicaSpec bounds an agent's replica count. Agents always keep at least one
+// replica; applications and functions use WorkloadReplicaSpec, which allows 0.
+//
+// +kubebuilder:validation:XValidation:rule="self.max >= self.min",message="max replicas must be greater than or equal to min replicas"
 type ReplicaSpec struct {
-	Min int32 `json:"min,omitempty"`
-	Max int32 `json:"max,omitempty"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	Min int32 `json:"min"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	Max int32 `json:"max"`
 }
 
 type LLMSpec struct {
-	Backend             string `json:"backend,omitempty"`
+	// +optional
+	Backend string `json:"backend,omitempty"`
+	// +optional
 	InferenceServiceRef string `json:"inferenceServiceRef,omitempty"`
 }
 
@@ -25,40 +35,93 @@ type ToolReference struct {
 }
 
 type TrafficPolicy struct {
-	CanaryWeight int32  `json:"canaryWeight,omitempty"`
-	StableRef    string `json:"stableRef,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	CanaryWeight int32 `json:"canaryWeight,omitempty"`
+	// +optional
+	StableRef string `json:"stableRef,omitempty"`
+}
+
+const (
+	// ScalingMetricRequests scales on in-flight HTTP requests through the KEDA
+	// HTTP add-on, which also allows scale to zero.
+	ScalingMetricRequests = "requests"
+	// ScalingMetricCPU scales on average CPU utilization with a
+	// HorizontalPodAutoscaler.
+	ScalingMetricCPU = "cpu"
+)
+
+// ScalingSpec selects the autoscaling signal. An empty metric lets the
+// operator choose: requests when the KEDA HTTP add-on is installed, cpu
+// otherwise.
+type ScalingSpec struct {
+	// +kubebuilder:validation:Enum=requests;cpu
+	// +optional
+	Metric string `json:"metric,omitempty"`
+	// Target is concurrent requests per replica for requests, or average CPU
+	// utilization percent for cpu. 0 means the operator default (100 requests,
+	// 70 percent).
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Target int32 `json:"target,omitempty"`
 }
 
 type KiongaAgentSpec struct {
-	Version         string                      `json:"version"`
-	Image           string                      `json:"image"`
-	GraphModule     string                      `json:"graphModule"`
-	FlowJSON        string                      `json:"flowJSON,omitempty"`
-	ProjectID       string                      `json:"projectID,omitempty"`
-	OwnerSubject    string                      `json:"ownerSubject,omitempty"`
-	Replicas        ReplicaSpec                 `json:"replicas,omitempty"`
-	LLM             LLMSpec                     `json:"llm,omitempty"`
-	Tools           []ToolReference             `json:"tools,omitempty"`
-	Resources       corev1.ResourceRequirements `json:"resources,omitempty"`
-	LangfuseProject string                      `json:"langfuseProject,omitempty"`
-	TrafficPolicy   TrafficPolicy               `json:"trafficPolicy,omitempty"`
+	// +kubebuilder:validation:MinLength=1
+	Version string `json:"version"`
+	// +kubebuilder:validation:MinLength=1
+	Image string `json:"image"`
+	// +kubebuilder:validation:MinLength=1
+	GraphModule string `json:"graphModule"`
+	// +kubebuilder:validation:MaxLength=524288
+	// +optional
+	FlowJSON string `json:"flowJSON,omitempty"`
+	// +optional
+	ProjectID string `json:"projectID,omitempty"`
+	// +optional
+	OwnerSubject string      `json:"ownerSubject,omitempty"`
+	Replicas     ReplicaSpec `json:"replicas"`
+	// +optional
+	Scaling ScalingSpec `json:"scaling,omitempty"`
+	// +optional
+	LLM LLMSpec `json:"llm,omitempty"`
+	// +optional
+	Tools []ToolReference `json:"tools,omitempty"`
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	// +optional
+	LangfuseProject string `json:"langfuseProject,omitempty"`
+	// +optional
+	TrafficPolicy TrafficPolicy `json:"trafficPolicy,omitempty"`
 }
 
 type KiongaAgentStatus struct {
-	Phase              string             `json:"phase,omitempty"`
-	WorkloadRef        string             `json:"workloadRef,omitempty"`
+	Phase       string `json:"phase,omitempty"`
+	WorkloadRef string `json:"workloadRef,omitempty"`
+	// URL is the in-cluster address callers use to invoke the agent. With
+	// requests scaling it goes through the KEDA HTTP interceptor, so request
+	// traffic drives the replica count.
+	URL                string             `json:"url,omitempty"`
 	ReadyReplicas      int32              `json:"readyReplicas,omitempty"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=kagent
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
+// +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Ready",type=integer,JSONPath=`.status.readyReplicas`
 type KiongaAgent struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              KiongaAgentSpec   `json:"spec,omitempty"`
+	Spec              KiongaAgentSpec   `json:"spec"`
 	Status            KiongaAgentStatus `json:"status,omitempty"`
 }
 
+// +kubebuilder:object:root=true
 type KiongaAgentList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
@@ -66,213 +129,115 @@ type KiongaAgentList struct {
 }
 
 func AddToScheme(scheme *runtime.Scheme) error {
-	scheme.AddKnownTypes(GroupVersion, &KiongaAgent{}, &KiongaAgentList{}, &KiongaPipelineRun{}, &KiongaPipelineRunList{}, &KiongaModelPromotion{}, &KiongaModelPromotionList{}, &KiongaWorkspace{}, &KiongaWorkspaceList{})
+	scheme.AddKnownTypes(GroupVersion,
+		&KiongaAgent{}, &KiongaAgentList{},
+		&KiongaModelPromotion{}, &KiongaModelPromotionList{},
+		&KiongaWorkspace{}, &KiongaWorkspaceList{},
+		&KiongaApplication{}, &KiongaApplicationList{},
+		&KiongaFunction{}, &KiongaFunctionList{},
+		&KiongaModelDeployment{}, &KiongaModelDeploymentList{},
+	)
 	metav1.AddToGroupVersion(scheme, GroupVersion)
 	return nil
 }
 
 type WorkspaceComputeSpec struct {
-	VCPUs    int32  `json:"vcpus"`
-	MemoryGB int32  `json:"memoryGB"`
-	GPUs     int32  `json:"gpus,omitempty"`
-	GPUType  string `json:"gpuType,omitempty"`
-	MaxVMs   int32  `json:"maxVMs,omitempty"`
+	// +kubebuilder:validation:Minimum=1
+	VCPUs int32 `json:"vcpus"`
+	// +kubebuilder:validation:Minimum=1
+	MemoryGB int32 `json:"memoryGB"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:default=0
+	// +optional
+	GPUs int32 `json:"gpus,omitempty"`
+	// +optional
+	GPUType string `json:"gpuType,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:default=0
+	// +optional
+	MaxVMs int32 `json:"maxVMs,omitempty"`
 }
 
 type KiongaWorkspaceSpec struct {
-	Subject   string               `json:"subject"`
-	ProjectID string               `json:"projectID,omitempty"`
-	Services  []string             `json:"services,omitempty"`
-	Compute   WorkspaceComputeSpec `json:"compute"`
-	StorageGB int32                `json:"storageGB"`
-	Disabled  bool                 `json:"disabled,omitempty"`
+	// +kubebuilder:validation:MinLength=1
+	Subject string `json:"subject"`
+	// +optional
+	ProjectID string `json:"projectID,omitempty"`
+	// +optional
+	Services []string             `json:"services,omitempty"`
+	Compute  WorkspaceComputeSpec `json:"compute"`
+	// +kubebuilder:validation:Minimum=1
+	StorageGB int32 `json:"storageGB"`
+	// +kubebuilder:default=false
+	// +optional
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 type KiongaWorkspaceStatus struct {
-	Phase              string             `json:"phase,omitempty"`
-	ReadyReplicas      int32              `json:"readyReplicas,omitempty"`
-	WorkbenchURL       string             `json:"workbenchURL,omitempty"`
-	IDEURL             string             `json:"ideURL,omitempty"`
-	LangflowURL        string             `json:"langflowURL,omitempty"`
-	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
-	Conditions         []metav1.Condition `json:"conditions,omitempty"`
+	Phase              string `json:"phase,omitempty"`
+	ReadyReplicas      int32  `json:"readyReplicas,omitempty"`
+	WorkbenchURL       string `json:"workbenchURL,omitempty"`
+	IDEURL             string `json:"ideURL,omitempty"`
+	LangflowURL        string `json:"langflowURL,omitempty"`
+	ObservedGeneration int64  `json:"observedGeneration,omitempty"`
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=kws
 type KiongaWorkspace struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              KiongaWorkspaceSpec   `json:"spec,omitempty"`
+	Spec              KiongaWorkspaceSpec   `json:"spec"`
 	Status            KiongaWorkspaceStatus `json:"status,omitempty"`
 }
 
+// +kubebuilder:object:root=true
 type KiongaWorkspaceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []KiongaWorkspace `json:"items"`
 }
 
-type KiongaPipelineRunSpec struct {
-	PipelineRef        string            `json:"pipelineRef"`
-	Parameters         map[string]string `json:"parameters,omitempty"`
-	ServiceAccountName string            `json:"serviceAccountName,omitempty"`
-}
-
-type KiongaPipelineRunStatus struct {
-	Phase       string       `json:"phase,omitempty"`
-	WorkflowRef string       `json:"workflowRef,omitempty"`
-	StartedAt   *metav1.Time `json:"startedAt,omitempty"`
-	FinishedAt  *metav1.Time `json:"finishedAt,omitempty"`
-	Message     string       `json:"message,omitempty"`
-}
-
-type KiongaPipelineRun struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              KiongaPipelineRunSpec   `json:"spec,omitempty"`
-	Status            KiongaPipelineRunStatus `json:"status,omitempty"`
-}
-
-type KiongaPipelineRunList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []KiongaPipelineRun `json:"items"`
-}
-
 type PromotionGate struct {
-	Metric   string  `json:"metric"`
+	Metric string `json:"metric"`
+	// +kubebuilder:validation:Enum=gte;lte
 	Operator string  `json:"operator"`
 	Value    float64 `json:"value"`
 }
 
+// KiongaModelPromotionSpec moves a registered model version to an MLflow
+// stage. Serving lives in KiongaModelDeployment.
 type KiongaModelPromotionSpec struct {
-	ModelName   string          `json:"modelName"`
-	Version     string          `json:"version"`
-	TargetStage string          `json:"targetStage"`
-	Gates       []PromotionGate `json:"gates,omitempty"`
+	ModelName string `json:"modelName"`
+	Version   string `json:"version"`
+	// +kubebuilder:validation:Enum=staging;production;archived
+	TargetStage string `json:"targetStage"`
+	// +optional
+	Gates []PromotionGate `json:"gates,omitempty"`
 }
 
 type KiongaModelPromotionStatus struct {
-	Phase               string `json:"phase,omitempty"`
-	Message             string `json:"message,omitempty"`
-	InferenceServiceRef string `json:"inferenceServiceRef,omitempty"`
+	Phase   string `json:"phase,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=kmp
 type KiongaModelPromotion struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              KiongaModelPromotionSpec   `json:"spec,omitempty"`
+	Spec              KiongaModelPromotionSpec   `json:"spec"`
 	Status            KiongaModelPromotionStatus `json:"status,omitempty"`
 }
 
+// +kubebuilder:object:root=true
 type KiongaModelPromotionList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []KiongaModelPromotion `json:"items"`
-}
-
-func (in *KiongaAgent) DeepCopyObject() runtime.Object {
-	if in == nil {
-		return nil
-	}
-	out := new(KiongaAgent)
-	*out = *in
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	out.Spec.Tools = append([]ToolReference(nil), in.Spec.Tools...)
-	out.Spec.Resources = *in.Spec.Resources.DeepCopy()
-	out.Status.Conditions = append([]metav1.Condition(nil), in.Status.Conditions...)
-	return out
-}
-
-func (in *KiongaAgentList) DeepCopyObject() runtime.Object {
-	if in == nil {
-		return nil
-	}
-	out := new(KiongaAgentList)
-	*out = *in
-	out.Items = make([]KiongaAgent, len(in.Items))
-	for i := range in.Items {
-		out.Items[i] = *(in.Items[i].DeepCopyObject().(*KiongaAgent))
-	}
-	return out
-}
-
-func (in *KiongaPipelineRun) DeepCopyObject() runtime.Object {
-	if in == nil {
-		return nil
-	}
-	out := new(KiongaPipelineRun)
-	*out = *in
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	out.Spec.Parameters = make(map[string]string, len(in.Spec.Parameters))
-	for key, value := range in.Spec.Parameters {
-		out.Spec.Parameters[key] = value
-	}
-	if in.Status.StartedAt != nil {
-		value := in.Status.StartedAt.DeepCopy()
-		out.Status.StartedAt = value
-	}
-	if in.Status.FinishedAt != nil {
-		value := in.Status.FinishedAt.DeepCopy()
-		out.Status.FinishedAt = value
-	}
-	return out
-}
-func (in *KiongaPipelineRunList) DeepCopyObject() runtime.Object {
-	if in == nil {
-		return nil
-	}
-	out := new(KiongaPipelineRunList)
-	*out = *in
-	out.Items = make([]KiongaPipelineRun, len(in.Items))
-	for i := range in.Items {
-		out.Items[i] = *(in.Items[i].DeepCopyObject().(*KiongaPipelineRun))
-	}
-	return out
-}
-func (in *KiongaModelPromotion) DeepCopyObject() runtime.Object {
-	if in == nil {
-		return nil
-	}
-	out := new(KiongaModelPromotion)
-	*out = *in
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	out.Spec.Gates = append([]PromotionGate(nil), in.Spec.Gates...)
-	return out
-}
-func (in *KiongaModelPromotionList) DeepCopyObject() runtime.Object {
-	if in == nil {
-		return nil
-	}
-	out := new(KiongaModelPromotionList)
-	*out = *in
-	out.Items = make([]KiongaModelPromotion, len(in.Items))
-	for i := range in.Items {
-		out.Items[i] = *(in.Items[i].DeepCopyObject().(*KiongaModelPromotion))
-	}
-	return out
-}
-
-func (in *KiongaWorkspace) DeepCopyObject() runtime.Object {
-	if in == nil {
-		return nil
-	}
-	out := new(KiongaWorkspace)
-	*out = *in
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	out.Spec.Services = append([]string(nil), in.Spec.Services...)
-	out.Status.Conditions = append([]metav1.Condition(nil), in.Status.Conditions...)
-	return out
-}
-
-func (in *KiongaWorkspaceList) DeepCopyObject() runtime.Object {
-	if in == nil {
-		return nil
-	}
-	out := new(KiongaWorkspaceList)
-	*out = *in
-	out.Items = make([]KiongaWorkspace, len(in.Items))
-	for i := range in.Items {
-		out.Items[i] = *(in.Items[i].DeepCopyObject().(*KiongaWorkspace))
-	}
-	return out
 }

@@ -89,6 +89,9 @@ jobs:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
       - run: gofmt -l . | tee /tmp/unformatted && test ! -s /tmp/unformatted
+      - name: Generated deep-copy code and CRDs are current
+        working-directory: .
+        run: make generate-check
       - run: go vet ./...
       - run: go test -race ./...
       - run: go test -tags=integration ./integration
