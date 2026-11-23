@@ -14,7 +14,7 @@ func init() {
 	registerRoutes(func(s *Server, mux *http.ServeMux) {
 		mux.HandleFunc("GET /api/v1/site", s.site)
 	})
-	openapiPaths["/api/v1/site"] = map[string]any{"get": map[string]any{"summary": "Public install settings for the console: the optional website link"}}
+	openapiPaths["/api/v1/site"] = map[string]any{"get": map[string]any{"summary": "Public install settings for the console: the optional website link and whether blog authoring is on"}}
 }
 
 // websiteURL returns KIONGA_WEBSITE_URL when it is an absolute http(s) URL
@@ -33,5 +33,5 @@ func websiteURL() string {
 
 func (s *Server) site(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
-	writeJSON(w, http.StatusOK, map[string]any{"website_url": websiteURL()})
+	writeJSON(w, http.StatusOK, map[string]any{"website_url": websiteURL(), "blog_authoring": blogAuthoringEnabled()})
 }

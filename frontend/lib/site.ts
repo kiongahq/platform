@@ -13,21 +13,29 @@ export function safeWebsiteURL(value: unknown): string {
   }
 }
 
+export type SiteSettings = { websiteURL: string; blogAuthoring: boolean };
+
 /**
- * The optional link to the Kionga website (KIONGA_WEBSITE_URL on the
- * gateway). Empty means hidden.
+ * Install settings from /api/v1/site: the optional link to the Kionga website
+ * (KIONGA_WEBSITE_URL; empty means hidden) and whether blog authoring is on
+ * (KIONGA_BLOG_AUTHORING_ENABLED; off by default).
  */
-export function useWebsiteURL() {
-  const [url, setURL] = useState("");
+export function useSite(): SiteSettings {
+  const [site, setSite] = useState<SiteSettings>({ websiteURL: "", blogAuthoring: false });
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/v1/site", { signal: controller.signal, headers: { Accept: "application/json" } })
       .then((response) => (response.ok ? response.json() : undefined))
-      .then((value) => setURL(safeWebsiteURL(value?.website_url)))
+      .then((value) => setSite({ websiteURL: safeWebsiteURL(value?.website_url), blogAuthoring: value?.blog_authoring === true }))
       .catch(() => {});
     return () => controller.abort();
   }, []);
-  return url;
+  return site;
+}
+
+/** The optional link to the Kionga website; empty means hidden. */
+export function useWebsiteURL() {
+  return useSite().websiteURL;
 }
 
 /** A path on the website, or "" when no website is configured. */

@@ -50,7 +50,9 @@ type Server struct {
 }
 
 func New(data store.Repository, static fs.FS) http.Handler {
-	ensureSeedBlog(data)
+	if blogAuthoringEnabled() {
+		ensureSeedBlog(data)
+	}
 	server := &Server{store: data, static: static, realtime: map[string]map[string]any{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", server.health)
@@ -169,7 +171,7 @@ func New(data store.Repository, static fs.FS) http.Handler {
 		}
 		return []string{access.Role}, access.Services, access.ProjectIDs, access.Disabled, true
 	}
-	return logging(securityHeaders(cors(crossOriginGuard(auth.RBACWithResolver(mux, resolver)))))
+	return logging(securityHeaders(blogGate(cors(crossOriginGuard(auth.RBACWithResolver(mux, resolver))))))
 }
 
 // me reports the caller's identity and effective permissions so the console

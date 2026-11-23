@@ -16,7 +16,10 @@ test('canonical protected routes require login and retired HTML routes are unava
     expect([302, 401, 404]).toContain(response.status());
     if(response.status()===302) expect(response.headers().location).toMatch(/^\/(?:auth\/)?login\?/);
   }
-  for (const route of ['/console', '/console/langflow', '/console/agent-designer', '/console/pipeline-editor', '/workspace', '/studio', '/studio/new']) {
+  // The studio exists only with blog authoring on; otherwise it is absent.
+  const authoring = (await (await request.get('/api/v1/site')).json()).blog_authoring === true;
+  if (!authoring) for (const route of ['/studio', '/studio/new']) expect((await request.get(route, { maxRedirects: 0 })).status()).toBe(404);
+  for (const route of ['/console', '/console/langflow', '/console/agent-designer', '/console/pipeline-editor', '/workspace', ...(authoring ? ['/studio', '/studio/new'] : [])]) {
     await page.goto(route);
     await expect(page).toHaveURL(/\/login\?/);
     await expect(page.locator('#local-login')).toBeVisible();

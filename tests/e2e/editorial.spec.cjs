@@ -14,6 +14,14 @@ const {
 } = require("./fixtures.cjs");
 const { request: requestFactory } = require("@playwright/test");
 
+// Blog authoring is opt-in; the stack under test must enable it.
+test.beforeAll(async ({ baseURL }) => {
+  const context = await requestFactory.newContext({ baseURL });
+  const site = await (await context.get("/api/v1/site")).json();
+  await context.dispose();
+  expect(site.blog_authoring, "start the stack with KIONGA_BLOG_AUTHORING_ENABLED=true").toBe(true);
+});
+
 const AUTHOR = { username: "e2e-author", password: "e2e-author-password-123" };
 const ML_USER = {
   username: "e2e-ml-only",

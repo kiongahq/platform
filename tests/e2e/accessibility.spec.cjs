@@ -9,6 +9,11 @@ test.describe('accessibility', () => {
   test.beforeEach(async ({page}) => { await signIn(page, ADMIN); });
   for (const view of views) {
     test(`${view} has no serious accessibility violations`, async ({page}) => {
+      // Publishing exists only with blog authoring on; otherwise it is absent.
+      if (view === 'blogs' && (await (await page.request.get('/api/v1/site')).json()).blog_authoring !== true) {
+        expect((await page.request.get('/console/blogs', {maxRedirects: 0})).status()).toBe(404);
+        return;
+      }
       await page.goto(view === "overview" ? "/console" : `/console/${view}`);
       await expect(page.locator('#page-title')).toBeVisible();
       await expect(page.getByText('Loading…', {exact: true})).toHaveCount(0);

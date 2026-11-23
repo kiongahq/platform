@@ -1,6 +1,12 @@
 const {test, expect} = require('@playwright/test');
 const {ADMIN, signIn} = require('./fixtures.cjs');
 
+// Blog authoring is opt-in; the stack under test must enable it.
+test.beforeAll(async ({request}) => {
+  const site = await (await request.get('/api/v1/site')).json();
+  expect(site.blog_authoring, 'start the stack with KIONGA_BLOG_AUTHORING_ENABLED=true').toBe(true);
+});
+
 test('Studio retains its shell and session and exposes named formatting icons', async ({page}) => {
   await signIn(page, ADMIN);
   let sessions = 0;
