@@ -49,10 +49,11 @@ func (d *Dispatcher) Dispatch(ctx context.Context, record KafkaRecord) error {
 	var plural, kind string
 	var spec map[string]any
 	switch command.Kind {
-	case "pipeline_run":
-		// Pipeline runs execute in the gateway (Kubernetes Jobs on
-		// Kubernetes, Prefect on Compose). They are never turned into a
-		// custom resource; old commands still in the topic are acknowledged.
+	case "pipeline_run", "agent_session", "agent_trace":
+		// Not cluster resources. On Kubernetes the gateway runs pipeline nodes
+		// as Jobs itself (internal/k8sexec); sessions and traces are records.
+		// They share command topics with resources, so acknowledge them here
+		// instead of failing the batch and stopping the worker.
 		return nil
 	case "model":
 		if command.Action != "model.promoted" {

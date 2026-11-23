@@ -1,8 +1,19 @@
 # Kionga platform: control-plane Go services and the embedded console.
 # Running the whole stack lives in kiongahq/deploy (make -C ../deploy local-up).
-.PHONY: run test test-go test-integration test-sandbox-attack test-security lint fmt-check format build verify test-ui test-browser frontend
+.PHONY: generate generate-check run test test-go test-integration test-sandbox-attack test-security lint fmt-check format build verify test-ui test-browser frontend
+
+CONTROLLER_GEN := go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.23.0
+CRD_DIR := config/crd
 
 GO_SERVICES := gateway operator integration-worker feature-gateway storage-proxy metrics-collector log-exporter cli sandbox-manager
+
+generate:                    ## deep-copy code and CRDs from go/pkg/kube/v1alpha1
+	cd go && $(CONTROLLER_GEN) object paths=./pkg/kube/v1alpha1/...
+	cd go && $(CONTROLLER_GEN) crd:crdVersions=v1,allowDangerousTypes=true paths=./pkg/kube/v1alpha1/... output:crd:artifacts:config=../$(CRD_DIR)
+
+generate-check: generate     ## fails when generated files are stale or untracked
+	@git diff --exit-code -- go/pkg/kube/v1alpha1 $(CRD_DIR) || { echo "run make generate and commit the result"; exit 1; }
+	@untracked="$$(git ls-files --others --exclude-standard -- go/pkg/kube/v1alpha1 $(CRD_DIR))"; if [ -n "$$untracked" ]; then echo "untracked generated files, commit them:"; echo "$$untracked"; exit 1; fi
 
 frontend:
 	npm ci --prefix frontend --ignore-scripts
@@ -42,7 +53,7 @@ build: frontend
 		go build -buildvcs=false -o ../bin/kionga-$$cmd ./cmd/$$cmd || exit 1; \
 	done
 
-verify: lint test-go build
+verify: lint generate-check test-go build
 	! rg -i '\b(nuclio|v3io|iguazio)\b' go
 
 test-ui: frontend

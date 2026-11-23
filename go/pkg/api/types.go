@@ -202,7 +202,8 @@ type PipelineRun struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 	ParentRunID string    `json:"parent_run_id,omitempty"`
 	// EngineRunID links the control-plane run to the execution engine's run
-	// (Prefect flow run id locally, KFP run id on Kubernetes).
+	// (the Prefect flow run id on Compose; empty when the gateway runs nodes
+	// as Kubernetes Jobs itself).
 	EngineRunID   string         `json:"engine_run_id,omitempty"`
 	DefinitionID  string         `json:"definition_id,omitempty"`
 	ExecutionMode string         `json:"execution_mode,omitempty"`
@@ -311,8 +312,8 @@ type JobResources struct {
 }
 
 // PipelineJob is a reusable unit of work. Function jobs invoke an OpenFaaS
-// function; container jobs are handed to Prefect locally and KFP on
-// Kubernetes. The same dependency graph is exposed to every interface.
+// function; container jobs are handed to Prefect on Compose and run as
+// Kubernetes Jobs on Kubernetes. The same dependency graph is exposed to every interface.
 type PipelineJob struct {
 	Name        string            `json:"name"`
 	Kind        string            `json:"kind"`
