@@ -6,7 +6,9 @@ import { render, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import { LoginPage } from '../components/pages/LoginPage';
 import { WorkspacePage } from '../components/pages/WorkspacePage';
 import { ApiDocsPage } from '../components/pages/ApiDocsPage';
-import { IndexPage } from '../components/pages/IndexPage';
+import { RootRedirect } from '../components/pages/RootRedirect';
+import { safeWebsiteURL, websiteHref } from '../lib/site';
+import { publicationHref } from '../lib/publication';
 Object.assign(globalThis, { self: window });
 function setup(path: string, handler: (path: string, options?: RequestInit) => unknown) {
   history.replaceState(null, '', path);
@@ -53,13 +55,26 @@ test('API reference uses a dedicated Swagger documentation surface', () => {
   assert.equal(view.getByRole('link',{name:'OpenAPI JSON'}).getAttribute('href'), '/api/openapi.json');
   assert.equal(view.container.querySelector('.site-header'), null);
 });
-test('product landing excludes editorial content and does not fetch publication data', async () => {
-  const requests: string[] = [];
-  setup('/', path => { requests.push(path); return {items: []}; });
-  const view=render(<IndexPage/>);
-  await waitFor(()=>assert.match(view.container.textContent||'',/Run your ML work/));
-  assert.deepEqual(requests, []);
-  assert.equal(view.container.querySelector('#landing-blog-grid'), null);
+test('the install has no landing page: the root sends people to the console', () => {
+  const view=render(<RootRedirect/>);
+  assert.equal(view.getByRole('link',{name:'Continue'}).getAttribute('href'),'/console');
   assert.equal(view.container.querySelector('a[href="/blog"]'), null);
-  assert.equal(view.container.querySelector('a[href="/studio"]'), null);
+});
+test('login shows the website link only when the install configures one', async () => {
+  setup('/login', path => path === '/api/v1/site' ? {website_url:'https://kionga.dev/'} : {local:true,providers:[]});
+  const view=render(<LoginPage/>);
+  await waitFor(()=>assert.equal(view.container.querySelector('#website-link')?.getAttribute('href'),'https://kionga.dev/'));
+  cleanup();
+  setup('/login', path => path === '/api/v1/site' ? {website_url:''} : {local:true,providers:[]});
+  const hidden=render(<LoginPage/>);
+  await waitFor(()=>assert.equal((hidden.container.querySelector('#local-login') as HTMLElement).hidden,false));
+  assert.equal(hidden.container.querySelector('#website-link'), null);
+});
+test('website and publication links accept only absolute http(s) URLs', () => {
+  assert.equal(safeWebsiteURL('https://kionga.dev'), 'https://kionga.dev/');
+  for (const value of ['javascript:alert(1)', 'https://user:pw@kionga.dev', '/relative', '', 42, undefined]) assert.equal(safeWebsiteURL(value), '', String(value));
+  assert.equal(websiteHref('', '/blog'), '');
+  assert.equal(websiteHref('https://kionga.dev/', '/blog'), 'https://kionga.dev/blog');
+  assert.equal(publicationHref('/blog'), '');
+  assert.equal(publicationHref('/blog/read?slug=a', 'https://kionga.dev/'), 'https://kionga.dev/blog/read?slug=a');
 });

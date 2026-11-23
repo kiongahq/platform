@@ -532,8 +532,20 @@ func TestDeployVersionUsesManagedRuntimeAndQualityGate(t *testing.T) {
 	if err := json.Unmarshal([]byte(agent.FlowJSON), &artifact); err != nil || agent.GraphModule != nativeGraphModule || artifact.ContentSHA256 != version.ContentSHA256 || agent.Version != "v1" {
 		t.Fatalf("deployed agent: %+v (%v)", agent, err)
 	}
+	if agent.Scaling != (api.WorkloadScaling{Metric: "requests", Target: api.DefaultRequestsTarget}) {
+		t.Fatalf("default scaling: %+v", agent.Scaling)
+	}
+	for _, bad := range []string{`{"scaling":{"metric":"cpu","target":101}}`, `{"scaling":{"metric":"requests","target":10001}}`, `{"scaling":{"metric":"memory","target":5}}`} {
+		if refused := s.do("POST", "/api/v1/agent-versions/"+version.ID+"/deploy", bad); refused.Code != 422 {
+			t.Fatalf("%s: %d %s", bad, refused.Code, refused.Body.String())
+		}
+	}
+	scaled := decodeInto[api.Agent](t, s.do("POST", "/api/v1/agent-versions/"+version.ID+"/deploy", `{"scaling":{"metric":"cpu","target":70}}`))
+	if scaled.Scaling != (api.WorkloadScaling{Metric: "cpu", Target: 70}) {
+		t.Fatalf("cpu scaling: %+v", scaled.Scaling)
+	}
 	overview := s.do("GET", "/api/v1/agent-designs/overview?project_id=prj-demo", "")
-	if !strings.Contains(overview.Body.String(), `"deployments":1`) || !strings.Contains(overview.Body.String(), `"versions":1`) {
+	if !strings.Contains(overview.Body.String(), `"deployments":2`) || !strings.Contains(overview.Body.String(), `"versions":1`) {
 		t.Fatalf("overview: %s", overview.Body.String())
 	}
 }

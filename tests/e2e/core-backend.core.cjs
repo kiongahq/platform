@@ -65,3 +65,39 @@ test('client navigation retains project context and browser history without repl
   await expect(page.locator('#page-title')).toHaveText('Langflow');
   expect(await page.evaluate(() => window.__navigationMarker)).toBe('same-document');
 });
+
+test('the root sends visitors to sign-in and signed-in users to the console; marketing pages are gone', async ({page, request}) => {
+  const root = await request.get('/', { maxRedirects: 0 });
+  expect(root.status()).toBe(302);
+  expect(root.headers().location).toBe('/console');
+  for (const route of ['/blog', '/blog/read?slug=anything']) {
+    expect((await request.get(route, { maxRedirects: 0 })).status()).not.toBe(200);
+  }
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/login\?/);
+  const website = page.locator('#website-link');
+  await expect(website).toHaveAttribute('href', 'https://website.example.test/');
+  await signIn(page, admin);
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/console$/);
+  await expect(page.locator('#page-title')).toBeVisible();
+});
+
+test('Applications on a Compose install explain how to enable them', async ({page}) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await signIn(page, admin, '/console/applications');
+  if (test.info().project.name === 'narrow') await page.locator('#sidebar-toggle').click();
+  await expect(page.locator('[data-view="applications"]')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('#website-link')).toHaveAttribute('href', 'https://website.example.test/');
+  if (test.info().project.name === 'narrow') await page.locator('#sidebar').getByRole('button', {name: 'Close navigation'}).click();
+  await expect(page.getByRole('heading', {name: 'Applications are not enabled on this install'})).toBeVisible();
+  await expect(page.getByText('Applications run only on Kubernetes.')).toBeVisible();
+  await expect(page.getByRole('listitem').filter({hasText: 'applications.baseDomain'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Deploy application'})).toHaveCount(0);
+  const api = await page.request.get('/api/v1/applications');
+  expect(api.status()).toBe(409);
+  expect((await api.json()).error).toBe('not_configured');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});

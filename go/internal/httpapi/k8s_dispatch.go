@@ -12,11 +12,18 @@ import (
 	"github.com/kiongahq/platform/pkg/api"
 )
 
-// KIONGA_EXECUTOR=kubernetes runs container flows as Kubernetes Jobs from the
+// The Kubernetes executor runs container flows as Kubernetes Jobs from the
 // gateway using its in-cluster service account, in KIONGA_K8S_NAMESPACE
-// (default kionga-pipelines). Otherwise container flows go to the pipeline
-// runner.
-func kubernetesExecutorEnabled() bool { return os.Getenv("KIONGA_EXECUTOR") == "kubernetes" }
+// (default kionga-pipelines). It is the only pipeline engine on Kubernetes
+// and is chosen automatically in Kubernetes mode. KIONGA_EXECUTOR overrides:
+// "kubernetes" forces it, any other value (such as "prefect") sends
+// container flows to the pipeline runner.
+func kubernetesExecutorEnabled() bool {
+	if value, set := os.LookupEnv("KIONGA_EXECUTOR"); set && value != "" {
+		return value == "kubernetes"
+	}
+	return kubernetesMode()
+}
 
 var (
 	k8sOnce     sync.Once

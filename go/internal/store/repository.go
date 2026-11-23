@@ -48,7 +48,8 @@ type Repository interface {
 	RegisterModel(api.RegisterModelRequest, string) (api.Model, error)
 	PromoteModel(string, string, string) (api.Model, error)
 	DeployModel(string, int, string) (api.Model, error)
-	SetModelEndpoint(string, string, string) (api.Model, error)
+	// SetModelEndpoint records endpoint, deployment status and message.
+	SetModelEndpoint(string, string, string, string) (api.Model, error)
 	RollbackModel(string, string) (api.Model, error)
 	DeployAgent(api.DeployAgentRequest, string) (api.Agent, error)
 	SetAgentTraffic(string, int, string) (api.Agent, error)

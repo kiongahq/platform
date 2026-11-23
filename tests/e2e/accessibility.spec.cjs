@@ -3,7 +3,7 @@
 const {test, expect, ADMIN, signIn} = require('./fixtures.cjs');
 const AxeBuilder = require('@axe-core/playwright').default;
 
-const views = ['overview', 'projects', 'pipelines', 'functions', 'models', 'agents', 'features', 'storage', 'realtime', 'catalog', 'logs', 'platform', 'access', 'profile', 'settings', 'blogs'];
+const views = ['overview', 'projects', 'pipelines', 'functions', 'applications', 'models', 'agents', 'features', 'storage', 'realtime', 'catalog', 'logs', 'platform', 'access', 'profile', 'settings', 'blogs'];
 
 test.describe('accessibility', () => {
   test.beforeEach(async ({page}) => { await signIn(page, ADMIN); });

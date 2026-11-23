@@ -42,6 +42,9 @@ type Server struct {
 	teamRunnerClient  teamRunner
 	teamSandboxClient teamSandbox
 	teamHealth        sandboxHealthCache
+
+	// canary splits model invocations between stable and canary versions.
+	canary canarySplitter
 }
 
 func New(data store.Repository, static fs.FS) http.Handler {
@@ -994,6 +997,10 @@ func (s *Server) openfaas() *integrations.OpenFaaS {
 
 func (s *Server) functions(w http.ResponseWriter, r *http.Request) {
 	persisted := filterFunctions(s.store.Functions(), allowedProjectIDs(s.store, principal(r)))
+	if kubernetesMode() {
+		s.listKubernetesFunctions(w, r, persisted)
+		return
+	}
 	client := s.openfaas()
 	if client == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"configured": false, "items": persisted, "total": len(persisted)})
@@ -1026,7 +1033,7 @@ func (s *Server) functions(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deployFunction(w http.ResponseWriter, r *http.Request) {
 	client := s.openfaas()
-	if client == nil {
+	if client == nil && !kubernetesMode() {
 		writeError(w, http.StatusConflict, "not_configured", "OPENFAAS_URL is not configured")
 		return
 	}
@@ -1056,6 +1063,10 @@ func (s *Server) deployFunction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if kubernetesMode() {
+		s.deployKubernetesFunction(w, r, req)
+		return
+	}
 	limits, requests := map[string]string{}, map[string]string{}
 	if req.CPU != "" {
 		limits["cpu"], requests["cpu"] = req.CPU, req.CPU
@@ -1078,14 +1089,20 @@ func (s *Server) deleteFunction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "function not found")
 		return
 	}
-	client := s.openfaas()
-	if client == nil {
-		writeError(w, http.StatusConflict, "not_configured", "OPENFAAS_URL is not configured")
-		return
-	}
-	if err := client.DeleteFunction(r.Context(), name); err != nil {
-		writeError(w, http.StatusBadGateway, "delete_failed", err.Error())
-		return
+	if kubernetesMode() {
+		if !s.deleteKubernetesFunction(w, r, name) {
+			return
+		}
+	} else {
+		client := s.openfaas()
+		if client == nil {
+			writeError(w, http.StatusConflict, "not_configured", "OPENFAAS_URL is not configured")
+			return
+		}
+		if err := client.DeleteFunction(r.Context(), name); err != nil {
+			writeError(w, http.StatusBadGateway, "delete_failed", err.Error())
+			return
+		}
 	}
 	if err := s.store.DeleteFunction(name, actor(r)); err != nil {
 		writeMutation(w, struct{}{}, err, http.StatusNoContent)
@@ -1095,7 +1112,7 @@ func (s *Server) deleteFunction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) invokeFunction(w http.ResponseWriter, r *http.Request) {
-	client := s.openfaas()
+	client := s.functionRuntime()
 	if client == nil {
 		writeError(w, http.StatusConflict, "not_configured", "OPENFAAS_URL is not configured")
 		return
@@ -1120,8 +1137,8 @@ func (s *Server) invokeFunction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) invokeFunctionAsync(w http.ResponseWriter, r *http.Request) {
-	client := s.openfaas()
-	if client == nil {
+	runtime := s.functionRuntime()
+	if runtime == nil {
 		writeError(w, http.StatusConflict, "not_configured", "OPENFAAS_URL is not configured")
 		return
 	}
@@ -1134,6 +1151,11 @@ func (s *Server) invokeFunctionAsync(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	client, ok := runtime.(*integrations.OpenFaaS)
+	if !ok {
+		s.invokeKubernetesFunctionAsync(w, runtime, r.PathValue("name"), payload)
+		return
+	}
 	callID, err := client.InvokeAsync(r.Context(), r.PathValue("name"), payload)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "invoke_failed", err.Error())
@@ -1144,6 +1166,13 @@ func (s *Server) invokeFunctionAsync(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 	items := filterModels(s.store.Models(), allowedProjectIDs(s.store, principal(r)))
+	if refreshed, err := s.refreshModelDeployments(r.Context(), items); err != nil {
+		// The registry stays readable; the deployment column keeps the last
+		// recorded status.
+		log.Printf("refresh model deployment status: %v", err)
+	} else {
+		items = refreshed
+	}
 	writeJSON(w, http.StatusOK, api.Page[api.Model]{Items: items, Total: len(items)})
 }
 
@@ -1184,29 +1213,40 @@ func (s *Server) deployModel(w http.ResponseWriter, r *http.Request) {
 		writeDecodeError(w, err)
 		return
 	}
+	// On Kubernetes the deployment is a KiongaModelDeployment and stays
+	// pending until the operator reports the InferenceService Ready.
+	if kubernetesMode() {
+		s.deployKubernetesModel(w, r, r.PathValue("id"), req.CanaryWeight)
+		return
+	}
+	// On Compose a serving manager must start the model server. Without one
+	// nothing would run, so fail closed before recording anything.
+	managerURL := os.Getenv("SERVING_MANAGER_URL")
+	if managerURL == "" {
+		writeNotConfigured(w, "Model serving is not configured: SERVING_MANAGER_URL is not set, so Deploy cannot start a model server.", modelServingSteps)
+		return
+	}
 	item, err := s.store.DeployModel(r.PathValue("id"), req.CanaryWeight, actor(r))
 	if err != nil {
 		writeMutation(w, item, err, http.StatusAccepted)
 		return
 	}
-	// With a serving manager configured, deployment is real: an mlflow serve
-	// container starts and the live endpoint is recorded. Fail closed when the
-	// serving manager rejects it.
-	if managerURL := os.Getenv("SERVING_MANAGER_URL"); managerURL != "" {
-		// The serving manager answers once the model server is ready, which
-		// can take longer than the listener's 30s write timeout.
-		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(servingRequestTimeout() + 10*time.Second))
-		endpoint, deployErr := s.requestServing(r, managerURL, item)
-		if deployErr != nil {
-			item, _ = s.store.SetModelEndpoint(item.ID, "", "failed")
-			writeError(w, http.StatusBadGateway, "serving_failed", deployErr.Error())
-			return
-		}
-		if updated, setErr := s.store.SetModelEndpoint(item.ID, endpoint, "serving"); setErr == nil {
-			item = updated
-		}
+	// The serving manager answers once the model server is ready, which
+	// can take longer than the listener's 30s write timeout.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(servingRequestTimeout() + 10*time.Second))
+	endpoint, deployErr := s.requestServing(r, managerURL, item)
+	if deployErr != nil {
+		_, _ = s.store.SetModelEndpoint(item.ID, "", "failed", deployErr.Error())
+		writeError(w, http.StatusBadGateway, "serving_failed", deployErr.Error())
+		return
 	}
-	writeJSON(w, http.StatusAccepted, item)
+	if endpoint == "" {
+		_, _ = s.store.SetModelEndpoint(item.ID, "", "failed", "the serving manager returned no endpoint")
+		writeError(w, http.StatusBadGateway, "serving_failed", "the serving manager returned no endpoint")
+		return
+	}
+	item, err = s.store.SetModelEndpoint(item.ID, endpoint, "serving", "")
+	writeMutation(w, item, err, http.StatusAccepted)
 }
 
 // defaultServingRequestTimeout stays above the serving manager's own
@@ -1268,6 +1308,23 @@ func (s *Server) rollbackModel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "model not found")
 		return
 	}
+	if kubernetesMode() {
+		model, _ := findModel(s.store.Models(), r.PathValue("id"))
+		if model.PreviousStage == "" {
+			writeError(w, http.StatusUnprocessableEntity, "validation_error", "no previous stage is available")
+			return
+		}
+		if status, message := s.rollbackKubernetesModel(r.Context(), model); status != 0 {
+			writeError(w, status, "rollback_failed", message)
+			return
+		}
+		item, err := s.store.RollbackModel(model.ID, actor(r))
+		if err == nil {
+			item, err = s.store.SetModelEndpoint(item.ID, "", "rolled_back", "")
+		}
+		writeMutation(w, item, err, http.StatusOK)
+		return
+	}
 	item, err := s.store.RollbackModel(r.PathValue("id"), actor(r))
 	if err == nil && os.Getenv("SERVING_MANAGER_URL") != "" {
 		// Best effort: remove the serving container for the rolled-back model.
@@ -1307,7 +1364,12 @@ func (s *Server) predictModel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "model not found")
 		return
 	}
-	if model.EndpointURL == "" || !strings.HasPrefix(model.EndpointURL, "http") {
+	endpoint, version, err := s.modelTarget(r.Context(), r, *model)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "kubernetes_unavailable", err.Error())
+		return
+	}
+	if endpoint == "" || !strings.HasPrefix(endpoint, "http") {
 		writeError(w, http.StatusConflict, "not_serving", "model has no live serving endpoint")
 		return
 	}
@@ -1316,22 +1378,7 @@ func (s *Server) predictModel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, strings.TrimRight(model.EndpointURL, "/")+"/invocations", bytes.NewReader(body))
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "endpoint_unreachable", err.Error())
-		return
-	}
-	request.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 30 * time.Second}
-	response, err := client.Do(request)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "endpoint_unreachable", err.Error())
-		return
-	}
-	defer func() { _ = response.Body.Close() }()
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
-	_, _ = io.Copy(w, response.Body)
+	proxyPrediction(w, r, endpoint, version, body)
 }
 
 func (s *Server) agents(w http.ResponseWriter, r *http.Request) {

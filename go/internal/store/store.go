@@ -588,8 +588,10 @@ func (s *Store) DeployModel(modelID string, weight int, actor string) (api.Model
 			if s.data.Models[i].GateStatus != "passed" {
 				return api.Model{}, errors.New("model evaluation gates have not passed")
 			}
-			s.data.Models[i].DeploymentStatus, s.data.Models[i].CanaryWeight = "deploying", weight
-			s.data.Models[i].EndpointURL = "/v1/models/" + s.data.Models[i].Name + ":predict"
+			// Pending until a runtime reports the workload ready; never a
+			// placeholder endpoint that suggests something is serving.
+			s.data.Models[i].DeploymentStatus, s.data.Models[i].CanaryWeight = "pending", weight
+			s.data.Models[i].EndpointURL, s.data.Models[i].DeploymentMessage = "", ""
 			s.record("model.deployed", "model", modelID, actor, map[string]any{"canary_weight": weight})
 			return s.data.Models[i], s.persist()
 		}
@@ -599,13 +601,14 @@ func (s *Store) DeployModel(modelID string, weight int, actor string) (api.Model
 
 // SetModelEndpoint records the live serving endpoint after the serving
 // manager (or KServe on Kubernetes) has actually started the model server.
-func (s *Store) SetModelEndpoint(modelID, endpoint, status string) (api.Model, error) {
+func (s *Store) SetModelEndpoint(modelID, endpoint, status, message string) (api.Model, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.data.Models {
 		if s.data.Models[i].ID == modelID {
 			s.data.Models[i].EndpointURL = endpoint
 			s.data.Models[i].DeploymentStatus = status
+			s.data.Models[i].DeploymentMessage = message
 			return s.data.Models[i], s.persist()
 		}
 	}
@@ -638,7 +641,7 @@ func (s *Store) DeployAgent(req api.DeployAgentRequest, actor string) (api.Agent
 	if !hasProject(s.data.Projects, req.ProjectID) {
 		return api.Agent{}, ErrNotFound
 	}
-	a := api.Agent{ID: id("agt"), ProjectID: req.ProjectID, OwnerSubject: req.OwnerSubject, Name: req.Name, Version: req.Version, Image: req.Image, GraphModule: req.GraphModule, FlowJSON: req.FlowJSON, SnapshotID: req.SnapshotID, SnapshotRev: req.SnapshotRev, LLMBackend: req.LLMBackend, Replicas: req.Replicas, Autoscaling: req.Autoscaling, Resources: req.Resources, Tools: req.Tools, Status: "pending", CreatedAt: time.Now().UTC()}
+	a := api.Agent{ID: id("agt"), ProjectID: req.ProjectID, OwnerSubject: req.OwnerSubject, Name: req.Name, Version: req.Version, Image: req.Image, GraphModule: req.GraphModule, FlowJSON: req.FlowJSON, SnapshotID: req.SnapshotID, SnapshotRev: req.SnapshotRev, LLMBackend: req.LLMBackend, Replicas: req.Replicas, Autoscaling: req.Autoscaling, Scaling: req.Scaling, Resources: req.Resources, Tools: req.Tools, Status: "pending", CreatedAt: time.Now().UTC()}
 	s.data.Agents = append([]api.Agent{a}, s.data.Agents...)
 	s.record("agent.deployed", "agent", a.ID, actor, nil)
 	return a, s.persist()

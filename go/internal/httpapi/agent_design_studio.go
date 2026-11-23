@@ -375,9 +375,12 @@ func nativeAgentImage() string {
 }
 
 type deployVersionRequest struct {
-	Autoscaling       api.AgentAutoscaling `json:"autoscaling"`
-	Resources         api.AgentResources   `json:"resources"`
-	RequireEvaluation bool                 `json:"require_evaluation"`
+	Autoscaling api.AgentAutoscaling `json:"autoscaling"`
+	Resources   api.AgentResources   `json:"resources"`
+	// Scaling picks the autoscaling trigger, validated like agent deploy:
+	// requests (1-10000 per replica, the default) or cpu (1-100 percent).
+	Scaling           api.WorkloadScaling `json:"scaling"`
+	RequireEvaluation bool                `json:"require_evaluation"`
 }
 
 // deployVersion creates a managed agent from an immutable version. Deploying
@@ -435,7 +438,7 @@ func (s *Server) deployVersion(w http.ResponseWriter, r *http.Request) {
 		ProjectID: version.ProjectID, OwnerSubject: principal(r).Subject,
 		Name: "native-" + strings.TrimPrefix(version.DesignID, "agd-"), Version: fmt.Sprintf("v%d", version.Version), Image: image,
 		GraphModule: nativeGraphModule, FlowJSON: string(artifact), SnapshotID: version.ID, SnapshotRev: version.Version,
-		Autoscaling: req.Autoscaling, Resources: req.Resources,
+		Autoscaling: req.Autoscaling, Scaling: req.Scaling, Resources: req.Resources,
 	}
 	if err := store.NormalizeAgentRequest(&request); err != nil {
 		writeError(w, 422, "validation_error", err.Error())

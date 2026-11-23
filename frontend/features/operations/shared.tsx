@@ -28,6 +28,7 @@ export const services = [
   "projects",
   "pipelines",
   "functions",
+  "applications",
   "models",
   "agents",
   "langflow",
