@@ -7,12 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	clienttesting "k8s.io/client-go/testing"
-
 )
 
 func createAppBody(projectID, extra string) string {
@@ -257,16 +258,20 @@ func TestApplicationStatusMapping(t *testing.T) {
 
 func appPod(name, app, owner string) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace, Labels: map[string]string{"kionga.dev/application": app},
-			OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: owner}}},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace, UID: types.UID("uid-" + name), Labels: map[string]string{"kionga.dev/application": app},
+			OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: owner, UID: types.UID("uid-" + owner)}}},
 		Spec:   corev1.PodSpec{Containers: []corev1.Container{{Name: "app"}}},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning},
 	}
 }
 
 func event(name, objectKind, objectName, reason string) *corev1.Event {
+	return eventFor(name, objectKind, objectName, "uid-"+objectName, reason)
+}
+
+func eventFor(name, objectKind, objectName, uid, reason string) *corev1.Event {
 	return &corev1.Event{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
-		InvolvedObject: corev1.ObjectReference{Kind: objectKind, Name: objectName, Namespace: testNamespace}, Reason: reason, Type: "Normal", Count: 1}
+		InvolvedObject: corev1.ObjectReference{Kind: objectKind, Name: objectName, Namespace: testNamespace, UID: types.UID(uid)}, Reason: reason, Type: "Normal", Count: 1}
 }
 
 func TestApplicationLogsAndEventsStayWithinTheApplication(t *testing.T) {
@@ -278,10 +283,22 @@ func TestApplicationLogsAndEventsStayWithinTheApplication(t *testing.T) {
 		event("e3", "ReplicaSet", "billing-7d9", "SuccessfulCreate"),
 		event("e4", "Pod", "billing-admin-5f6-xyz12", "Started"),
 		event("e5", "KiongaApplication", "billing-admin", "Reconciled"),
+		// Another workload's object with the same name must not leak in.
+		eventFor("e6", "ConfigMap", "billing", "uid-someone-else", "Leaked"),
+		// The operator's Deployment, owned by the application resource.
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "billing", Namespace: testNamespace, UID: "uid-billing-deployment",
+			OwnerReferences: []metav1.OwnerReference{{Kind: "KiongaApplication", Name: "billing", UID: "uid-billing"}}}},
+		eventFor("e7", "Deployment", "billing", "uid-billing-deployment", "ScalingReplicaSet"),
 	)
 	projectID := createTestProject(t, harness.server)
 	if created := harness.do(t, http.MethodPost, "/api/v1/applications", createAppBody(projectID, "")); created.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	// The fake API server assigns no UIDs; play the API server.
+	resource := harness.object(t, applicationsGVR, "billing")
+	resource.SetUID("uid-billing")
+	if _, err := harness.dynamic.Resource(applicationsGVR).Namespace(testNamespace).Update(context.Background(), resource, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
 	}
 	logs := harness.do(t, http.MethodGet, "/api/v1/applications/billing/logs?tail=50", "")
 	if logs.Code != http.StatusOK || !strings.Contains(logs.Body.String(), `"pod":"billing-7d9-abcde"`) || strings.Contains(logs.Body.String(), "billing-admin") || !strings.Contains(logs.Body.String(), "fake logs") {
@@ -292,12 +309,28 @@ func TestApplicationLogsAndEventsStayWithinTheApplication(t *testing.T) {
 	}
 	events := harness.do(t, http.MethodGet, "/api/v1/applications/billing/events", "")
 	body := events.Body.String()
-	for _, reason := range []string{"Reconciled", "Started", "SuccessfulCreate"} {
+	for _, reason := range []string{"Reconciled", "Started", "SuccessfulCreate", "ScalingReplicaSet"} {
 		if !strings.Contains(body, reason) {
 			t.Fatalf("missing %s event: %s", reason, body)
 		}
 	}
-	if events.Code != http.StatusOK || strings.Contains(body, "billing-admin") || jsonBody(t, events)["total"].(float64) != 3 {
+	if events.Code != http.StatusOK || strings.Contains(body, "billing-admin") || strings.Contains(body, "Leaked") || jsonBody(t, events)["total"].(float64) != 4 {
 		t.Fatalf("events leaked across applications: %d %s", events.Code, body)
+	}
+}
+
+func TestApplicationNeverTakesOverAnotherProjectsResource(t *testing.T) {
+	harness := newKubeHarness(t)
+	projectID := createTestProject(t, harness.server)
+	orphan := newWorkloadObject("KiongaApplication", "billing", testNamespace, map[string]any{"kionga.dev/project": "prj-other"}, map[string]any{"image": "theirs:1"})
+	if _, err := harness.dynamic.Resource(applicationsGVR).Namespace(testNamespace).Create(context.Background(), orphan, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	recorder := harness.do(t, http.MethodPost, "/api/v1/applications", createAppBody(projectID, ""))
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("want 409: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if image, _, _ := unstructured.NestedString(harness.object(t, applicationsGVR, "billing").Object, "spec", "image"); image != "theirs:1" {
+		t.Fatalf("another project's resource was overwritten: %s", image)
 	}
 }

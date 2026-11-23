@@ -179,6 +179,18 @@ func (s *Server) deployKubernetesFunction(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusServiceUnavailable, "kubernetes_unavailable", errKubernetesUnavailable.Error())
 		return
 	}
+	// Function names are global. Never overwrite a resource that belongs to
+	// another project, whether a record says so or the resource's label does.
+	for _, existing := range s.store.Functions() {
+		if existing.Name == req.Name && existing.ProjectID != req.ProjectID {
+			writeError(w, http.StatusConflict, "conflict", "a function named "+req.Name+" belongs to another project")
+			return
+		}
+	}
+	if existing, getErr := access.dynamic.Resource(functionsGVR).Namespace(access.namespace).Get(r.Context(), req.Name, metav1.GetOptions{}); getErr == nil && existing.GetLabels()["kionga.dev/project"] != req.ProjectID {
+		writeError(w, http.StatusConflict, "conflict", "a function named "+req.Name+" belongs to another project")
+		return
+	}
 	object, err := applyWorkload(r.Context(), access.dynamic, functionsGVR, functionObject(req, access.namespace))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "deploy_failed", "Kubernetes rejected the function: "+err.Error())

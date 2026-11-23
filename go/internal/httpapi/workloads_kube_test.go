@@ -51,6 +51,33 @@ func TestKubernetesFunctionDeployCreatesKiongaFunction(t *testing.T) {
 	}
 }
 
+func TestKubernetesFunctionNeverOverwritesAnotherProjectsFunction(t *testing.T) {
+	harness := newKubeHarness(t)
+	owner := createTestProject(t, harness.server)
+	created := harness.do(t, http.MethodPost, "/api/v1/projects", `{"name":"Other project"}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("project: %d %s", created.Code, created.Body.String())
+	}
+	other := jsonBody(t, created)["id"].(string)
+	if deployed := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+owner+`","name":"shared-fn","image":"registry/owner:1"}`); deployed.Code != http.StatusAccepted {
+		t.Fatalf("deploy: %d %s", deployed.Code, deployed.Body.String())
+	}
+	if taken := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+other+`","name":"shared-fn","image":"registry/attacker:1"}`); taken.Code != http.StatusConflict {
+		t.Fatalf("want 409: %d %s", taken.Code, taken.Body.String())
+	}
+	if image := harness.object(t, functionsGVR, "shared-fn").Object["spec"].(map[string]any)["image"]; image != "registry/owner:1" {
+		t.Fatalf("the other project's request overwrote the resource: %v", image)
+	}
+	// A resource without a record (created outside the gateway) is protected by its label.
+	orphan := newWorkloadObject("KiongaFunction", "orphan-fn", testNamespace, map[string]any{"kionga.dev/project": owner}, map[string]any{"image": "registry/owner:2"})
+	if _, err := harness.dynamic.Resource(functionsGVR).Namespace(testNamespace).Create(t.Context(), orphan, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if taken := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+other+`","name":"orphan-fn","image":"registry/attacker:1"}`); taken.Code != http.StatusConflict {
+		t.Fatalf("orphan takeover: %d %s", taken.Code, taken.Body.String())
+	}
+}
+
 func TestKubernetesFunctionRejectsCPUScaleToZero(t *testing.T) {
 	harness := newKubeHarness(t)
 	projectID := createTestProject(t, harness.server)

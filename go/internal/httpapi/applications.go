@@ -306,6 +306,12 @@ func (s *Server) saveApplication(w http.ResponseWriter, r *http.Request, access 
 		writeMutation(w, api.Application{}, err, http.StatusOK)
 		return
 	}
+	// A resource of this name that belongs to another project (left behind,
+	// or created outside the gateway) is never taken over.
+	if existing, getErr := access.dynamic.Resource(applicationsGVR).Namespace(access.namespace).Get(r.Context(), applicationObjectName(req.Name), metav1.GetOptions{}); getErr == nil && existing.GetLabels()["kionga.dev/project"] != req.ProjectID {
+		writeError(w, http.StatusConflict, "conflict", "a Kubernetes application named "+req.Name+" belongs to another project")
+		return
+	}
 	draft := api.Application{Name: req.Name, ProjectID: req.ProjectID, Image: req.Image, Source: req.Source, Port: req.Port, Env: req.Env, SecretRefs: req.SecretRefs,
 		Resources: req.Resources, Replicas: *req.Replicas, Scaling: *req.Scaling, HealthPath: req.HealthPath, Visibility: req.Visibility, RedeployedAt: previous.RedeployedAt}
 	object, err := applyWorkload(r.Context(), access.dynamic, applicationsGVR, applicationObject(draft, access.namespace))
@@ -491,24 +497,46 @@ func (s *Server) applicationEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "kubernetes_unavailable", "listing pods failed: "+err.Error())
 		return
 	}
-	// Exact object names only: the custom resource and the objects the
-	// operator names after it, the application's pods and their owners. A
-	// name prefix would leak events of an application called <name>-x.
-	names := []string{applicationObjectName(app.Name)}
-	for _, pod := range pods {
-		names = append(names, pod.Name)
-		for _, owner := range pod.OwnerReferences {
-			names = append(names, owner.Name)
+	// Events are matched by object UID, never by name alone: the namespace
+	// is shared, so another workload may own an object with the same name.
+	// The objects are the custom resource, the operator's Deployment for it
+	// (owned by the resource), the application's pods and their owners.
+	type objectRef struct{ name, uid string }
+	objects := []objectRef{}
+	cr, err := access.dynamic.Resource(applicationsGVR).Namespace(access.namespace).Get(r.Context(), applicationObjectName(app.Name), metav1.GetOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		writeError(w, http.StatusBadGateway, "kubernetes_unavailable", "reading the application failed: "+err.Error())
+		return
+	}
+	if err == nil && cr.GetUID() != "" {
+		objects = append(objects, objectRef{cr.GetName(), string(cr.GetUID())})
+		if deployment, getErr := access.core.AppsV1().Deployments(access.namespace).Get(r.Context(), app.Name, metav1.GetOptions{}); getErr == nil {
+			for _, owner := range deployment.OwnerReferences {
+				if owner.UID == cr.GetUID() {
+					objects = append(objects, objectRef{deployment.Name, string(deployment.UID)})
+				}
+			}
 		}
+	}
+	for _, pod := range pods {
+		objects = append(objects, objectRef{pod.Name, string(pod.UID)})
+		for _, owner := range pod.OwnerReferences {
+			objects = append(objects, objectRef{owner.Name, string(owner.UID)})
+		}
+	}
+	uids := map[string]bool{}
+	names := []string{}
+	for _, object := range objects {
+		if object.uid == "" {
+			continue
+		}
+		uids[object.uid] = true
+		names = append(names, object.name)
 	}
 	slices.Sort(names)
 	names = slices.Compact(names)
 	if len(names) > 50 {
 		names = names[:50]
-	}
-	wanted := map[string]bool{}
-	for _, name := range names {
-		wanted[name] = true
 	}
 	items := []workloadEvent{}
 	for _, name := range names {
@@ -518,7 +546,7 @@ func (s *Server) applicationEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, event := range list.Items {
-			if event.InvolvedObject.Name != name || !wanted[event.InvolvedObject.Name] {
+			if event.InvolvedObject.Name != name || !uids[string(event.InvolvedObject.UID)] {
 				continue
 			}
 			last := event.LastTimestamp.Time
