@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -69,5 +70,39 @@ func TestApplicationLogsFollowStreamsServerSentEvents(t *testing.T) {
 	harness.server.ServeHTTP(resumed, request)
 	if resumed.Code != http.StatusOK || !strings.Contains(resumed.Body.String(), "event: end") {
 		t.Fatalf("resume: %d %s", resumed.Code, resumed.Body.String())
+	}
+}
+
+// brokenWriter is a client that went away: every write fails.
+type brokenWriter struct {
+	header http.Header
+	writes int
+}
+
+func (b *brokenWriter) Header() http.Header { return b.header }
+func (b *brokenWriter) WriteHeader(int)     {}
+func (b *brokenWriter) Write([]byte) (int, error) {
+	b.writes++
+	return 0, errors.New("client stopped reading")
+}
+func (b *brokenWriter) Flush() {}
+
+func TestApplicationLogsFollowStopsWhenTheClientCannotBeWritten(t *testing.T) {
+	newKubeHarness(t, appPod("billing-7d9-abcde", "billing", "billing-7d9"))
+	access, _ := kubeAccessFactory()
+	writer := &brokenWriter{header: http.Header{}}
+	request := newTestRequest(http.MethodGet, "/api/v1/applications/billing/logs?follow=true&max_seconds=3600", nil)
+	done := make(chan struct{})
+	go func() {
+		(&Server{}).streamApplicationLogs(writer, request, access, "billing", "", 10)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stream kept running after a write failed")
+	}
+	if writer.writes != 1 {
+		t.Fatalf("the stream must stop at the first failed write, wrote %d times", writer.writes)
 	}
 }

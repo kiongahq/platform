@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,6 +36,7 @@ const (
 	maxFollowSeconds     = 3600
 	maxStreamLineBytes   = 64 * 1024
 	logHeartbeat         = 15 * time.Second
+	streamWriteTimeout   = 10 * time.Second
 )
 
 type logLine struct {
@@ -115,12 +118,7 @@ func (s *Server) streamApplicationLogs(w http.ResponseWriter, r *http.Request, a
 	if len(pods) > maxLogPods {
 		pods = pods[:maxLogPods]
 	}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "streaming_unavailable", "Log streaming is not available.")
-		return
-	}
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+	controller := http.NewResponseController(w)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -174,10 +172,21 @@ func (s *Server) streamApplicationLogs(w http.ResponseWriter, r *http.Request, a
 		close(lines)
 	}()
 
+	// send bounds every write: a client that stops reading cannot hold the
+	// handler (and its pod streams) past streamWriteTimeout. Any write error
+	// ends the stream; the deferred cancel stops the pod readers.
+	send := func(text string) bool {
+		if err := controller.SetWriteDeadline(time.Now().Add(streamWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			return false
+		}
+		if _, err := io.WriteString(w, text); err != nil {
+			return false
+		}
+		return controller.Flush() == nil
+	}
 	end := func(reason string) {
 		payload, _ := json.Marshal(map[string]string{"reason": reason})
-		fmt.Fprintf(w, "event: end\ndata: %s\n\n", payload) // #nosec G705 -- JSON-encoded
-		flusher.Flush()
+		send("event: end\ndata: " + string(payload) + "\n\n")
 	}
 	if len(pods) == 0 {
 		end("no pods are running")
@@ -193,14 +202,17 @@ func (s *Server) streamApplicationLogs(w http.ResponseWriter, r *http.Request, a
 				return
 			}
 			payload, _ := json.Marshal(entry)
+			event := ""
 			if entry.Time != "" {
-				fmt.Fprintf(w, "id: %s\n", entry.Time) // #nosec G705 -- RFC 3339 timestamp
+				event = "id: " + entry.Time + "\n"
 			}
-			fmt.Fprintf(w, "event: log\ndata: %s\n\n", payload) // #nosec G705 -- JSON-encoded
-			flusher.Flush()
+			if !send(event + "event: log\ndata: " + string(payload) + "\n\n") {
+				return
+			}
 		case <-heartbeat.C:
-			fmt.Fprint(w, ": keep-alive\n\n")
-			flusher.Flush()
+			if !send(": keep-alive\n\n") {
+				return
+			}
 		case <-ctx.Done():
 			if r.Context().Err() == nil {
 				end("max_seconds reached; reconnect with Last-Event-ID to continue")
