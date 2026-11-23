@@ -117,3 +117,52 @@ func TestDispatcherUpsertsAndDeletesWorkspaceCRD(t *testing.T) {
 		t.Fatal("workspace should be deleted when access is revoked")
 	}
 }
+
+func TestDispatcherPassesAgentScaling(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "kionga.dev", Version: "v1alpha1", Resource: "kiongaagents"}
+	for _, tc := range []struct {
+		name    string
+		scaling any
+		metric  string
+		target  int64
+	}{
+		{"absent defaults to requests", nil, "requests", 100},
+		{"cpu", map[string]any{"metric": "cpu", "target": 65}, "cpu", 65},
+		{"requests", map[string]any{"metric": "requests", "target": 20}, "requests", 20},
+		{"unknown metric falls back", map[string]any{"metric": "memory", "target": 5}, "requests", 5},
+		{"cpu target out of range", map[string]any{"metric": "cpu", "target": 400}, "cpu", 80},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := fake.NewSimpleDynamicClient(runtime.NewScheme())
+			record := map[string]any{"name": "support", "version": "1", "image": "support:1", "graph_module": "agents.support:graph", "autoscaling": map[string]any{"min_replicas": 1, "max_replicas": 2}}
+			if tc.scaling != nil {
+				record["scaling"] = tc.scaling
+			}
+			resource, _ := json.Marshal(record)
+			command, _ := json.Marshal(LifecycleCommand{ID: "agt-1", Kind: "agent", Action: "agent.deployed", Resource: resource, Tenant: "t"})
+			if err := NewDispatcher(client, "ns").Dispatch(context.Background(), KafkaRecord{Value: command}); err != nil {
+				t.Fatal(err)
+			}
+			agent, err := client.Resource(gvr).Namespace("ns").Get(context.Background(), platformapi.AgentDNSName("agt-1"), metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			metric, _, _ := unstructured.NestedString(agent.Object, "spec", "scaling", "metric")
+			target, _, _ := unstructured.NestedInt64(agent.Object, "spec", "scaling", "target")
+			if metric != tc.metric || target != tc.target {
+				t.Fatalf("scaling = %s/%d", metric, target)
+			}
+		})
+	}
+}
+
+func TestDispatcherNeverSendsPipelineRunsToKubeflow(t *testing.T) {
+	client := fake.NewSimpleDynamicClient(runtime.NewScheme())
+	command, _ := json.Marshal(LifecycleCommand{ID: "run-1", Kind: "pipeline_run", Action: "pipeline.submitted", Resource: json.RawMessage(`{"name":"train","project_id":"prj-1"}`), Tenant: "t"})
+	if err := NewDispatcher(client, "ns").Dispatch(context.Background(), KafkaRecord{Value: command}); err != nil {
+		t.Fatalf("stale pipeline commands must be acknowledged: %v", err)
+	}
+	if len(client.Actions()) != 0 {
+		t.Fatalf("pipeline runs must not create resources: %v", client.Actions())
+	}
+}

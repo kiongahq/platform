@@ -546,18 +546,20 @@ func (p *Postgres) DeployModel(modelID string, weight int, actor string) (api.Mo
 	if model.GateStatus != "passed" {
 		return model, errors.New("model evaluation gates have not passed")
 	}
-	model.DeploymentStatus, model.CanaryWeight, model.EndpointURL = "deploying", weight, "/v1/models/"+model.Name+":predict"
+	// Pending until a runtime reports the workload ready; never a
+	// placeholder endpoint that suggests something is serving.
+	model.DeploymentStatus, model.CanaryWeight, model.EndpointURL, model.DeploymentMessage = "pending", weight, "", ""
 	return model, p.write("model", model.ID, model, "model.deployed", actor, map[string]any{"canary_weight": weight})
 }
 
 // SetModelEndpoint records the live serving endpoint after the serving
 // manager has actually started the model server.
-func (p *Postgres) SetModelEndpoint(modelID, endpoint, status string) (api.Model, error) {
+func (p *Postgres) SetModelEndpoint(modelID, endpoint, status, message string) (api.Model, error) {
 	model, err := get[api.Model](p, "model", modelID)
 	if err != nil {
 		return model, err
 	}
-	model.EndpointURL, model.DeploymentStatus = endpoint, status
+	model.EndpointURL, model.DeploymentStatus, model.DeploymentMessage = endpoint, status, message
 	return model, p.write("model", model.ID, model, "model.endpoint_updated", "system", map[string]any{"endpoint": endpoint, "status": status})
 }
 
@@ -580,7 +582,7 @@ func (p *Postgres) DeployAgent(req api.DeployAgentRequest, actor string) (api.Ag
 	if !p.exists("project", req.ProjectID) {
 		return api.Agent{}, ErrNotFound
 	}
-	agent := api.Agent{ID: id("agt"), ProjectID: req.ProjectID, OwnerSubject: req.OwnerSubject, Name: req.Name, Version: req.Version, Image: req.Image, GraphModule: req.GraphModule, FlowJSON: req.FlowJSON, SnapshotID: req.SnapshotID, SnapshotRev: req.SnapshotRev, LLMBackend: req.LLMBackend, Status: "pending", Replicas: req.Replicas, Autoscaling: req.Autoscaling, Resources: req.Resources, Tools: req.Tools, CreatedAt: time.Now().UTC()}
+	agent := api.Agent{ID: id("agt"), ProjectID: req.ProjectID, OwnerSubject: req.OwnerSubject, Name: req.Name, Version: req.Version, Image: req.Image, GraphModule: req.GraphModule, FlowJSON: req.FlowJSON, SnapshotID: req.SnapshotID, SnapshotRev: req.SnapshotRev, LLMBackend: req.LLMBackend, Status: "pending", Replicas: req.Replicas, Autoscaling: req.Autoscaling, Scaling: req.Scaling, Resources: req.Resources, Tools: req.Tools, CreatedAt: time.Now().UTC()}
 	return agent, p.write("agent", agent.ID, agent, "agent.deployed", actor, nil)
 }
 

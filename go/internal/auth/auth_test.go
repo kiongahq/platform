@@ -66,6 +66,11 @@ func TestAllowedMatrix(t *testing.T) {
 		{RoleViewer, http.MethodPost, "/api/v1/agents/agt-1/invoke", false},
 		{RoleEngineer, http.MethodPost, "/api/v1/models/mdl-1/deploy", true},
 		{RoleEngineer, http.MethodPost, "/api/v1/functions", true},
+		{RoleEngineer, http.MethodPost, "/api/v1/applications", true},
+		{RoleEngineer, http.MethodDelete, "/api/v1/applications/billing", true},
+		{RoleViewer, http.MethodGet, "/api/v1/applications", true},
+		{RoleViewer, http.MethodPost, "/api/v1/applications/billing/redeploy", false},
+		{RoleService, http.MethodPost, "/api/v1/applications", false},
 		{RoleEngineer, http.MethodPost, "/api/v1/connections", false},
 		{RoleService, http.MethodPost, "/api/v1/traces", true},
 		{RoleService, http.MethodPost, "/api/v1/pipelines/runs/run-1/steps", true},
@@ -175,5 +180,16 @@ func TestRBACInternalToken(t *testing.T) {
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusForbidden {
 		t.Fatalf("wrong token must fall back to local viewer and be denied, got %d", recorder.Code)
+	}
+}
+
+func TestApplicationsServiceGatesProvisionedUsers(t *testing.T) {
+	user := Principal{Roles: []string{RoleUser}, Provisioned: true, Services: []string{"functions"}}
+	if Allowed(user, http.MethodPost, "/api/v1/applications") || Allowed(user, http.MethodGet, "/api/v1/applications") {
+		t.Fatal("a user without the applications service must not reach applications")
+	}
+	user.Services = append(user.Services, "applications")
+	if !Allowed(user, http.MethodPost, "/api/v1/applications") || !Permissions(user)["applications_write"] {
+		t.Fatal("the applications service grants application writes")
 	}
 }
