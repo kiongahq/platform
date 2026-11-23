@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -22,8 +23,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
@@ -136,6 +139,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, request ctrl.Request
 		return ctrl.Result{}, nil
 	}
 	spec, status := r.Kind.Spec(object), r.Kind.Status(object)
+	before := status.DeepCopy()
 	result, err := r.reconcile(ctx, object, spec, status)
 	var bad errInvalid
 	if errors.As(err, &bad) {
@@ -144,13 +148,13 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, request ctrl.Request
 		status.ObservedGeneration = object.GetGeneration()
 		// No hot loop on a spec error. A spec change triggers a reconcile; the
 		// slow requeue picks up a Secret created or labelled later.
-		return ctrl.Result{RequeueAfter: time.Minute}, r.Status().Update(ctx, object)
+		return ctrl.Result{RequeueAfter: time.Minute}, updateStatusIfChanged(ctx, r.Client, object, before, status)
 	}
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	status.ObservedGeneration = object.GetGeneration()
-	if err := r.Status().Update(ctx, object); err != nil {
+	if err := updateStatusIfChanged(ctx, r.Client, object, before, status); err != nil {
 		return ctrl.Result{}, err
 	}
 	return result, nil
@@ -449,13 +453,27 @@ func resolvedResources(value corev1.ResourceRequirements, cpu, memory string) (c
 }
 
 func (r *WorkloadReconciler) SetupWithManager(manager ctrl.Manager) error {
-	builder := ctrl.NewControllerManagedBy(manager).Named(r.Kind.Component).For(r.Kind.NewObject()).
+	controller := ctrl.NewControllerManagedBy(manager).Named(r.Kind.Component).For(r.Kind.NewObject(), builder.WithPredicates(specOrAnnotationChanged)).
 		Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&networkingv1.Ingress{}).
 		Owns(&policyv1.PodDisruptionBudget{}).Owns(&autoscalingv2.HorizontalPodAutoscaler{}).Owns(&batchv1.Job{})
 	if r.Capabilities.KEDAHTTP {
 		scaled := &unstructured.Unstructured{}
 		scaled.SetGroupVersionKind(HTTPScaledObjectGVK)
-		builder = builder.Owns(scaled)
+		controller = controller.Owns(scaled)
 	}
-	return builder.Complete(r)
+	return controller.Complete(r)
+}
+
+// specOrAnnotationChanged lets spec changes (generation) and annotation
+// changes (the redeploy annotation) through, and drops the update events the
+// reconciler's own status writes cause. Child objects are watched separately.
+var specOrAnnotationChanged = predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{})
+
+// updateStatusIfChanged writes status only when the reconcile changed it, so
+// a healthy resource costs no API writes.
+func updateStatusIfChanged(ctx context.Context, c client.Client, object client.Object, before, after any) error {
+	if equality.Semantic.DeepEqual(before, after) {
+		return nil
+	}
+	return c.Status().Update(ctx, object)
 }

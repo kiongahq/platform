@@ -274,3 +274,20 @@ func TestModelPromotionCreatesNoInferenceService(t *testing.T) {
 		t.Fatalf("status: %#v", stored.Status)
 	}
 }
+
+// A repeated MLflow failure must not rewrite status, so it cannot trigger an
+// immediate reconcile and a second MLflow call; the 30 second retry governs.
+func TestModelDeploymentRepeatedFailureDoesNotRewriteStatus(t *testing.T) {
+	source := &fakeMLflow{err: errors.New("integration returned 503: unavailable")}
+	c := testClient(testScheme(t, InferenceServiceGVK), modelDeployment(kiongav1.KiongaModelDeploymentSpec{ModelName: "churn", Version: "3"}), storageSecret())
+	reconciler := modelReconciler(c, source)
+	reconcileOnce(t, reconciler, "churn")
+	var first kiongav1.KiongaModelDeployment
+	get(t, c, "churn", &first)
+	reconcileOnce(t, reconciler, "churn")
+	var second kiongav1.KiongaModelDeployment
+	get(t, c, "churn", &second)
+	if second.ResourceVersion != first.ResourceVersion {
+		t.Fatalf("identical failure rewrote status: rv %s -> %s", first.ResourceVersion, second.ResourceVersion)
+	}
+}

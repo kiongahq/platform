@@ -198,7 +198,10 @@ reference, so deleting the custom resource deletes them.
   a KEDA HTTP add-on `HTTPScaledObject` and an ExternalName Service
   `<name>-route` pointing at the interceptor. Callers reach the workload
   through `status.internalURL`, and the interceptor counts each request and can
-  wake a scaled-to-zero Deployment. `cpu` creates a HorizontalPodAutoscaler,
+  wake a scaled-to-zero Deployment. The `HTTPScaledObject` names its
+  Deployment in `scaleTargetRef.name` (with `apiVersion`, `kind`, `service`
+  and `port`), the shape of HTTP add-on 0.8 and later; tested against the
+  v0.16.0 CRD. `cpu` creates a HorizontalPodAutoscaler,
   with at least one replica. The operator checks discovery at startup for the
   add-on and KServe. If the add-on is missing, `requests` falls back to `cpu`
   and the `ScalingReady` condition reports it. Agents use the same scaling

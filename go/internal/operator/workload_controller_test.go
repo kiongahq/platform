@@ -518,3 +518,22 @@ func contains(values []string, want string) bool {
 	}
 	return false
 }
+
+// A reconcile that changes nothing must not write status: each write is an
+// update event on the watched resource and an API call.
+func TestSteadyStateReconcileDoesNotRewriteStatus(t *testing.T) {
+	app := application("steady", kiongav1.WorkloadSpec{Image: "steady:1", Visibility: kiongav1.VisibilityInternal})
+	c := testClient(testScheme(t), app)
+	reconciler := applicationReconciler(c, false)
+	reconcileOnce(t, reconciler, "steady")
+	markAvailable(t, c, "steady", 1)
+	reconcileOnce(t, reconciler, "steady")
+	var first kiongav1.KiongaApplication
+	get(t, c, "steady", &first)
+	reconcileOnce(t, reconciler, "steady")
+	var second kiongav1.KiongaApplication
+	get(t, c, "steady", &second)
+	if first.Status.Phase != "Ready" || second.ResourceVersion != first.ResourceVersion {
+		t.Fatalf("steady state rewrote status: phase=%s rv %s -> %s", first.Status.Phase, first.ResourceVersion, second.ResourceVersion)
+	}
+}

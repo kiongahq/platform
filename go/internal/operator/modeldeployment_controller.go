@@ -15,8 +15,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/validation"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
@@ -142,13 +144,14 @@ func (r *ModelDeploymentReconciler) Reconcile(ctx context.Context, request ctrl.
 	if !deployment.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
 	}
+	before := deployment.Status.DeepCopy()
 	result, reason, err := r.reconcile(ctx, &deployment)
 	status := &deployment.Status
 	status.ObservedGeneration = deployment.Generation
 	if reason != "" {
 		status.Phase = "Failed"
 		apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{Type: ConditionReady, Status: metav1.ConditionFalse, Reason: reason, Message: err.Error(), ObservedGeneration: deployment.Generation})
-		if updateErr := r.Status().Update(ctx, &deployment); updateErr != nil {
+		if updateErr := updateStatusIfChanged(ctx, r.Client, &deployment, before, &deployment.Status); updateErr != nil {
 			return ctrl.Result{}, updateErr
 		}
 		return result, nil
@@ -156,7 +159,7 @@ func (r *ModelDeploymentReconciler) Reconcile(ctx context.Context, request ctrl.
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	return result, r.Status().Update(ctx, &deployment)
+	return result, updateStatusIfChanged(ctx, r.Client, &deployment, before, &deployment.Status)
 }
 
 // reconcile returns a reason when the failure belongs in status rather than
@@ -388,12 +391,12 @@ func (r *ModelDeploymentReconciler) storageAccount(ctx context.Context, deployme
 }
 
 func (r *ModelDeploymentReconciler) SetupWithManager(manager ctrl.Manager) error {
-	builder := ctrl.NewControllerManagedBy(manager).For(&kiongav1.KiongaModelDeployment{}).
+	controller := ctrl.NewControllerManagedBy(manager).For(&kiongav1.KiongaModelDeployment{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&corev1.ServiceAccount{}).Owns(&corev1.Secret{})
 	if r.Capabilities.KServe {
 		service := &unstructured.Unstructured{}
 		service.SetGroupVersionKind(InferenceServiceGVK)
-		builder = builder.Owns(service)
+		controller = controller.Owns(service)
 	}
-	return builder.Complete(r)
+	return controller.Complete(r)
 }
