@@ -27,6 +27,7 @@ func cookieRequest(method, path, body string, headers map[string]string) *http.R
 // Regression for #32: a notebook on a same-site workspace host must not be
 // able to submit pipelines or write editorial posts with the console cookie.
 func TestCookieWritesFromWorkspaceHostsAreRejected(t *testing.T) {
+	t.Setenv("KIONGA_BLOG_AUTHORING_ENABLED", "true")
 	t.Setenv("KIONGA_ALLOWED_ORIGIN", consoleOrigin)
 	server, _ := accessServer(t)
 	submit := `{"project_id":"prj-demo","name":"training-pipeline"}`

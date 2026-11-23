@@ -1,6 +1,10 @@
 # Publications
 
-Publishing is an optional platform capability. An adopting organization can use
+Publishing is an optional platform capability, off by default. Set
+`KIONGA_BLOG_AUTHORING_ENABLED=true` on the gateway to turn it on; while it is
+off the studio, the console Publishing page, the editorial API, the public
+article API (`/api/v1/blogs`) and blog media answer 404 and the console hides
+the navigation. An adopting organization can use
 the editorial studio and article API to document its own engineering practices.
 The install serves no reader pages and no landing page: articles are rendered
 by a separate website that reads the public article API.

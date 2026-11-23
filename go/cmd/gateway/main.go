@@ -222,6 +222,12 @@ func main() {
 	if os.Getenv("KIONGA_ENVIRONMENT") == "production" && os.Getenv("KIONGA_WORKSPACE_BASE_DOMAIN") != "" {
 		handler = httpapi.WorkspaceHostRouter(handler, repository)
 	}
+	// Hosts <app>.<KIONGA_APPLICATIONS_BASE_DOMAIN> that the operator sends
+	// to the gateway (visibility sso) get the sign-in proxy; every other host
+	// passes through.
+	if os.Getenv("KIONGA_APPLICATIONS_BASE_DOMAIN") != "" {
+		handler = httpapi.ApplicationHostRouter(handler, repository)
+	}
 	server := &http.Server{Addr: ":" + port, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second}
 	go func() {
 		<-ctx.Done()

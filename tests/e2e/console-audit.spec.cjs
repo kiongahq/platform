@@ -16,6 +16,11 @@ test.describe('administrator', () => {
   test.beforeEach(async ({page}) => { await signIn(page, ADMIN); });
   for (const view of adminViews) {
     test(`${view} is aligned and usable`, async ({page}, testInfo) => {
+      // Publishing exists only with blog authoring on; otherwise it is absent.
+      if (view === 'blogs' && (await (await page.request.get('/api/v1/site')).json()).blog_authoring !== true) {
+        expect((await page.request.get('/console/blogs', {maxRedirects: 0})).status()).toBe(404);
+        return;
+      }
       await openView(page, view);
       await assertLayout(page, `admin ${view}`);
       await page.screenshot({path: screenshotPath(testInfo, `admin-${view}`), fullPage: true});

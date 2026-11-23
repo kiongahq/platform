@@ -14,7 +14,7 @@ import {
   type CSSProperties,
 } from "react";
 import { useAutoCollapse } from "@/components/layout/useAutoCollapse";
-import { useWebsiteURL } from "@/lib/site";
+import { useSite } from "@/lib/site";
 import { useQuery } from "@/hooks/useQuery";
 import { UnsavedContext } from "@/hooks/useUnsaved";
 import {
@@ -87,6 +87,17 @@ const service = (view: string) =>
     logs: "pipelines",
   })[view] || view;
 const ungated = new Set(["profile", "settings", "blogs"]);
+/**
+ * Whether a console view is shown. Publishing exists only when the install
+ * turns blog authoring on (KIONGA_BLOG_AUTHORING_ENABLED).
+ */
+export function consoleViewAllowed(target: string, identity: Identity, blogAuthoring: boolean) {
+  if (target === "blogs" && !blogAuthoring) return false;
+  return (
+    ungated.has(target) ||
+    (target === "access" ? isAdministrator(identity) : hasService(identity, service(target)))
+  );
+}
 export default function ConsolePage({ view }: { view?: string }) {
   return (
     <Suspense fallback={<p role="status">Opening console…</p>}>
@@ -101,7 +112,8 @@ function ConsoleApplication({ view: requestedView }: { view?: string }) {
     me = useQuery<Identity>("/api/v1/me"),
     projects = useQuery<Entity>("/api/v1/project-options"),
     workspaceQuery = useQuery<Entity>("/api/v1/workspaces");
-  const website = useWebsiteURL();
+  const site = useSite();
+  const website = site.websiteURL;
   const view = requestedView ?? (pathname.split("/")[2] || "overview");
   const identity: Identity = me.data
     ? {
@@ -283,10 +295,7 @@ function ConsoleApplication({ view: requestedView }: { view?: string }) {
     route.push(`${pathname}${next.size ? `?${next}` : ""}`);
   }
   const allowed = (target: string) =>
-    ungated.has(target) ||
-    (target === "access"
-      ? isAdministrator(identity)
-      : hasService(identity, service(target)));
+    consoleViewAllowed(target, identity, site.blogAuthoring);
   const props = { view, identity, project, resource, onNavigate: navigate };
   const title =
     view === "pipeline-editor" ? "Pipeline editor" : titles[view] || "Console";

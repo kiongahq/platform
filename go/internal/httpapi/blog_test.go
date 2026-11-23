@@ -7,17 +7,21 @@ import (
 	"image/color"
 	"image/jpeg"
 	"io"
+	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/kiongahq/platform/internal/auth"
+	"github.com/kiongahq/platform/internal/store"
 	"github.com/kiongahq/platform/pkg/api"
 )
 
 func TestSeedEngineeringBlogIsPublic(t *testing.T) {
+	t.Setenv("KIONGA_BLOG_AUTHORING_ENABLED", "true")
 	t.Setenv("KIONGA_BLOG_MEDIA_DIR", t.TempDir())
 	server := testServer()
 	list := httptest.NewRecorder()
@@ -38,6 +42,7 @@ func TestSeedEngineeringBlogIsPublic(t *testing.T) {
 }
 
 func TestLegacyAdminBlogEndpointsAreGone(t *testing.T) {
+	t.Setenv("KIONGA_BLOG_AUTHORING_ENABLED", "true")
 	t.Setenv("KIONGA_BLOG_MEDIA_DIR", t.TempDir())
 	server := testServer()
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
@@ -129,6 +134,7 @@ func paragraphs(words int) []api.Block {
 }
 
 func TestEditorialSessionSeparationAndWorkflow(t *testing.T) {
+	t.Setenv("KIONGA_BLOG_AUTHORING_ENABLED", "true")
 	t.Setenv("KIONGA_BLOG_MEDIA_DIR", t.TempDir())
 	t.Setenv("KIONGA_LOCAL_USERNAME", "admin")
 	server := testServer()
@@ -285,6 +291,7 @@ func TestEditorialSessionSeparationAndWorkflow(t *testing.T) {
 }
 
 func TestEditorialPathsRejectMachineIdentities(t *testing.T) {
+	t.Setenv("KIONGA_BLOG_AUTHORING_ENABLED", "true")
 	if auth.Allowed(auth.Principal{Subject: "svc", Roles: []string{auth.RoleService}}, http.MethodGet, "/api/v1/editorial/posts") {
 		t.Fatal("service identity reaches editorial API")
 	}
@@ -293,5 +300,57 @@ func TestEditorialPathsRejectMachineIdentities(t *testing.T) {
 	}
 	if !auth.Allowed(auth.Principal{Subject: "u", Roles: []string{auth.RoleUser}}, http.MethodGet, "/api/v1/editorial/posts") {
 		t.Fatal("people must reach the editorial API so membership decides")
+	}
+}
+
+func TestBlogAuthoringIsOffByDefault(t *testing.T) {
+	t.Setenv("KIONGA_BLOG_AUTHORING_ENABLED", "")
+	static, _ := fs.Sub(fstest.MapFS{"studio.html": &fstest.MapFile{Data: []byte("studio")}, "console/blogs.html": &fstest.MapFile{Data: []byte("publishing")}, "console.html": &fstest.MapFile{Data: []byte("console")}}, ".")
+	repository := store.New()
+	server := New(repository, static)
+	if posts := repository.BlogPosts(); len(posts) != 0 {
+		t.Fatalf("a disabled install must not seed posts: %d", len(posts))
+	}
+	for _, request := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/blogs"}, {http.MethodGet, "/api/v1/blogs/hello"}, {http.MethodGet, "/api/v1/editorial/posts"},
+		{http.MethodPost, "/api/v1/editorial/session"}, {http.MethodGet, "/media/blog/med-1/960"}, {http.MethodGet, "/studio"},
+		{http.MethodGet, "/studio/posts"}, {http.MethodGet, "/studio.txt"}, {http.MethodGet, "/console/blogs"},
+	} {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, newTestRequest(request.method, request.path, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s %s with authoring off: %d", request.method, request.path, response.Code)
+		}
+	}
+	for _, path := range []string{"/console", "/api/v1/health"} {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, newTestRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s must stay available: %d", path, response.Code)
+		}
+	}
+	site := httptest.NewRecorder()
+	server.ServeHTTP(site, newTestRequest(http.MethodGet, "/api/v1/site", nil))
+	if !strings.Contains(site.Body.String(), `"blog_authoring":false`) {
+		t.Fatalf("site: %s", site.Body.String())
+	}
+}
+
+func TestBlogAuthoringCanBeEnabled(t *testing.T) {
+	t.Setenv("KIONGA_BLOG_AUTHORING_ENABLED", "true")
+	static, _ := fs.Sub(fstest.MapFS{"studio.html": &fstest.MapFile{Data: []byte("studio")}, "console/blogs.html": &fstest.MapFile{Data: []byte("publishing")}}, ".")
+	server := New(store.New(), static)
+	for _, path := range []string{"/api/v1/blogs", "/studio", "/console/blogs", "/api/v1/site"} {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, newTestRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s with authoring on: %d %s", path, response.Code, response.Body.String())
+		}
+		if path == "/api/v1/site" && !strings.Contains(response.Body.String(), `"blog_authoring":true`) {
+			t.Fatalf("site: %s", response.Body.String())
+		}
+	}
+	if !blogPath("/studio/edit") || blogPath("/studios") || blogPath("/api/v1/blogsx") || !blogPath("/media/blog/x") {
+		t.Fatal("blogPath must match the feature's routes exactly")
 	}
 }

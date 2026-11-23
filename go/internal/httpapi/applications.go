@@ -114,7 +114,10 @@ func applicationSpec(app api.Application) map[string]any {
 		spec["image"] = app.Image
 	}
 	if app.Source != nil {
-		source := map[string]any{"git": app.Source.Git, "ref": app.Source.Ref, "dockerfile": app.Source.Dockerfile}
+		source := map[string]any{"git": app.Source.Git, "dockerfile": app.Source.Dockerfile}
+		if app.Source.Ref != "" {
+			source["ref"] = app.Source.Ref
+		}
 		if app.Source.ContextDir != "" {
 			source["contextDir"] = app.Source.ContextDir
 		}
@@ -298,6 +301,13 @@ func (s *Server) saveApplication(w http.ResponseWriter, r *http.Request, access 
 		writeError(w, http.StatusUnprocessableEntity, "validation_error", "name: the application host would collide with the console host")
 		return
 	}
+	if issues, err := checkWorkloadSecrets(r.Context(), access, req.SecretRefs); err != nil {
+		writeError(w, http.StatusBadGateway, "kubernetes_unavailable", "reading secrets failed: "+err.Error())
+		return
+	} else if len(issues) > 0 {
+		writeApplicationIssues(w, issues)
+		return
+	}
 	previous, err := store.GetApplication(s.store, req.Name)
 	switch {
 	case create && err == nil:
@@ -383,7 +393,8 @@ func (s *Server) redeployApplication(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, saved)
 }
 
-// applicationPods lists the pods the operator labels for an application.
+// applicationPods lists the pods the operator labels for an application:
+// kionga.dev/application=<name>.
 func applicationPods(ctx context.Context, access *kubeAccess, name string) ([]corev1.Pod, error) {
 	pods, err := access.core.CoreV1().Pods(access.namespace).List(ctx, metav1.ListOptions{LabelSelector: "kionga.dev/application=" + name})
 	if err != nil {
@@ -615,4 +626,29 @@ func enforceApplicationResources(repository store.Repository, value auth.Princip
 		return fmt.Errorf("application requests more than the %d GiB memory grant at %d replicas", access.Compute.MemoryGB, replicas)
 	}
 	return nil
+}
+
+// workloadSecretLabel must be "true" on a Secret before a workload may load
+// it; the operator ignores (and revokes) unlabelled Secrets. It keeps the
+// platform's own Secrets in the namespace out of reach. The gateway creates
+// no workload Secrets itself; any it creates must carry this label.
+const workloadSecretLabel = "kionga.dev/workload-secret"
+
+// checkWorkloadSecrets returns one issue per secret ref that is missing or
+// not labelled for workloads, so the request fails with 422 instead of the
+// operator silently skipping the Secret.
+func checkWorkloadSecrets(ctx context.Context, access *kubeAccess, refs []string) (api.FieldIssues, error) {
+	var issues api.FieldIssues
+	for _, name := range refs {
+		secret, err := access.core.CoreV1().Secrets(access.namespace).Get(ctx, name, metav1.GetOptions{})
+		switch {
+		case apierrors.IsNotFound(err):
+			issues = append(issues, api.FieldIssue{Field: "secret_refs", Message: fmt.Sprintf("Secret %q does not exist in namespace %s", name, access.namespace)})
+		case err != nil:
+			return nil, err
+		case secret.Labels[workloadSecretLabel] != "true":
+			issues = append(issues, api.FieldIssue{Field: "secret_refs", Message: fmt.Sprintf("Secret %q is not labelled %s=true; label it to let workloads load it", name, workloadSecretLabel)})
+		}
+	}
+	return issues, nil
 }

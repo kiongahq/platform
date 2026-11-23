@@ -154,7 +154,7 @@ func TestApplicationGitSourceIsDispatched(t *testing.T) {
 	}
 	spec := harness.object(t, applicationsGVR, "docs-site").Object["spec"].(map[string]any)
 	source := spec["source"].(map[string]any)
-	if _, hasImage := spec["image"]; hasImage || source["git"] != "https://github.com/acme/docs.git" || source["ref"] != "main" || source["contextDir"] != "site" || source["dockerfile"] != "Dockerfile" {
+	if _, hasImage := spec["image"]; hasImage || source["git"] != "https://github.com/acme/docs.git" || source["ref"] != nil || source["contextDir"] != "site" || source["dockerfile"] != "Dockerfile" {
 		t.Fatalf("unexpected source spec: %#v", spec)
 	}
 	minimum, _, _ := unstructured.NestedInt64(spec, "replicas", "min")
@@ -179,7 +179,7 @@ func TestApplicationValidation(t *testing.T) {
 		{"bad port", strings.Replace(createAppBody(projectID, ""), `"port":3000`, `"port":70000`, 1), "port"},
 		{"cpu cannot scale to zero", strings.Replace(createAppBody(projectID, ""), `"metric":"requests","target":50`, `"metric":"cpu","target":70`, 1), "replicas.min"},
 		{"reserved env prefix", strings.Replace(createAppBody(projectID, ""), `"LOG_LEVEL"`, `"KIONGA_INTERNAL_TOKEN"`, 1), "env"},
-		{"unknown visibility", strings.Replace(createAppBody(projectID, ""), `"visibility":"public"`, `"visibility":"internal"`, 1), "visibility"},
+		{"unknown visibility", strings.Replace(createAppBody(projectID, ""), `"visibility":"public"`, `"visibility":"private"`, 1), "visibility"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := harness.do(t, http.MethodPost, "/api/v1/applications", tc.body)
@@ -247,6 +247,12 @@ func TestApplicationStatusMapping(t *testing.T) {
 		{"scaled to zero", object(map[string]any{"readyReplicas": int64(0), "conditions": []any{readyCondition("Ready", "True", "ScaledToZero", "idle")}}), "scaled-to-zero", "idle"},
 		{"failed phase", object(map[string]any{"phase": "Failed", "message": "image pull failed"}), "failed", "image pull failed"},
 		{"failed condition", object(map[string]any{"conditions": []any{readyCondition("Ready", "False", "Failed", "build failed: exit 1")}}), "failed", "build failed"},
+		{"operator building", object(map[string]any{"phase": "Building", "conditions": []any{readyCondition("Ready", "False", "Building", "waiting for the first source build"), readyCondition("BuildSucceeded", "Unknown", "Building", "building github.com/acme/billing")}}), "pending", "building: building github.com/acme/billing"},
+		{"operator progressing", object(map[string]any{"phase": "Progressing", "conditions": []any{readyCondition("Ready", "False", "WorkloadProgressing", "1/2 updated")}}), "pending", "rolling out: 1/2 updated"},
+		{"operator degraded", object(map[string]any{"phase": "Degraded", "readyReplicas": int64(1), "conditions": []any{readyCondition("Ready", "False", "WorkloadUnavailable", "1/3 available, 2 required")}}), "pending", "degraded: 1/3 available"},
+		{"operator ready", object(map[string]any{"phase": "Ready", "readyReplicas": int64(2), "conditions": []any{readyCondition("Ready", "True", "WorkloadAvailable", "")}}), "ready", ""},
+		{"operator scaled to zero", object(map[string]any{"phase": "Ready", "conditions": []any{readyCondition("Ready", "True", "ScaledToZero", "the next request starts one")}}), "scaled-to-zero", "next request"},
+		{"operator failed", object(map[string]any{"phase": "Failed", "conditions": []any{readyCondition("Ready", "False", "ProgressDeadlineExceeded", "did not roll out")}}), "failed", "did not roll out"},
 		{"previous rollout still reported", withGeneration(object(map[string]any{"observedGeneration": int64(1), "readyReplicas": int64(2), "conditions": []any{readyCondition("Ready", "True", "", "")}}), 2), "pending", "generation 2"},
 		{"previous failure still reported", withGeneration(object(map[string]any{"observedGeneration": int64(1), "phase": "Failed", "message": "old"}), 2), "pending", "generation 2"},
 		{"current rollout ready", withGeneration(object(map[string]any{"observedGeneration": int64(2), "readyReplicas": int64(2), "conditions": []any{readyCondition("Ready", "True", "", "")}}), 2), "ready", ""},
@@ -366,5 +372,46 @@ func TestApplicationResponsesCarryGenerations(t *testing.T) {
 	listed := jsonBody(t, harness.do(t, http.MethodGet, "/api/v1/applications", ""))["items"].([]any)[0].(map[string]any)
 	if listed["status"] != "ready" || listed["observed_generation"] != float64(3) {
 		t.Fatalf("observed update: %v", listed)
+	}
+}
+
+func workloadSecret(name string, labelled bool) *corev1.Secret {
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace}}
+	if labelled {
+		secret.Labels = map[string]string{"kionga.dev/workload-secret": "true"}
+	}
+	return secret
+}
+
+func TestApplicationSecretRefsMustBeLabelledWorkloadSecrets(t *testing.T) {
+	harness := newKubeHarness(t, workloadSecret("kionga-agent-runtime-x", false))
+	projectID := createTestProject(t, harness.server)
+	for _, tc := range []struct{ ref, want string }{
+		{"kionga-agent-runtime-x", "is not labelled kionga.dev/workload-secret=true"},
+		{"missing-secret", "does not exist"},
+	} {
+		body := strings.Replace(createAppBody(projectID, ""), `"secret_refs":["billing-db"]`, `"secret_refs":["billing-db","`+tc.ref+`"]`, 1)
+		recorder := harness.do(t, http.MethodPost, "/api/v1/applications", body)
+		if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), tc.want) || !strings.Contains(recorder.Body.String(), `"field":"secret_refs"`) {
+			t.Fatalf("%s: %d %s", tc.ref, recorder.Code, recorder.Body.String())
+		}
+	}
+	if list, _ := harness.dynamic.Resource(applicationsGVR).Namespace(testNamespace).List(context.Background(), metav1.ListOptions{}); len(list.Items) != 0 {
+		t.Fatal("a refused secret ref must not create the application")
+	}
+	if created := harness.do(t, http.MethodPost, "/api/v1/applications", createAppBody(projectID, "")); created.Code != http.StatusCreated {
+		t.Fatalf("a labelled Secret is accepted: %d %s", created.Code, created.Body.String())
+	}
+}
+
+func TestInternalApplicationHasNoHost(t *testing.T) {
+	harness := newKubeHarness(t)
+	projectID := createTestProject(t, harness.server)
+	created := harness.do(t, http.MethodPost, "/api/v1/applications", strings.Replace(createAppBody(projectID, ""), `"visibility":"public"`, `"visibility":"internal"`, 1))
+	if created.Code != http.StatusCreated || jsonBody(t, created)["url"] != "" {
+		t.Fatalf("internal application: %d %s", created.Code, created.Body.String())
+	}
+	if spec := harness.object(t, applicationsGVR, "billing").Object["spec"].(map[string]any); spec["visibility"] != "internal" {
+		t.Fatalf("visibility: %#v", spec)
 	}
 }

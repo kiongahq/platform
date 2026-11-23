@@ -120,6 +120,7 @@ function applicationFields(projects: RecordData[], sourceType: string): Field[] 
       options: [
         { value: "sso", label: "Signed-in users (single sign-on)" },
         { value: "public", label: "Public" },
+        { value: "internal", label: "Internal only (no address)" },
       ],
     },
     { name: "secret_refs", label: "Secrets", help: "Kubernetes Secret names, comma separated. Their keys become environment variables." },

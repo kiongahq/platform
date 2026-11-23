@@ -121,7 +121,9 @@ func (issues FieldIssues) Error() string {
 }
 
 var (
-	dnsLabel         = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`)
+	// 45 characters leaves room for the operator's -build-<hash>, -route
+	// and -sso suffixes inside a 63-character DNS label.
+	dnsLabel         = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,43}[a-z0-9])?$`)
 	quantity         = regexp.MustCompile(`^[1-9][0-9]*(m|Mi|Gi)?$`)
 	envName          = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 	secretName       = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$`)
@@ -145,7 +147,7 @@ var reservedApplicationPrefixes = []string{"workbench-", "ide-", "langflow-", "k
 // ValidateApplicationName checks the DNS label and the reserved host names.
 func ValidateApplicationName(name string) error {
 	if !dnsLabel.MatchString(name) {
-		return errors.New("must be a lowercase DNS label: letters, digits and hyphens, starting with a letter, at most 63 characters")
+		return errors.New("must be a lowercase DNS label: letters, digits and hyphens, starting with a letter, at most 45 characters")
 	}
 	if slices.Contains(reservedApplicationNames, name) {
 		return fmt.Errorf("%q is reserved by the platform", name)
@@ -164,6 +166,9 @@ const (
 	DefaultRequestsTarget = 100
 	DefaultCPUTarget      = 80
 	MaxWorkloadReplicas   = 100
+	// MaxWorkloadNameLength matches the operator: room for its -build-<hash>,
+	// -route and -sso suffixes inside a 63-character DNS label.
+	MaxWorkloadNameLength = 45
 )
 
 // NormalizeScaling fills defaults and validates metric and target. An empty
@@ -229,12 +234,9 @@ func NormalizeApplicationRequest(req *ApplicationRequest) error {
 		}
 	default:
 		if !validGitURL(req.Source.Git) {
-			add("source.git", "must be an https:// or ssh git URL")
+			add("source.git", "must be a public https:// Git URL without credentials; builds carry no Git credentials")
 		}
-		if req.Source.Ref == "" {
-			req.Source.Ref = "main"
-		}
-		if !gitRef.MatchString(req.Source.Ref) || strings.Contains(req.Source.Ref, "..") {
+		if req.Source.Ref != "" && (!gitRef.MatchString(req.Source.Ref) || strings.Contains(req.Source.Ref, "..")) {
 			add("source.ref", "must be a branch, tag or commit")
 		}
 		if req.Source.ContextDir != "" && (!relativeFilePath.MatchString(req.Source.ContextDir) || strings.Contains(req.Source.ContextDir, "..")) {
@@ -325,8 +327,8 @@ func NormalizeApplicationRequest(req *ApplicationRequest) error {
 	if req.Visibility == "" {
 		req.Visibility = "sso"
 	}
-	if req.Visibility != "public" && req.Visibility != "sso" {
-		add("visibility", "must be public or sso")
+	if !ValidVisibility(req.Visibility) {
+		add("visibility", "must be public, sso or internal")
 	}
 	if len(issues) > 0 {
 		return issues
@@ -334,25 +336,23 @@ func NormalizeApplicationRequest(req *ApplicationRequest) error {
 	return nil
 }
 
+// validGitURL accepts what the operator builds: a public https URL, no
+// credentials, no whitespace or fragment (^https://[^\s#@]+$).
 func validGitURL(value string) bool {
-	if value == "" || len(value) > 512 || strings.IndexFunc(value, func(char rune) bool { return unicode.IsSpace(char) || unicode.IsControl(char) }) >= 0 {
+	if len(value) > 512 || !strings.HasPrefix(value, "https://") {
 		return false
 	}
-	if strings.HasPrefix(value, "https://") {
-		rest := strings.TrimPrefix(value, "https://")
-		host, _, _ := strings.Cut(rest, "/")
-		return host != "" && !strings.Contains(host, "@")
-	}
-	// scp-like ssh form: git@host:owner/repo.git, or ssh://git@host/owner/repo
-	if strings.HasPrefix(value, "ssh://") {
-		return len(value) > len("ssh://") && strings.Contains(strings.TrimPrefix(value, "ssh://"), "/")
-	}
-	user, rest, ok := strings.Cut(value, "@")
-	if !ok || user == "" {
-		return false
-	}
-	host, path, ok := strings.Cut(rest, ":")
-	return ok && host != "" && path != "" && !strings.HasPrefix(path, "/")
+	rest := strings.TrimPrefix(value, "https://")
+	host, _, _ := strings.Cut(rest, "/")
+	return host != "" && strings.IndexFunc(rest, func(char rune) bool {
+		return unicode.IsSpace(char) || unicode.IsControl(char) || char == '#' || char == '@'
+	}) < 0
+}
+
+// ValidVisibility: public (anyone at the host), sso (signed-in users, through
+// the gateway) or internal (no host; in-cluster callers only).
+func ValidVisibility(value string) bool {
+	return value == "public" || value == "sso" || value == "internal"
 }
 
 // ApplicationURL is the public address of an application.

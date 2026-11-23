@@ -149,7 +149,8 @@ test('console views share layout and accessible control names', async ({page}, t
 
 test('public, developer and editorial surfaces use shared tokens without horizontal overflow', async ({page}, testInfo) => {
   await settings(page);
-  for (const url of ['/login', '/api-docs', '/studio', '/workspace?tool=ide']) {
+  const authoring = (await (await page.request.get('/api/v1/site')).json()).blog_authoring === true;
+  for (const url of ['/login', '/api-docs', ...(authoring ? ['/studio'] : []), '/workspace?tool=ide']) {
     await page.goto(url);
     await expect(page.locator('link[rel="stylesheet"]').first()).toBeAttached();
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-paper').trim())).not.toBe('');

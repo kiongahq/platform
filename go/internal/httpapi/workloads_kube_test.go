@@ -32,6 +32,12 @@ func TestKubernetesFunctionDeployCreatesKiongaFunction(t *testing.T) {
 	minimum, _, _ := unstructured.NestedInt64(spec, "replicas", "min")
 	metric, _, _ := unstructured.NestedString(spec, "scaling", "metric")
 	target, _, _ := unstructured.NestedInt64(spec, "scaling", "target")
+	if spec["visibility"] != "internal" {
+		t.Fatalf("functions default to internal visibility: %#v", spec)
+	}
+	if listed := harness.do(t, http.MethodGet, "/api/v1/functions", ""); !strings.Contains(listed.Body.String(), `"visibility":"internal"`) {
+		t.Fatalf("the default must be recorded too: %s", listed.Body.String())
+	}
 	if spec["image"] != "registry/fn:1" || minimum != 0 || metric != "requests" || target != api.DefaultRequestsTarget {
 		t.Fatalf("functions must default to scale-to-zero on requests: %#v", spec)
 	}
@@ -81,6 +87,10 @@ func TestKubernetesFunctionNeverOverwritesAnotherProjectsFunction(t *testing.T) 
 func TestKubernetesFunctionRejectsCPUScaleToZero(t *testing.T) {
 	harness := newKubeHarness(t)
 	projectID := createTestProject(t, harness.server)
+	long := "fn-" + strings.Repeat("a", 43)
+	if refused := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+projectID+`","name":"`+long+`","image":"registry/fn:1"}`); refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "at most 45") {
+		t.Fatalf("long name: %d %s", refused.Code, refused.Body.String())
+	}
 	recorder := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+projectID+`","name":"fn","image":"registry/fn:1","scaling":{"metric":"cpu","target":70}}`)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("cpu scaling with min 0: %d %s", recorder.Code, recorder.Body.String())
@@ -209,7 +219,7 @@ func TestKubernetesModelDeployIsPendingUntilReady(t *testing.T) {
 	}
 	name := api.ModelDeploymentDNSName(projectID, "churn-classifier")
 	spec := harness.object(t, modelDeploymentsGVR, name).Object["spec"].(map[string]any)
-	if spec["modelName"] != "churn-classifier" || spec["version"] != "3" || spec["canaryWeight"] != int64(0) {
+	if _, hasCanary := spec["canaryVersion"]; spec["modelName"] != "churn-classifier" || spec["version"] != "3" || hasCanary || spec["canaryWeight"] != int64(0) {
 		t.Fatalf("unexpected KiongaModelDeployment spec: %#v", spec)
 	}
 	if row := modelRow(t, harness, modelID); row["deployment_status"] != "pending" {
@@ -275,7 +285,10 @@ func TestKubernetesCanarySplitsInvocationsByWeight(t *testing.T) {
 	if deployed := harness.do(t, http.MethodPost, "/api/v1/models/"+stableID+"/deploy", `{"canary_weight":0}`); deployed.Code != http.StatusAccepted {
 		t.Fatalf("stable deploy: %d %s", deployed.Code, deployed.Body.String())
 	}
-	harness.setStatus(t, modelDeploymentsGVR, name, map[string]any{"url": stable.URL, "conditions": []any{readyCondition("Ready", "True", "", "")}})
+	harness.setStatus(t, modelDeploymentsGVR, name, map[string]any{"phase": "Ready", "url": stable.URL, "conditions": []any{readyCondition("Ready", "True", "", "")}})
+	if row := modelRow(t, harness, stableID); row["deployment_status"] != "serving" {
+		t.Fatalf("stable: %v", row)
+	}
 	if deployed := harness.do(t, http.MethodPost, "/api/v1/models/"+canaryID+"/deploy", `{"canary_weight":20}`); deployed.Code != http.StatusAccepted {
 		t.Fatalf("canary deploy: %d %s", deployed.Code, deployed.Body.String())
 	}
@@ -283,12 +296,21 @@ func TestKubernetesCanarySplitsInvocationsByWeight(t *testing.T) {
 	if spec["version"] != "3" || spec["canaryVersion"] != "4" || spec["canaryWeight"] != int64(20) {
 		t.Fatalf("canary spec: %#v", spec)
 	}
-	// Until the canary is ready every call goes to stable.
+	// While the canary rolls out the operator reports Ready=False for the
+	// whole deployment; the stable version keeps serving and takes every call.
+	harness.setStatus(t, modelDeploymentsGVR, name, map[string]any{"phase": "Progressing", "url": stable.URL, "canaryWeight": int64(20),
+		"conditions": []any{readyCondition("Ready", "False", "InferenceServiceProgressing", "stable: ready; canary: loading")}})
+	if row := modelRow(t, harness, stableID); row["deployment_status"] != "serving" || row["endpoint_url"] != stable.URL {
+		t.Fatalf("a rolling canary must not take the stable version down: %v", row)
+	}
+	if row := modelRow(t, harness, canaryID); row["deployment_status"] != "pending" {
+		t.Fatalf("an unready canary is pending: %v", row)
+	}
 	if predicted := harness.do(t, http.MethodPost, "/api/v1/models/"+stableID+"/predict", `{}`); predicted.Header().Get("X-Kionga-Model-Version") != "3" {
 		t.Fatalf("unready canary received traffic: %s", predicted.Body.String())
 	}
 	harness.setStatus(t, modelDeploymentsGVR, name, map[string]any{
-		"url": stable.URL, "canaryURL": canary.URL,
+		"phase": "Ready", "url": stable.URL, "canaryURL": canary.URL,
 		"conditions": []any{readyCondition("Ready", "True", "", ""), readyCondition("CanaryReady", "True", "", "")},
 	})
 	mu.Lock()
@@ -364,4 +386,60 @@ func metavListOptions() metav1.ListOptions { return metav1.ListOptions{} }
 
 func rejectAll(clienttesting.Action) (bool, runtime.Object, error) {
 	return true, nil, errors.New("admission webhook denied the request")
+}
+
+func TestModelDeploymentStatusMapping(t *testing.T) {
+	object := func(generation int64, canary bool, status map[string]any) *unstructured.Unstructured {
+		spec := map[string]any{"modelName": "m", "version": "1"}
+		if canary {
+			spec["canaryVersion"], spec["canaryWeight"] = "2", int64(10)
+		}
+		value := &unstructured.Unstructured{Object: map[string]any{"spec": spec, "status": status}}
+		value.SetGeneration(generation)
+		return value
+	}
+	ready := []any{readyCondition("Ready", "True", "InferenceServiceReady", "")}
+	progressing := []any{readyCondition("Ready", "False", "InferenceServiceProgressing", "loading")}
+	serving := api.Model{Version: "1", DeploymentStatus: "serving", EndpointURL: "http://stable"}
+	for _, tc := range []struct {
+		name   string
+		model  api.Model
+		object *unstructured.Unstructured
+		status string
+		url    string
+	}{
+		{"stable ready", api.Model{Version: "1"}, object(1, false, map[string]any{"observedGeneration": int64(1), "url": "http://stable", "conditions": ready}), "serving", "http://stable"},
+		{"stable progressing", api.Model{Version: "1"}, object(1, false, map[string]any{"observedGeneration": int64(1), "url": "http://stable", "conditions": progressing}), "pending", ""},
+		{"stable keeps serving while canary rolls out", serving, object(2, true, map[string]any{"observedGeneration": int64(2), "url": "http://stable", "conditions": progressing}), "serving", "http://stable"},
+		{"stable keeps serving before the operator observes the change", serving, object(3, true, map[string]any{"observedGeneration": int64(2), "url": "http://stable", "conditions": ready}), "serving", "http://stable"},
+		{"stale ready is not trusted", api.Model{Version: "1"}, object(3, false, map[string]any{"observedGeneration": int64(2), "url": "http://stable", "conditions": ready}), "pending", ""},
+		{"stale failure is not trusted", api.Model{Version: "1"}, object(3, false, map[string]any{"observedGeneration": int64(2), "phase": "Failed"}), "pending", ""},
+		{"canary ready", api.Model{Version: "2"}, object(1, true, map[string]any{"observedGeneration": int64(1), "url": "http://stable", "canaryURL": "http://canary", "conditions": ready}), "serving", "http://canary"},
+		{"canary without url", api.Model{Version: "2"}, object(1, true, map[string]any{"observedGeneration": int64(1), "url": "http://stable", "conditions": ready}), "pending", ""},
+		{"canary not ready while stable is", api.Model{Version: "2"}, object(1, true, map[string]any{"observedGeneration": int64(1), "url": "http://stable", "canaryURL": "http://canary", "conditions": []any{readyCondition("Ready", "True", "", ""), readyCondition("CanaryReady", "False", "Loading", "loading")}}), "pending", ""},
+		{"canary ready by its own condition", api.Model{Version: "2"}, object(1, true, map[string]any{"observedGeneration": int64(1), "url": "http://stable", "canaryURL": "http://canary", "conditions": []any{readyCondition("Ready", "True", "", ""), readyCondition("CanaryReady", "True", "", "")}}), "serving", "http://canary"},
+		{"failed", api.Model{Version: "1"}, object(1, false, map[string]any{"observedGeneration": int64(1), "phase": "Failed", "conditions": []any{readyCondition("Ready", "False", "ArtifactNotFound", "no artifact")}}), "failed", ""},
+		{"other version retired", api.Model{Version: "7"}, object(1, false, map[string]any{}), "retired", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mapModelDeployment(tc.model, tc.object)
+			if got.DeploymentStatus != tc.status || got.EndpointURL != tc.url {
+				t.Fatalf("got %s %q (%s)", got.DeploymentStatus, got.EndpointURL, got.DeploymentMessage)
+			}
+		})
+	}
+}
+
+func TestKubernetesFunctionVisibility(t *testing.T) {
+	harness := newKubeHarness(t)
+	projectID := createTestProject(t, harness.server)
+	if refused := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+projectID+`","name":"fn","image":"registry/fn:1","visibility":"private"}`); refused.Code != http.StatusBadRequest {
+		t.Fatalf("unknown visibility: %d %s", refused.Code, refused.Body.String())
+	}
+	if deployed := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+projectID+`","name":"fn","image":"registry/fn:1","visibility":"sso"}`); deployed.Code != http.StatusAccepted || jsonBody(t, deployed)["visibility"] != "sso" {
+		t.Fatalf("sso function: %d %s", deployed.Code, deployed.Body.String())
+	}
+	if spec := harness.object(t, functionsGVR, "fn").Object["spec"].(map[string]any); spec["visibility"] != "sso" {
+		t.Fatalf("visibility not dispatched: %#v", spec)
+	}
 }

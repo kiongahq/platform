@@ -13,6 +13,10 @@ import (
 	"time"
 
 	"github.com/kiongahq/platform/pkg/api"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
 // deployTestAgent creates a project and an agent through the API and returns
@@ -73,11 +77,11 @@ func TestAgentRuntimeEndpointUsesImmutableID(t *testing.T) {
 	t.Setenv("KIONGA_AGENT_NAMESPACE", "tenant-workloads")
 	identifier := "agt/project one"
 	want := "http://" + api.AgentDNSName(identifier) + ".tenant-workloads.svc"
-	if got := agentRuntimeEndpoint(identifier); got != want {
+	if got := agentRuntimeEndpoint(t.Context(), identifier); got != want {
 		t.Fatalf("runtime endpoint = %q, want %q", got, want)
 	}
 	t.Setenv("AGENT_RUNTIME_URL", "http://agent-runtime:9000/")
-	if got := agentRuntimeEndpoint(identifier); got != "http://agent-runtime:9000" {
+	if got := agentRuntimeEndpoint(t.Context(), identifier); got != "http://agent-runtime:9000" {
 		t.Fatalf("Compose override was not preserved: %q", got)
 	}
 }
@@ -221,5 +225,46 @@ func TestInvokeAgentAuthenticatesToRuntimeAndForwardsCaller(t *testing.T) {
 	}
 	if got.Get("X-Kionga-User-ID") != "local-dev" {
 		t.Fatalf("runtime caller = %q, want the authenticated principal", got.Get("X-Kionga-User-ID"))
+	}
+}
+
+func TestAgentRuntimeEndpointUsesTheOperatorURLOnKubernetes(t *testing.T) {
+	t.Setenv("AGENT_RUNTIME_URL", "")
+	t.Setenv("KIONGA_RUNTIME", "kubernetes")
+	t.Setenv("KIONGA_AGENT_NAMESPACE", "agents")
+	agent := func(id, url string) *unstructured.Unstructured {
+		object := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "kionga.dev/v1alpha1", "kind": "KiongaAgent",
+			"metadata": map[string]any{"name": api.AgentDNSName(id), "namespace": "agents"},
+		}}
+		if url != "" {
+			object.Object["status"] = map[string]any{"url": url}
+		}
+		return object
+	}
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{agentIdentityResource: "KiongaAgentList"},
+		agent("agt-scaled", "http://kionga-agent-scaled-route.agents.svc.cluster.local:8080/"),
+		agent("agt-new", ""),
+		agent("agt-bad", "ftp://elsewhere"))
+	previous := kubeAccessFactory
+	kubeAccessFactory = func() (*kubeAccess, error) { return &kubeAccess{dynamic: client, namespace: "agents"}, nil }
+	t.Cleanup(func() { kubeAccessFactory = previous })
+
+	// The request-scaled route through the KEDA interceptor is what gets called.
+	if got := agentRuntimeEndpoint(t.Context(), "agt-scaled"); got != "http://kionga-agent-scaled-route.agents.svc.cluster.local:8080" {
+		t.Fatalf("single lookup = %q", got)
+	}
+	service := func(id string) string { return "http://" + api.AgentDNSName(id) + ".agents.svc" }
+	listed := agentRuntimeEndpoints(t.Context(), []string{"agt-scaled", "agt-new", "agt-bad", "agt-missing"})
+	want := map[string]string{
+		"agt-scaled":  "http://kionga-agent-scaled-route.agents.svc.cluster.local:8080",
+		"agt-new":     service("agt-new"),
+		"agt-bad":     service("agt-bad"),
+		"agt-missing": service("agt-missing"),
+	}
+	for id, endpoint := range want {
+		if listed[id] != endpoint {
+			t.Fatalf("%s: %q, want %q", id, listed[id], endpoint)
+		}
 	}
 }

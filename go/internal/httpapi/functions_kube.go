@@ -89,6 +89,11 @@ func functionSpec(req api.DeployFunctionRequest) map[string]any {
 	if resources := resourceRequirements(req.CPU, req.Memory); resources != nil {
 		spec["resources"] = resources
 	}
+	visibility := req.Visibility
+	if visibility == "" {
+		visibility = "internal"
+	}
+	spec["visibility"] = visibility
 	if len(req.Annotations) > 0 {
 		annotations := map[string]any{}
 		for key, value := range req.Annotations {
@@ -177,6 +182,13 @@ func (s *Server) deployKubernetesFunction(w http.ResponseWriter, r *http.Request
 	access, err := s.kube()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "kubernetes_unavailable", errKubernetesUnavailable.Error())
+		return
+	}
+	if req.Visibility == "" {
+		req.Visibility = "internal" // recorded as applied, not left empty
+	}
+	if len(req.Name) > api.MaxWorkloadNameLength {
+		writeError(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("function names on Kubernetes are at most %d characters", api.MaxWorkloadNameLength))
 		return
 	}
 	// Function names are global. Never overwrite a resource that belongs to
