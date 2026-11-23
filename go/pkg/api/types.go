@@ -422,6 +422,7 @@ type Function struct {
 	// ignores them.
 	ReplicaRange *ReplicaRange    `json:"replica_range,omitempty"`
 	Scaling      *WorkloadScaling `json:"scaling,omitempty"`
+	Visibility   string           `json:"visibility,omitempty"`
 	Message      string           `json:"message,omitempty"`
 	OwnerSubject string           `json:"owner_subject,omitempty"`
 	CreatedAt    time.Time        `json:"created_at"`
@@ -441,6 +442,8 @@ type DeployFunctionRequest struct {
 	// and the scaling trigger (requests by default).
 	Replicas *ReplicaRange    `json:"replicas,omitempty"`
 	Scaling  *WorkloadScaling `json:"scaling,omitempty"`
+	// Visibility is internal (the default: no host), sso or public.
+	Visibility string `json:"visibility,omitempty"`
 }
 
 type Component struct {

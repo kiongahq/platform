@@ -183,7 +183,7 @@ func TestApplicationValidation(t *testing.T) {
 		{"bad port", strings.Replace(createAppBody(projectID, ""), `"port":3000`, `"port":70000`, 1), "port"},
 		{"cpu cannot scale to zero", strings.Replace(createAppBody(projectID, ""), `"metric":"requests","target":50`, `"metric":"cpu","target":70`, 1), "replicas.min"},
 		{"reserved env prefix", strings.Replace(createAppBody(projectID, ""), `"LOG_LEVEL"`, `"KIONGA_INTERNAL_TOKEN"`, 1), "env"},
-		{"unknown visibility", strings.Replace(createAppBody(projectID, ""), `"visibility":"public"`, `"visibility":"internal"`, 1), "visibility"},
+		{"unknown visibility", strings.Replace(createAppBody(projectID, ""), `"visibility":"public"`, `"visibility":"private"`, 1), "visibility"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := harness.do(t, http.MethodPost, "/api/v1/applications", tc.body)
@@ -405,5 +405,17 @@ func TestApplicationSecretRefsMustBeLabelledWorkloadSecrets(t *testing.T) {
 	}
 	if created := harness.do(t, http.MethodPost, "/api/v1/applications", createAppBody(projectID, "")); created.Code != http.StatusCreated {
 		t.Fatalf("a labelled Secret is accepted: %d %s", created.Code, created.Body.String())
+	}
+}
+
+func TestInternalApplicationHasNoHost(t *testing.T) {
+	harness := newKubeHarness(t)
+	projectID := createTestProject(t, harness.server)
+	created := harness.do(t, http.MethodPost, "/api/v1/applications", strings.Replace(createAppBody(projectID, ""), `"visibility":"public"`, `"visibility":"internal"`, 1))
+	if created.Code != http.StatusCreated || jsonBody(t, created)["url"] != "" {
+		t.Fatalf("internal application: %d %s", created.Code, created.Body.String())
+	}
+	if spec := harness.object(t, applicationsGVR, "billing").Object["spec"].(map[string]any); spec["visibility"] != "internal" {
+		t.Fatalf("visibility: %#v", spec)
 	}
 }

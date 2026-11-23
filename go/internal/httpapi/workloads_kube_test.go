@@ -32,6 +32,9 @@ func TestKubernetesFunctionDeployCreatesKiongaFunction(t *testing.T) {
 	minimum, _, _ := unstructured.NestedInt64(spec, "replicas", "min")
 	metric, _, _ := unstructured.NestedString(spec, "scaling", "metric")
 	target, _, _ := unstructured.NestedInt64(spec, "scaling", "target")
+	if spec["visibility"] != "internal" {
+		t.Fatalf("functions default to internal visibility: %#v", spec)
+	}
 	if spec["image"] != "registry/fn:1" || minimum != 0 || metric != "requests" || target != api.DefaultRequestsTarget {
 		t.Fatalf("functions must default to scale-to-zero on requests: %#v", spec)
 	}
@@ -417,5 +420,19 @@ func TestModelDeploymentStatusMapping(t *testing.T) {
 				t.Fatalf("got %s %q (%s)", got.DeploymentStatus, got.EndpointURL, got.DeploymentMessage)
 			}
 		})
+	}
+}
+
+func TestKubernetesFunctionVisibility(t *testing.T) {
+	harness := newKubeHarness(t)
+	projectID := createTestProject(t, harness.server)
+	if refused := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+projectID+`","name":"fn","image":"registry/fn:1","visibility":"private"}`); refused.Code != http.StatusBadRequest {
+		t.Fatalf("unknown visibility: %d %s", refused.Code, refused.Body.String())
+	}
+	if deployed := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+projectID+`","name":"fn","image":"registry/fn:1","visibility":"sso"}`); deployed.Code != http.StatusAccepted || jsonBody(t, deployed)["visibility"] != "sso" {
+		t.Fatalf("sso function: %d %s", deployed.Code, deployed.Body.String())
+	}
+	if spec := harness.object(t, functionsGVR, "fn").Object["spec"].(map[string]any); spec["visibility"] != "sso" {
+		t.Fatalf("visibility not dispatched: %#v", spec)
 	}
 }

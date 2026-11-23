@@ -327,8 +327,8 @@ func NormalizeApplicationRequest(req *ApplicationRequest) error {
 	if req.Visibility == "" {
 		req.Visibility = "sso"
 	}
-	if req.Visibility != "public" && req.Visibility != "sso" {
-		add("visibility", "must be public or sso")
+	if !ValidVisibility(req.Visibility) {
+		add("visibility", "must be public, sso or internal")
 	}
 	if len(issues) > 0 {
 		return issues
@@ -347,6 +347,12 @@ func validGitURL(value string) bool {
 	return host != "" && strings.IndexFunc(rest, func(char rune) bool {
 		return unicode.IsSpace(char) || unicode.IsControl(char) || char == '#' || char == '@'
 	}) < 0
+}
+
+// ValidVisibility: public (anyone at the host), sso (signed-in users, through
+// the gateway) or internal (no host; in-cluster callers only).
+func ValidVisibility(value string) bool {
+	return value == "public" || value == "sso" || value == "internal"
 }
 
 // ApplicationURL is the public address of an application.

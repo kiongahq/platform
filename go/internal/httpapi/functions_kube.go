@@ -78,6 +78,11 @@ func functionSpec(req api.DeployFunctionRequest) map[string]any {
 	if resources := resourceRequirements(req.CPU, req.Memory); resources != nil {
 		spec["resources"] = resources
 	}
+	visibility := req.Visibility
+	if visibility == "" {
+		visibility = "internal"
+	}
+	spec["visibility"] = visibility
 	if len(req.Annotations) > 0 {
 		annotations := map[string]any{}
 		for key, value := range req.Annotations {

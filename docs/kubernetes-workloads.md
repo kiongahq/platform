@@ -39,7 +39,9 @@ answers `409` with `{"error":"not_configured","message":…,"steps":[…]}`.
 Names are DNS labels that start with a letter. Platform host names (`api`,
 `auth`, `console`, `www` and others) and the workspace host families
 (`workbench-`, `ide-`, `langflow-`, `kionga-`) are reserved, and a name whose
-host equals the console host is refused.
+host equals the console host is refused. `visibility` is `sso` (the default:
+signed-in users, through the gateway), `public`, or `internal` (no host; the
+application has no `url`).
 
 The `KiongaApplication` spec carries `image` or `source {git, ref, contextDir,
 dockerfile}`, `port`, `env [{name, value}]`, `secretRefs [{name}]`,
@@ -65,7 +67,7 @@ at most 3600) and resumes from `Last-Event-ID` or `?since=`.
 ## Functions
 
 On Kubernetes, `POST /api/v1/functions` creates a `KiongaFunction` (`image`,
-`port` 8080, `env`, `resources`, `replicas {min: 0, max: 5}` and `scaling
+`port` 8080, `env`, `resources`, `visibility` (default `internal`, or `sso` or `public`), `replicas {min: 0, max: 5}` and `scaling
 {metric: requests, target: 100}` by default). Compose keeps faasd.
 
 Invocations go to `status.internalURL`, the address the operator publishes.

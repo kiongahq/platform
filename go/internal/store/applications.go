@@ -47,6 +47,9 @@ func SaveApplication(docs Documents, req api.ApplicationRequest, create bool, ow
 		next.Resources, next.Replicas, next.Scaling = req.Resources, *req.Replicas, *req.Scaling
 		next.HealthPath, next.Visibility = req.HealthPath, req.Visibility
 		next.URL = api.ApplicationURL(req.Name, baseDomain)
+		if req.Visibility == "internal" {
+			next.URL = "" // no host; reachable in the cluster only
+		}
 		next.UpdatedAt = now
 		return next, nil
 	}, action, actor)
