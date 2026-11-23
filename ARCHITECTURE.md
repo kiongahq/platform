@@ -80,9 +80,12 @@ a separate Node.js server.
   canonical form whose SHA-256 identifies a revision.
 - `execution`: ready-set scheduling of a validated DAG. `k8sexec` runs nodes as
   Kubernetes Jobs. `scheduler` fires cron triggers under a PostgreSQL lease.
-- `integrations`: clients for Prefect, MLflow, KFP, Langfuse, OpenFaaS and Kafka
-  REST; `lifecycle_worker.go` is the at-least-once Kafka boundary.
-- `operator`: reconcilers behind the `operator` command.
+- `integrations`: clients for Prefect, MLflow, Langfuse, OpenFaaS and Kafka REST;
+  `lifecycle_worker.go` is the at-least-once Kafka boundary.
+- `operator`: reconcilers behind the `operator` command. Agents, applications and
+  functions become Deployments with KEDA HTTP (requests) or CPU autoscaling;
+  applications get an Ingress at `<name>.<baseDomain>`; model deployments become
+  KServe `InferenceService`s in RawDeployment mode. See "Kubernetes workloads".
 - `feature`, `storage`, `metrics`, `logexport`: the logic behind the matching
   commands.
 - `editorial`: the engineering blog's blocks, sanitized rendering, workflow and
@@ -102,7 +105,9 @@ a separate Node.js server.
 - `api`: wire types shared by the gateway, CLI and clients, including the versioned
   project template catalog (`project_templates.go`).
 - `kube/v1alpha1`: CRD types in group `kionga.dev` (`KiongaAgent`,
-  `KiongaPipelineRun`, `KiongaModelPromotion`, `KiongaWorkspace`).
+  `KiongaApplication`, `KiongaFunction`, `KiongaModelDeployment`,
+  `KiongaModelPromotion`, `KiongaWorkspace`). `make generate` writes the deep-copy
+  code and the CRDs in `config/crd`; CI fails when they are stale.
 
 ### Other directories
 
@@ -174,6 +179,64 @@ a separate Node.js server.
   [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Naming.** Binaries, environment variables and the CRD group keep the `kionga`
   prefix; newer settings use `KIONGA_`.
+
+## Kubernetes workloads
+
+The gateway records a resource and creates its `kionga.dev/v1alpha1` custom
+resource. The operator reconciles the resource and writes status back, and the
+gateway reads that status. Every object the operator creates has a controller
+reference, so deleting the custom resource deletes them.
+
+- **Applications and functions** (`workload_controller.go`) share one
+  reconciler. Each gets a Deployment with startup, readiness and liveness
+  probes on `healthPath`. Without `healthPath` the probes use TCP. Rollouts
+  never take a pod away before its replacement is ready. Each also gets a
+  ClusterIP Service on port 80, and a PodDisruptionBudget when min >= 2.
+  Applications default to `visibility: sso` and one replica. Functions default
+  to `internal`, scale to zero on requests and have no Ingress.
+- **Scaling** (`workload_scaling.go`, `workload_objects.go`). `requests` creates
+  a KEDA HTTP add-on `HTTPScaledObject` and an ExternalName Service
+  `<name>-route` pointing at the interceptor. Callers reach the workload
+  through `status.internalURL`, and the interceptor counts each request and can
+  wake a scaled-to-zero Deployment. `cpu` creates a HorizontalPodAutoscaler,
+  with at least one replica. The operator checks discovery at startup for the
+  add-on and KServe. If the add-on is missing, `requests` falls back to `cpu`
+  and the `ScalingReady` condition reports it. Agents use the same scaling
+  and expose `status.url`.
+- **Ingress.** The host is `<name>.<KIONGA_APPLICATIONS_BASE_DOMAIN>`, using
+  the wildcard Secret `KIONGA_APPLICATIONS_TLS_SECRET` and the class
+  `KIONGA_INGRESS_CLASS`. For `public`, the Ingress goes to the Service, or to
+  the route Service when scaling is `requests`. For `sso`, the Ingress goes to
+  `KIONGA_SSO_UPSTREAM` (the gateway) through an ExternalName Service
+  `<name>-sso`. The annotation `kionga.dev/upstream` carries the internal URL
+  that the gateway proxies to once the user has signed in. Without an
+  upstream, an sso host is not published at all. The ingress controller must
+  accept ExternalName backends.
+- **Secrets.** `secretRefs` loads only Secrets labelled
+  `kionga.dev/workload-secret=true`. Platform Secrets in the same namespace
+  stay out of reach. Changing a Secret's data rolls the pods.
+- **Source builds** (`build.go`). A rootless BuildKit Job
+  (`KIONGA_BUILDKIT_IMAGE`) builds `source.git` and pushes the image to
+  `KIONGA_BUILD_REGISTRY` with the credentials in `KIONGA_BUILD_PUSH_SECRET`.
+  It writes the digest to its termination message. The Deployment then rolls
+  to `<registry>/<namespace>-<name>@<digest>`. Changing the annotation
+  `kionga.dev/redeploy` rebuilds the same ref. A failed build keeps the
+  previous image running. Rootless BuildKit needs unconfined seccomp and
+  AppArmor profiles, so Pod Security `baseline` and `restricted` reject the
+  build pod.
+- **Model deployments** (`modeldeployment_controller.go`). MLflow's
+  `get-download-uri` resolves the version to an `s3://` URI. `runs:/`,
+  MLflow 3 `models:/m-...` and `mlflow-artifacts:/` (through
+  `KIONGA_MLFLOW_ARTIFACTS_DESTINATION`) are resolved too. The operator copies
+  the keys from `KIONGA_MODEL_STORAGE_SECRET` into an owned Secret carrying the
+  `serving.kserve.io/s3-*` annotations, bound through a ServiceAccount for
+  KServe's storage initializer. It then creates the `InferenceService` in
+  `RawDeployment` mode. Raw mode has no `canaryTrafficPercent` (KServe 0.21
+  documents canary as serverless-only), so a canary is a second
+  `InferenceService`, `<name>-canary`, and the gateway splits traffic by
+  `status.canaryWeight`. Promotion only changes the MLflow stage.
+- **Pipelines.** On Kubernetes the gateway runs pipeline nodes as Jobs
+  (`k8sexec`). There is no pipeline custom resource.
 
 
 ## Agent runtime credentials
