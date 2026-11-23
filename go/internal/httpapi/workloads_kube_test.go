@@ -108,14 +108,20 @@ func newInterceptor(t *testing.T) (*interceptor, *httptest.Server) {
 	return recorder, server
 }
 
-func TestKubernetesFunctionInvokeGoesThroughTheInterceptor(t *testing.T) {
+func TestKubernetesFunctionInvokeUsesTheInternalURL(t *testing.T) {
 	harness := newKubeHarness(t)
 	recorder, upstream := newInterceptor(t)
-	t.Setenv("KIONGA_KEDA_INTERCEPTOR_URL", upstream.URL)
 	projectID := createTestProject(t, harness.server)
 	if deployed := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+projectID+`","name":"sentiment-fn","image":"registry/fn:1"}`); deployed.Code != http.StatusAccepted {
 		t.Fatalf("deploy: %d", deployed.Code)
 	}
+	// Before the operator publishes an address there is nothing to call.
+	if early := harness.do(t, http.MethodPost, "/api/v1/functions/sentiment-fn/invoke", `{}`); early.Code != http.StatusBadGateway || !strings.Contains(early.Body.String(), "no internal address") {
+		t.Fatalf("invoke before reconcile: %d %s", early.Code, early.Body.String())
+	}
+	// The operator publishes the <name>-route address that leads to the
+	// KEDA interceptor; the gateway calls exactly that.
+	harness.setStatus(t, functionsGVR, "sentiment-fn", map[string]any{"internalURL": upstream.URL + "/", "conditions": []any{readyCondition("Ready", "True", "ScaledToZero", "")}})
 	invoked := harness.do(t, http.MethodPost, "/api/v1/functions/sentiment-fn/invoke", `{"text":"great"}`)
 	if invoked.Code != http.StatusOK || !strings.Contains(invoked.Body.String(), "positive") {
 		t.Fatalf("invoke: %d %s", invoked.Code, invoked.Body.String())
@@ -123,17 +129,8 @@ func TestKubernetesFunctionInvokeGoesThroughTheInterceptor(t *testing.T) {
 	if got := <-recorder.calls; got != `{"text":"great"}` {
 		t.Fatalf("payload: %s", got)
 	}
-	if recorder.hosts[0] != "sentiment-fn."+testNamespace+".svc.cluster.local" {
-		t.Fatalf("the interceptor routes by host; got %q", recorder.hosts[0])
-	}
-	// The operator may report the host it registered in the HTTPScaledObject.
-	harness.setStatus(t, functionsGVR, "sentiment-fn", map[string]any{"host": "sentiment-fn.functions.internal"})
-	if invoked := harness.do(t, http.MethodPost, "/api/v1/functions/sentiment-fn/invoke", `{}`); invoked.Code != http.StatusOK {
-		t.Fatalf("invoke: %d", invoked.Code)
-	}
-	<-recorder.calls
-	if recorder.hosts[1] != "sentiment-fn.functions.internal" {
-		t.Fatalf("status.host must win: %q", recorder.hosts[1])
+	if recorder.hosts[0] != strings.TrimPrefix(upstream.URL, "http://") {
+		t.Fatalf("the call must keep the internal URL's own host: %q", recorder.hosts[0])
 	}
 
 	queued := harness.do(t, http.MethodPost, "/api/v1/functions/sentiment-fn/invoke-async", `{"text":"later"}`)
@@ -149,27 +146,28 @@ func TestKubernetesFunctionInvokeGoesThroughTheInterceptor(t *testing.T) {
 		t.Fatal("async call never reached the function")
 	}
 
-	harness.setStatus(t, functionsGVR, "sentiment-fn", map[string]any{"phase": "Failed", "message": "image pull backoff"})
+	harness.setStatus(t, functionsGVR, "sentiment-fn", map[string]any{"internalURL": upstream.URL, "phase": "Failed", "message": "image pull backoff"})
 	if failed := harness.do(t, http.MethodPost, "/api/v1/functions/sentiment-fn/invoke", `{}`); failed.Code != http.StatusBadGateway || !strings.Contains(failed.Body.String(), "image pull backoff") {
 		t.Fatalf("a failed function must not be invoked: %d %s", failed.Code, failed.Body.String())
 	}
 }
 
-func TestKubernetesFunctionTargets(t *testing.T) {
-	t.Setenv("KIONGA_KEDA_INTERCEPTOR_URL", "")
-	object := func(metric string) *unstructured.Unstructured {
-		return &unstructured.Unstructured{Object: map[string]any{
-			"metadata": map[string]any{"name": "fn", "namespace": "work"},
-			"spec":     map[string]any{"port": int64(9000), "scaling": map[string]any{"metric": metric}},
-		}}
-	}
-	endpoint, host := kubeFunctions{}.target(object("requests"))
-	if endpoint != "http://keda-add-ons-http-interceptor-proxy.keda:8080" || host != "fn.work.svc.cluster.local" {
-		t.Fatalf("requests-scaled functions go through the interceptor: %s %s", endpoint, host)
-	}
-	endpoint, host = kubeFunctions{}.target(object("cpu"))
-	if endpoint != "http://fn.work.svc:9000" || host != "" {
-		t.Fatalf("cpu-scaled functions go to their Service: %s %s", endpoint, host)
+func TestInternalURLValidation(t *testing.T) {
+	for _, tc := range []struct {
+		value, want string
+		ok          bool
+	}{
+		{"http://fn-route.work.svc.cluster.local:8080/", "http://fn-route.work.svc.cluster.local:8080", true},
+		{"", "", false},
+		{"fn-route.work.svc", "", false},
+		{"ftp://fn-route", "", false},
+		{"http://user:pw@fn-route", "", false},
+	} {
+		object := &unstructured.Unstructured{Object: map[string]any{"status": map[string]any{"internalURL": tc.value}}}
+		got, err := internalURL(object)
+		if (err == nil) != tc.ok || got != tc.want {
+			t.Fatalf("%q: %q %v", tc.value, got, err)
+		}
 	}
 }
 

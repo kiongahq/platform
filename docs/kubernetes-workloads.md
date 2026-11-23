@@ -18,7 +18,6 @@ has it). `KIONGA_RUNTIME=compose` forces Compose mode.
 | --- | --- | --- |
 | `KIONGA_TARGET_NAMESPACE` | `default` | Namespace of the workload custom resources (the operator's namespace) |
 | `KIONGA_APPLICATIONS_BASE_DOMAIN` | empty | Applications are served at `https://<name>.<base domain>`; empty disables applications |
-| `KIONGA_KEDA_INTERCEPTOR_URL` | `http://keda-add-ons-http-interceptor-proxy.keda:8080` | KEDA HTTP add-on interceptor used to invoke functions |
 | `KIONGA_EXECUTOR` | automatic | `kubernetes` in Kubernetes mode; any other value sends container flows to the pipeline runner |
 | `KIONGA_WEBSITE_URL` | empty | Link to the Kionga website in the console and on sign-in; empty hides it |
 
@@ -64,14 +63,11 @@ On Kubernetes, `POST /api/v1/functions` creates a `KiongaFunction` (`image`,
 `port` 8080, `env`, `resources`, `replicas {min: 0, max: 5}` and `scaling
 {metric: requests, target: 100}` by default). Compose keeps faasd.
 
-Invocations of a function scaled on requests go to the KEDA HTTP add-on
-interceptor with the function's host in the `Host` header: `status.host`
-when the operator reports it, otherwise `<name>.<namespace>.svc.cluster.local`.
-A function at zero replicas has no ready endpoints, so a call to its Service
-fails and nothing scales it up. The interceptor counts the pending request,
-which the add-on's scaler turns into the scale-from-zero signal, and holds the
-request until a replica is ready. A function scaled on CPU always keeps a
-replica and is called on its Service directly.
+Invocations go to `status.internalURL`, the address the operator publishes.
+With requests scaling it is an ExternalName Service (`<name>-route`) that
+leads to the KEDA HTTP add-on interceptor, which counts the pending request,
+wakes a function at zero replicas and holds the request until a replica is
+ready. Before the operator publishes an address, invoke answers 502.
 
 `invoke-async` on Kubernetes accepts the call and runs it in the background of
 the gateway replica that received it. There is no queue: a call is lost if

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -157,7 +158,7 @@ func deleteWorkload(ctx context.Context, client dynamic.Interface, gvr schema.Gr
 type workloadStatus struct {
 	Phase         string
 	URL           string
-	Host          string
+	InternalURL   string
 	ReadyReplicas int
 	Message       string
 	// ObservedGeneration is status.observedGeneration (0 when absent).
@@ -175,7 +176,7 @@ func readWorkloadStatus(object *unstructured.Unstructured) workloadStatus {
 	status.Raw = raw
 	status.Phase, _, _ = unstructured.NestedString(object.Object, "status", "phase")
 	status.URL, _, _ = unstructured.NestedString(object.Object, "status", "url")
-	status.Host, _, _ = unstructured.NestedString(object.Object, "status", "host")
+	status.InternalURL, _, _ = unstructured.NestedString(object.Object, "status", "internalURL")
 	status.Message, _, _ = unstructured.NestedString(object.Object, "status", "message")
 	if observed, found, _ := unstructured.NestedFieldNoCopy(object.Object, "status", "observedGeneration"); found {
 		status.ObservedGeneration = asInt64(observed)
@@ -303,4 +304,19 @@ func resourceRequirements(cpu, memory string) map[string]any {
 		limits[key] = value
 	}
 	return map[string]any{"requests": quantities, "limits": limits}
+}
+
+// internalURL returns the in-cluster address the operator published in
+// status.internalURL, without a trailing slash. It must be an absolute
+// http(s) URL without credentials.
+func internalURL(object *unstructured.Unstructured) (string, error) {
+	raw := strings.TrimSpace(readWorkloadStatus(object).InternalURL)
+	if raw == "" {
+		return "", errors.New("has no internal address yet; the operator has not reconciled it")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
+		return "", errors.New("has an invalid internal address")
+	}
+	return strings.TrimRight(parsed.String(), "/"), nil
 }

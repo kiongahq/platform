@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -25,15 +24,12 @@ import (
 // them as a Deployment and Service scaled by KEDA, to zero by default.
 // Compose keeps faasd through the OpenFaaS API.
 //
-// Invocation routing. A function scaled to zero has no ready endpoints, so a
-// request sent straight to its Service fails with connection refused and
-// nothing scales it up. The KEDA HTTP add-on interceptor is the component
-// that counts pending requests, which the external scaler turns into the
-// scale-from-zero signal, and it holds each request until a replica is ready
-// (KEDA_CONDITION_WAIT_TIMEOUT, 20s by default). It routes by Host header to
-// the Service named in the HTTPScaledObject. So functions scaled on requests
-// are invoked through the interceptor with the function's host; functions
-// scaled on CPU always keep a replica and are invoked on their Service.
+// Invocation routing. The gateway calls status.internalURL, the address the
+// operator publishes. With requests scaling that address is an ExternalName
+// Service (<name>-route) that leads to the KEDA HTTP add-on interceptor,
+// which counts the pending request, wakes a function scaled to zero and
+// holds the request until a replica is ready. Calling the function's own
+// Service instead would fail at zero replicas and never trigger a scale-up.
 
 // functionInvoker runs one synchronous call. OpenFaaS and Kubernetes both
 // satisfy it, so pipelines in functions mode run on either runtime.
@@ -55,13 +51,6 @@ func (s *Server) functionRuntime() functionInvoker {
 		return client
 	}
 	return nil
-}
-
-func interceptorURL() string {
-	if value := strings.TrimSpace(os.Getenv("KIONGA_KEDA_INTERCEPTOR_URL")); value != "" {
-		return strings.TrimRight(value, "/")
-	}
-	return "http://keda-add-ons-http-interceptor-proxy.keda:8080"
 }
 
 const defaultFunctionPort = 8080
@@ -117,26 +106,6 @@ type kubeFunctions struct {
 	server *Server
 }
 
-// target resolves where to send a call for a function resource.
-func (k kubeFunctions) target(object *unstructured.Unstructured) (endpoint, host string) {
-	name, namespace := object.GetName(), object.GetNamespace()
-	status := readWorkloadStatus(object)
-	metric, _, _ := unstructured.NestedString(object.Object, "spec", "scaling", "metric")
-	port, found, _ := unstructured.NestedFieldNoCopy(object.Object, "spec", "port")
-	servicePort := int64(defaultFunctionPort)
-	if found && asInt64(port) > 0 {
-		servicePort = asInt64(port)
-	}
-	if metric == "cpu" {
-		return fmt.Sprintf("http://%s.%s.svc:%d", name, namespace, servicePort), ""
-	}
-	host = status.Host
-	if host == "" {
-		host = name + "." + namespace + ".svc.cluster.local"
-	}
-	return interceptorURL(), host
-}
-
 func (k kubeFunctions) Invoke(ctx context.Context, name string, payload []byte) ([]byte, error) {
 	object, err := k.access.dynamic.Resource(functionsGVR).Namespace(k.access.namespace).Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
@@ -148,15 +117,15 @@ func (k kubeFunctions) Invoke(ctx context.Context, name string, payload []byte) 
 	if reason := readWorkloadStatus(object).failureReason("Ready"); reason != "" {
 		return nil, fmt.Errorf("function %s failed: %s", name, reason)
 	}
-	endpoint, host := k.target(object)
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/", bytes.NewReader(payload)) // #nosec G704 -- endpoint is the configured interceptor or an in-cluster Service name derived from a validated DNS label
+	endpoint, err := internalURL(object)
+	if err != nil {
+		return nil, fmt.Errorf("function %s %w", name, err)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/", bytes.NewReader(payload)) // #nosec G704 -- endpoint is the operator's status.internalURL, validated by internalURL
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	if host != "" {
-		request.Host = host
-	}
 	response, err := functionHTTPClient.Do(request) // #nosec G704 -- see above
 	if err != nil {
 		return nil, err
