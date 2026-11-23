@@ -114,7 +114,10 @@ func applicationSpec(app api.Application) map[string]any {
 		spec["image"] = app.Image
 	}
 	if app.Source != nil {
-		source := map[string]any{"git": app.Source.Git, "ref": app.Source.Ref, "dockerfile": app.Source.Dockerfile}
+		source := map[string]any{"git": app.Source.Git, "dockerfile": app.Source.Dockerfile}
+		if app.Source.Ref != "" {
+			source["ref"] = app.Source.Ref
+		}
 		if app.Source.ContextDir != "" {
 			source["contextDir"] = app.Source.ContextDir
 		}
@@ -388,14 +391,18 @@ func (s *Server) redeployApplication(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, saved)
 }
 
-// applicationPods lists the pods the operator labels for an application.
+// applicationPods lists the pods the operator labels for an application:
+// kionga.dev/workload=<name> and kionga.dev/component=application. Build
+// pods carry component=build and are left out.
 func applicationPods(ctx context.Context, access *kubeAccess, name string) ([]corev1.Pod, error) {
-	pods, err := access.core.CoreV1().Pods(access.namespace).List(ctx, metav1.ListOptions{LabelSelector: "kionga.dev/application=" + name})
+	pods, err := access.core.CoreV1().Pods(access.namespace).List(ctx, metav1.ListOptions{LabelSelector: "kionga.dev/workload=" + name + ",kionga.dev/component=application"})
 	if err != nil {
 		return nil, err
 	}
-	// Defence in depth: keep only pods that really carry the label.
-	return slices.DeleteFunc(pods.Items, func(pod corev1.Pod) bool { return pod.Labels["kionga.dev/application"] != name }), nil
+	// Defence in depth: keep only pods that really carry both labels.
+	return slices.DeleteFunc(pods.Items, func(pod corev1.Pod) bool {
+		return pod.Labels["kionga.dev/workload"] != name || pod.Labels["kionga.dev/component"] != "application"
+	}), nil
 }
 
 const (

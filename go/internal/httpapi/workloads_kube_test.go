@@ -81,6 +81,10 @@ func TestKubernetesFunctionNeverOverwritesAnotherProjectsFunction(t *testing.T) 
 func TestKubernetesFunctionRejectsCPUScaleToZero(t *testing.T) {
 	harness := newKubeHarness(t)
 	projectID := createTestProject(t, harness.server)
+	long := "fn-" + strings.Repeat("a", 43)
+	if refused := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+projectID+`","name":"`+long+`","image":"registry/fn:1"}`); refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "at most 45") {
+		t.Fatalf("long name: %d %s", refused.Code, refused.Body.String())
+	}
 	recorder := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+projectID+`","name":"fn","image":"registry/fn:1","scaling":{"metric":"cpu","target":70}}`)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("cpu scaling with min 0: %d %s", recorder.Code, recorder.Body.String())

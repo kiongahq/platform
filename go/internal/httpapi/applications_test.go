@@ -158,7 +158,7 @@ func TestApplicationGitSourceIsDispatched(t *testing.T) {
 	}
 	spec := harness.object(t, applicationsGVR, "docs-site").Object["spec"].(map[string]any)
 	source := spec["source"].(map[string]any)
-	if _, hasImage := spec["image"]; hasImage || source["git"] != "https://github.com/acme/docs.git" || source["ref"] != "main" || source["contextDir"] != "site" || source["dockerfile"] != "Dockerfile" {
+	if _, hasImage := spec["image"]; hasImage || source["git"] != "https://github.com/acme/docs.git" || source["ref"] != nil || source["contextDir"] != "site" || source["dockerfile"] != "Dockerfile" {
 		t.Fatalf("unexpected source spec: %#v", spec)
 	}
 	minimum, _, _ := unstructured.NestedInt64(spec, "replicas", "min")
@@ -272,7 +272,7 @@ func TestApplicationStatusMapping(t *testing.T) {
 
 func appPod(name, app, owner string) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace, UID: types.UID("uid-" + name), Labels: map[string]string{"kionga.dev/application": app},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace, UID: types.UID("uid-" + name), Labels: map[string]string{"kionga.dev/workload": app, "kionga.dev/component": "application"},
 			OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: owner, UID: types.UID("uid-" + owner)}}},
 		Spec:   corev1.PodSpec{Containers: []corev1.Container{{Name: "app"}}},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning},

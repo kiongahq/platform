@@ -148,6 +148,10 @@ func (s *Server) deployKubernetesFunction(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusServiceUnavailable, "kubernetes_unavailable", errKubernetesUnavailable.Error())
 		return
 	}
+	if len(req.Name) > api.MaxWorkloadNameLength {
+		writeError(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("function names on Kubernetes are at most %d characters", api.MaxWorkloadNameLength))
+		return
+	}
 	// Function names are global. Never overwrite a resource that belongs to
 	// another project, whether a record says so or the resource's label does.
 	for _, existing := range s.store.Functions() {
