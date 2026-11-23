@@ -50,7 +50,7 @@ func init() {
 		"delete": map[string]any{"summary": "Delete an application and its Kubernetes workload"},
 	}
 	openapiPaths["/api/v1/applications/{name}/redeploy"] = map[string]any{"post": map[string]any{"summary": "Restart the application's pods (and rebuild a git source)"}}
-	openapiPaths["/api/v1/applications/{name}/logs"] = map[string]any{"get": map[string]any{"summary": "Recent logs of the application's pods (tail, container query parameters)"}}
+	openapiPaths["/api/v1/applications/{name}/logs"] = map[string]any{"get": map[string]any{"summary": "Recent logs of the application's pods (tail, container, since). With follow=true, a bounded Server-Sent Events stream (max_seconds, resumable with Last-Event-ID or since)"}}
 	openapiPaths["/api/v1/applications/{name}/events"] = map[string]any{"get": map[string]any{"summary": "Kubernetes events for the application, its pods and replica sets"}}
 }
 
@@ -426,6 +426,15 @@ func (s *Server) applicationLogs(w http.ResponseWriter, r *http.Request) {
 		tail = value
 	}
 	container := r.URL.Query().Get("container")
+	if follow := r.URL.Query().Get("follow"); follow == "true" || follow == "1" {
+		s.streamApplicationLogs(w, r, access, app.Name, container, tail)
+		return
+	}
+	since, err := logSince(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
 	pods, err := applicationPods(r.Context(), access, app.Name)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "kubernetes_unavailable", "listing pods failed: "+err.Error())
@@ -442,6 +451,10 @@ func (s *Server) applicationLogs(w http.ResponseWriter, r *http.Request) {
 		}
 		entry := podLogs{Pod: pod.Name, Container: name, Phase: string(pod.Status.Phase)}
 		options := &corev1.PodLogOptions{TailLines: &tail}
+		if !since.IsZero() {
+			start := metav1.NewTime(since)
+			options.SinceTime = &start
+		}
 		if name != "" {
 			options.Container = name
 		}
