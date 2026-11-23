@@ -74,10 +74,16 @@ type Application struct {
 	ReadyReplicas int                 `json:"ready_replicas"`
 	Message       string              `json:"message,omitempty"`
 	Conditions    []WorkloadCondition `json:"conditions,omitempty"`
-	LastBuild     map[string]any      `json:"last_build,omitempty"`
-	RedeployedAt  *time.Time          `json:"redeployed_at,omitempty"`
-	CreatedAt     time.Time           `json:"created_at"`
-	UpdatedAt     time.Time           `json:"updated_at"`
+	// Generation is the resource's metadata.generation; ObservedGeneration
+	// is the generation the operator last reconciled (status.observedGeneration).
+	// Status describes the current spec only when they are equal; until then
+	// it is pending.
+	Generation         int64          `json:"generation"`
+	ObservedGeneration int64          `json:"observed_generation"`
+	LastBuild          map[string]any `json:"last_build,omitempty"`
+	RedeployedAt       *time.Time     `json:"redeployed_at,omitempty"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
 }
 
 // ApplicationRequest creates (POST, name required) or replaces (PUT, name

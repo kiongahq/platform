@@ -246,6 +246,9 @@ func TestApplicationStatusMapping(t *testing.T) {
 		{"scaled to zero", object(map[string]any{"readyReplicas": int64(0), "conditions": []any{readyCondition("Ready", "True", "ScaledToZero", "idle")}}), "scaled-to-zero", "idle"},
 		{"failed phase", object(map[string]any{"phase": "Failed", "message": "image pull failed"}), "failed", "image pull failed"},
 		{"failed condition", object(map[string]any{"conditions": []any{readyCondition("Ready", "False", "Failed", "build failed: exit 1")}}), "failed", "build failed"},
+		{"previous rollout still reported", withGeneration(object(map[string]any{"observedGeneration": int64(1), "readyReplicas": int64(2), "conditions": []any{readyCondition("Ready", "True", "", "")}}), 2), "pending", "generation 2"},
+		{"previous failure still reported", withGeneration(object(map[string]any{"observedGeneration": int64(1), "phase": "Failed", "message": "old"}), 2), "pending", "generation 2"},
+		{"current rollout ready", withGeneration(object(map[string]any{"observedGeneration": int64(2), "readyReplicas": int64(2), "conditions": []any{readyCondition("Ready", "True", "", "")}}), 2), "ready", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			state, message := mapApplicationStatus(tc.object)
@@ -332,5 +335,35 @@ func TestApplicationNeverTakesOverAnotherProjectsResource(t *testing.T) {
 	}
 	if image, _, _ := unstructured.NestedString(harness.object(t, applicationsGVR, "billing").Object, "spec", "image"); image != "theirs:1" {
 		t.Fatalf("another project's resource was overwritten: %s", image)
+	}
+}
+
+func withGeneration(object *unstructured.Unstructured, generation int64) *unstructured.Unstructured {
+	object.SetGeneration(generation)
+	return object
+}
+
+func TestApplicationResponsesCarryGenerations(t *testing.T) {
+	harness := newKubeHarness(t)
+	projectID := createTestProject(t, harness.server)
+	if created := harness.do(t, http.MethodPost, "/api/v1/applications", createAppBody(projectID, "")); created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	// The API server bumps metadata.generation on a spec change; the fake
+	// does not, so play it. The operator has reconciled generation 2 only.
+	resource := harness.object(t, applicationsGVR, "billing")
+	resource.SetGeneration(3)
+	resource.Object["status"] = map[string]any{"observedGeneration": int64(2), "readyReplicas": int64(2), "conditions": []any{readyCondition("Ready", "True", "", "")}}
+	if _, err := harness.dynamic.Resource(applicationsGVR).Namespace(testNamespace).Update(context.Background(), resource, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	body := jsonBody(t, harness.do(t, http.MethodGet, "/api/v1/applications/billing", ""))
+	if body["generation"] != float64(3) || body["observed_generation"] != float64(2) || body["status"] != "pending" {
+		t.Fatalf("an unobserved update must read as pending with both generations: %v", body)
+	}
+	harness.setStatus(t, applicationsGVR, "billing", map[string]any{"observedGeneration": int64(3), "readyReplicas": int64(2), "conditions": []any{readyCondition("Ready", "True", "", "")}})
+	listed := jsonBody(t, harness.do(t, http.MethodGet, "/api/v1/applications", ""))["items"].([]any)[0].(map[string]any)
+	if listed["status"] != "ready" || listed["observed_generation"] != float64(3) {
+		t.Fatalf("observed update: %v", listed)
 	}
 }

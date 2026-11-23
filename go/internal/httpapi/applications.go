@@ -148,11 +148,12 @@ func applicationObject(app api.Application, namespace string) *unstructured.Unst
 func withLiveStatus(app api.Application, object *unstructured.Unstructured) api.Application {
 	app.Status, app.Message = mapApplicationStatus(object)
 	if object == nil {
-		app.ReadyReplicas, app.Conditions = 0, nil
+		app.ReadyReplicas, app.Conditions, app.Generation, app.ObservedGeneration = 0, nil, 0, 0
 		return app
 	}
 	status := readWorkloadStatus(object)
 	app.ReadyReplicas, app.Conditions = status.ReadyReplicas, status.Conditions
+	app.Generation, app.ObservedGeneration = object.GetGeneration(), status.ObservedGeneration
 	if status.URL != "" {
 		app.URL = status.URL
 	}

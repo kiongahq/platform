@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"sort"
@@ -148,8 +149,10 @@ type workloadStatus struct {
 	Host          string
 	ReadyReplicas int
 	Message       string
-	Conditions    []api.WorkloadCondition
-	Raw           map[string]any
+	// ObservedGeneration is status.observedGeneration (0 when absent).
+	ObservedGeneration int64
+	Conditions         []api.WorkloadCondition
+	Raw                map[string]any
 }
 
 func readWorkloadStatus(object *unstructured.Unstructured) workloadStatus {
@@ -163,6 +166,9 @@ func readWorkloadStatus(object *unstructured.Unstructured) workloadStatus {
 	status.URL, _, _ = unstructured.NestedString(object.Object, "status", "url")
 	status.Host, _, _ = unstructured.NestedString(object.Object, "status", "host")
 	status.Message, _, _ = unstructured.NestedString(object.Object, "status", "message")
+	if observed, found, _ := unstructured.NestedFieldNoCopy(object.Object, "status", "observedGeneration"); found {
+		status.ObservedGeneration = asInt64(observed)
+	}
 	if replicas, found, _ := unstructured.NestedFieldNoCopy(object.Object, "status", "readyReplicas"); found {
 		status.ReadyReplicas = int(asInt64(replicas))
 	}
@@ -212,6 +218,12 @@ func mapApplicationStatus(object *unstructured.Unstructured) (state string, mess
 		return "missing", "the KiongaApplication resource does not exist"
 	}
 	status := readWorkloadStatus(object)
+	// A status written for an older spec says nothing about the current one:
+	// after an update the workload is pending until the operator reports the
+	// new generation, whatever the previous rollout reached.
+	if generation := object.GetGeneration(); generation > 0 && status.ObservedGeneration < generation {
+		return "pending", fmt.Sprintf("waiting for the operator to roll out generation %d", generation)
+	}
 	if reason := status.failureReason("Ready"); reason != "" {
 		return "failed", reason
 	}
