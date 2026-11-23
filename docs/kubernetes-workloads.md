@@ -65,6 +65,30 @@ Events stream: each line is `id: <RFC 3339 timestamp>`, `event: log`,
 `event: end` and a reason. It is bounded (20 pods, `max_seconds` default 600,
 at most 3600) and resumes from `Last-Event-ID` or `?since=`.
 
+### Sign-in for `sso` applications
+
+For `visibility: sso` the operator sends the application's host to the
+gateway (an ExternalName Service `<name>-sso`, `KIONGA_SSO_UPSTREAM` on the
+operator) and records the upstream in the annotation `kionga.dev/upstream`
+(else `status.internalURL`). The gateway, with
+`KIONGA_APPLICATIONS_BASE_DOMAIN` and `KIONGA_ALLOWED_ORIGIN` set:
+
+1. redirects a request without an application session to
+   `<console>/applications/<name>/sso?next=<path>`, which needs a signed-in
+   console session (signed-out visitors go to sign-in and come back);
+2. checks the caller may use the application's project (applications
+   service, project assignment, not suspended), then hands a signed ticket
+   (60 seconds, this application only) to `https://<name>.<base>/_kionga/sso`;
+3. sets a host-only `kionga_app_session` cookie (8 hours) and returns to the
+   path;
+4. re-checks access on every request, then reverse-proxies to the upstream
+   with `X-Kionga-Subject` set and its own cookie removed.
+
+Tickets and sessions are signed with a key derived from
+`KIONGA_CREDENTIAL_KEY` (or `KIONGA_INTERNAL_TOKEN`), so every gateway replica
+accepts them. Public and internal applications are never served by the
+gateway.
+
 ## Functions
 
 On Kubernetes, `POST /api/v1/functions` creates a `KiongaFunction` (`image`,
