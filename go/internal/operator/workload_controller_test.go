@@ -582,3 +582,31 @@ func TestSourceBuildRejectsUnsupportedGitURLs(t *testing.T) {
 		}
 	}
 }
+
+// Rotating a referenced Secret maps back to the workloads that load it, and
+// their reconcile changes the pod-template hash, which rolls the pods.
+func TestSecretRotationRollsReferencingWorkloads(t *testing.T) {
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "billing-db", Namespace: testNamespace, Labels: map[string]string{WorkloadSecretLabel: "true"}}, Data: map[string][]byte{"PASSWORD": []byte("one")}}
+	user := application("billing", kiongav1.WorkloadSpec{Image: "billing:1", Visibility: kiongav1.VisibilityInternal, SecretRefs: []kiongav1.SecretReference{{Name: "billing-db"}}})
+	other := application("docs", kiongav1.WorkloadSpec{Image: "docs:1", Visibility: kiongav1.VisibilityInternal})
+	c := testClient(testScheme(t), secret, user, other)
+	reconciler := applicationReconciler(c, false)
+	reconcileOnce(t, reconciler, "billing")
+	var deployment appsv1.Deployment
+	get(t, c, "billing", &deployment)
+	before := deployment.Spec.Template.Annotations["kionga.dev/secret-hash"]
+
+	requests := reconciler.workloadsUsingSecret(context.Background(), secret)
+	if len(requests) != 1 || requests[0].Name != "billing" || requests[0].Namespace != testNamespace {
+		t.Fatalf("the Secret must map to billing only: %v", requests)
+	}
+	secret.Data["PASSWORD"] = []byte("two")
+	if err := c.Update(context.Background(), secret); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, reconciler, requests[0].Name)
+	get(t, c, "billing", &deployment)
+	if after := deployment.Spec.Template.Annotations["kionga.dev/secret-hash"]; after == before || after == "" {
+		t.Fatalf("rotation did not change the pod template hash: %s -> %s", before, after)
+	}
+}

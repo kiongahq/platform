@@ -26,7 +26,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	kiongav1 "github.com/kiongahq/platform/pkg/kube/v1alpha1"
 )
@@ -69,6 +71,8 @@ type WorkloadKind struct {
 	DefaultCPU      string
 	DefaultMemory   string
 	NewObject       func() client.Object
+	NewList         func() client.ObjectList
+	Items           func(client.ObjectList) []client.Object
 	Spec            func(client.Object) *kiongav1.WorkloadSpec
 	Status          func(client.Object) *kiongav1.WorkloadStatus
 	ContainerName   string
@@ -82,8 +86,17 @@ var ApplicationKind = WorkloadKind{
 	DefaultReplicas: kiongav1.WorkloadReplicaSpec{Min: 1, Max: 1},
 	DefaultCPU:      "250m", DefaultMemory: "512Mi", ContainerName: "app",
 	NewObject: func() client.Object { return &kiongav1.KiongaApplication{} },
-	Spec:      func(o client.Object) *kiongav1.WorkloadSpec { return &o.(*kiongav1.KiongaApplication).Spec },
-	Status:    func(o client.Object) *kiongav1.WorkloadStatus { return &o.(*kiongav1.KiongaApplication).Status },
+	NewList:   func() client.ObjectList { return &kiongav1.KiongaApplicationList{} },
+	Items: func(list client.ObjectList) []client.Object {
+		items := list.(*kiongav1.KiongaApplicationList).Items
+		objects := make([]client.Object, len(items))
+		for i := range items {
+			objects[i] = &items[i]
+		}
+		return objects
+	},
+	Spec:   func(o client.Object) *kiongav1.WorkloadSpec { return &o.(*kiongav1.KiongaApplication).Spec },
+	Status: func(o client.Object) *kiongav1.WorkloadStatus { return &o.(*kiongav1.KiongaApplication).Status },
 }
 
 // FunctionKind reconciles KiongaFunction: internal by default, scale to zero
@@ -94,8 +107,17 @@ var FunctionKind = WorkloadKind{
 	DefaultMetric:   kiongav1.ScalingMetricRequests,
 	DefaultCPU:      "100m", DefaultMemory: "256Mi", ContainerName: "function",
 	NewObject: func() client.Object { return &kiongav1.KiongaFunction{} },
-	Spec:      func(o client.Object) *kiongav1.WorkloadSpec { return &o.(*kiongav1.KiongaFunction).Spec },
-	Status:    func(o client.Object) *kiongav1.WorkloadStatus { return &o.(*kiongav1.KiongaFunction).Status },
+	NewList:   func() client.ObjectList { return &kiongav1.KiongaFunctionList{} },
+	Items: func(list client.ObjectList) []client.Object {
+		items := list.(*kiongav1.KiongaFunctionList).Items
+		objects := make([]client.Object, len(items))
+		for i := range items {
+			objects[i] = &items[i]
+		}
+		return objects
+	},
+	Spec:   func(o client.Object) *kiongav1.WorkloadSpec { return &o.(*kiongav1.KiongaFunction).Spec },
+	Status: func(o client.Object) *kiongav1.WorkloadStatus { return &o.(*kiongav1.KiongaFunction).Status },
 }
 
 // WorkloadReconciler turns a KiongaApplication or KiongaFunction into a
@@ -455,7 +477,12 @@ func resolvedResources(value corev1.ResourceRequirements, cpu, memory string) (c
 func (r *WorkloadReconciler) SetupWithManager(manager ctrl.Manager) error {
 	controller := ctrl.NewControllerManagedBy(manager).Named(r.Kind.Component).For(r.Kind.NewObject(), builder.WithPredicates(specOrAnnotationChanged)).
 		Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&networkingv1.Ingress{}).
-		Owns(&policyv1.PodDisruptionBudget{}).Owns(&autoscalingv2.HorizontalPodAutoscaler{}).Owns(&batchv1.Job{})
+		Owns(&policyv1.PodDisruptionBudget{}).Owns(&autoscalingv2.HorizontalPodAutoscaler{}).Owns(&batchv1.Job{}).
+		// A rotated workload Secret must roll the pods that load it.
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.workloadsUsingSecret),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(object client.Object) bool {
+				return object.GetLabels()[WorkloadSecretLabel] == "true"
+			})))
 	if r.Capabilities.KEDAHTTP {
 		scaled := &unstructured.Unstructured{}
 		scaled.SetGroupVersionKind(HTTPScaledObjectGVK)
@@ -476,4 +503,24 @@ func updateStatusIfChanged(ctx context.Context, c client.Client, object client.O
 		return nil
 	}
 	return c.Status().Update(ctx, object)
+}
+
+// workloadsUsingSecret maps a workload Secret to the resources of this kind
+// in its namespace that load it through secretRefs.
+func (r *WorkloadReconciler) workloadsUsingSecret(ctx context.Context, secret client.Object) []reconcile.Request {
+	list := r.Kind.NewList()
+	if err := r.List(ctx, list, client.InNamespace(secret.GetNamespace())); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "list workloads for Secret", "secret", secret.GetName())
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, object := range r.Kind.Items(list) {
+		for _, ref := range r.Kind.Spec(object).SecretRefs {
+			if ref.Name == secret.GetName() {
+				requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(object)})
+				break
+			}
+		}
+	}
+	return requests
 }
