@@ -103,6 +103,10 @@ type WorkloadSpec struct {
 	// +kubebuilder:validation:Enum=public;sso;internal
 	// +optional
 	Visibility string `json:"visibility,omitempty"`
+	// RestartedAt is set (RFC 3339) by a redeploy. A new value rolls the pods
+	// and, for a source workload, builds the source again.
+	// +optional
+	RestartedAt string `json:"restartedAt,omitempty"`
 }
 
 // BuildStatus records the most recent source build.
@@ -130,6 +134,11 @@ type WorkloadStatus struct {
 	// InternalURL is the in-cluster address the gateway calls. With requests
 	// scaling it goes through the KEDA HTTP interceptor.
 	InternalURL string `json:"internalURL,omitempty"`
+	// Host is the Host header that routes a call through the KEDA HTTP
+	// interceptor to this workload. Empty when the workload scales on CPU.
+	Host string `json:"host,omitempty"`
+	// Message repeats the Ready condition message.
+	Message string `json:"message,omitempty"`
 	// Image is the image the Deployment runs.
 	Image              string       `json:"image,omitempty"`
 	ReadyReplicas      int32        `json:"readyReplicas,omitempty"`

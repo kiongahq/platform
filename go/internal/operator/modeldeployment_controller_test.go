@@ -176,14 +176,14 @@ func TestModelDeploymentMLflowErrorSurfacesInStatus(t *testing.T) {
 	var stored kiongav1.KiongaModelDeployment
 	get(t, c, "churn", &stored)
 	ready := condition(stored.Status.Conditions, ConditionReady)
-	if stored.Status.Phase != "Failed" || ready.Reason != "ModelResolutionFailed" || !strings.Contains(ready.Message, "503") {
+	if stored.Status.Phase != "Failed" || ready.Reason != "ModelResolutionFailed" || !strings.Contains(ready.Message, "503") || stored.Status.Message != ready.Message {
 		t.Fatalf("status: %#v", stored.Status)
 	}
 }
 
 func TestModelDeploymentCanaryPair(t *testing.T) {
 	source := &fakeMLflow{versions: map[string]string{"churn/3": "s3://kionga-models/v3", "churn/4": "s3://kionga-models/v4"}}
-	deployment := modelDeployment(kiongav1.KiongaModelDeploymentSpec{ModelName: "churn", Version: "3", Canary: &kiongav1.ModelCanarySpec{Version: "4", Weight: 20}})
+	deployment := modelDeployment(kiongav1.KiongaModelDeploymentSpec{ModelName: "churn", Version: "3", CanaryVersion: "4", CanaryWeight: 20})
 	c := testClient(testScheme(t, InferenceServiceGVK), deployment, storageSecret())
 	reconciler := modelReconciler(c, source)
 	reconcileOnce(t, reconciler, "churn")
@@ -210,7 +210,7 @@ func TestModelDeploymentCanaryPair(t *testing.T) {
 	}
 
 	// Ending the canary deletes its InferenceService and clears the weight.
-	stored.Spec.Canary = nil
+	stored.Spec.CanaryVersion, stored.Spec.CanaryWeight = "", 0
 	stored.Generation = 2
 	if err := c.Update(context.Background(), &stored); err != nil {
 		t.Fatal(err)

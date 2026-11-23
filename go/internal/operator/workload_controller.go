@@ -39,8 +39,9 @@ const (
 	// function may load it through secretRefs. It keeps platform Secrets in
 	// the same namespace (agent runtime tokens, provider keys) out of reach.
 	WorkloadSecretLabel = "kionga.dev/workload-secret"
-	// RedeployAnnotation forces a new source build when its value changes.
-	RedeployAnnotation = "kionga.dev/redeploy"
+	// RestartedAtAnnotation on the pod template carries spec.restartedAt, so
+	// a redeploy rolls the pods even when nothing else changed.
+	RestartedAtAnnotation = "kionga.dev/restarted-at"
 	// VisibilityAnnotation is set on Ingresses that the gateway must guard.
 	VisibilityAnnotation = "kionga.dev/visibility"
 	// UpstreamAnnotation tells the gateway where to proxy an sso host.
@@ -62,6 +63,9 @@ const (
 type WorkloadKind struct {
 	// Component is the app.kubernetes.io/component label value.
 	Component string
+	// PodLabel is set to the resource name on every pod, for logs and
+	// events: kionga.dev/application or kionga.dev/function.
+	PodLabel string
 	// DefaultVisibility applies when spec.visibility is empty.
 	DefaultVisibility string
 	// DefaultReplicas applies when spec.replicas is absent.
@@ -83,7 +87,7 @@ type WorkloadKind struct {
 // ApplicationKind reconciles KiongaApplication: sso by default, served at
 // <name>.<baseDomain>, one replica unless the spec says otherwise.
 var ApplicationKind = WorkloadKind{
-	Component: "application", DefaultVisibility: kiongav1.VisibilitySSO,
+	Component: "application", PodLabel: "kionga.dev/application", DefaultVisibility: kiongav1.VisibilitySSO,
 	DefaultReplicas: kiongav1.WorkloadReplicaSpec{Min: 1, Max: 1},
 	DefaultCPU:      "250m", DefaultMemory: "512Mi", ContainerName: "app",
 	NewObject: func() client.Object { return &kiongav1.KiongaApplication{} },
@@ -103,7 +107,7 @@ var ApplicationKind = WorkloadKind{
 // FunctionKind reconciles KiongaFunction: internal by default, scale to zero
 // on requests, reached by the gateway through status.internalURL.
 var FunctionKind = WorkloadKind{
-	Component: "function", DefaultVisibility: kiongav1.VisibilityInternal,
+	Component: "function", PodLabel: "kionga.dev/function", DefaultVisibility: kiongav1.VisibilityInternal,
 	DefaultReplicas: kiongav1.WorkloadReplicaSpec{Min: 0, Max: 5},
 	DefaultMetric:   kiongav1.ScalingMetricRequests,
 	DefaultCPU:      "100m", DefaultMemory: "256Mi", ContainerName: "function",
@@ -171,12 +175,14 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, request ctrl.Request
 		status.ObservedGeneration = object.GetGeneration()
 		// No hot loop on a spec error. A spec change triggers a reconcile; the
 		// slow requeue picks up a Secret created or labelled later.
+		status.Message = readyMessage(status.Conditions)
 		return ctrl.Result{RequeueAfter: time.Minute}, updateStatusIfChanged(ctx, r.Client, object, before, status)
 	}
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	status.ObservedGeneration = object.GetGeneration()
+	status.Message = readyMessage(status.Conditions)
 	if err := updateStatusIfChanged(ctx, r.Client, object, before, status); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -253,8 +259,15 @@ func (r *WorkloadReconciler) reconcile(ctx context.Context, object client.Object
 		deployment.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RollingUpdateDeploymentStrategyType, RollingUpdate: &appsv1.RollingUpdateDeployment{MaxSurge: &surge, MaxUnavailable: &unavailable}}
 		history, deadline := int32(5), int32(600)
 		deployment.Spec.RevisionHistoryLimit, deployment.Spec.ProgressDeadlineSeconds = &history, &deadline
-		deployment.Spec.Template.Labels = selector
+		// Template labels may add to the immutable selector, never change it.
+		deployment.Spec.Template.Labels = map[string]string{r.Kind.PodLabel: name}
+		for key, value := range selector {
+			deployment.Spec.Template.Labels[key] = value
+		}
 		deployment.Spec.Template.Annotations = map[string]string{"kionga.dev/secret-hash": secretHash}
+		if spec.RestartedAt != "" {
+			deployment.Spec.Template.Annotations[RestartedAtAnnotation] = spec.RestartedAt
+		}
 		deployment.Spec.Template.Spec = r.podSpec(spec, image, port, resources)
 		return controllerutil.SetControllerReference(object, deployment, r.Scheme())
 	}); err != nil {
@@ -265,7 +278,9 @@ func (r *WorkloadReconciler) reconcile(ctx context.Context, object client.Object
 		service.Labels = labels
 		service.Spec.Type = corev1.ServiceTypeClusterIP
 		service.Spec.Selector = selector
-		service.Spec.Ports = []corev1.ServicePort{{Name: "http", Port: 80, TargetPort: intstr.FromString("http")}}
+		// The Service listens on the container port, which is where the
+		// gateway calls a CPU-scaled function.
+		service.Spec.Ports = []corev1.ServicePort{{Name: "http", Port: port, TargetPort: intstr.FromString("http")}}
 		return controllerutil.SetControllerReference(object, service, r.Scheme())
 	}); err != nil {
 		return ctrl.Result{}, err
@@ -284,11 +299,11 @@ func (r *WorkloadReconciler) reconcile(ctx context.Context, object client.Object
 			host = name + "." + r.Config.BaseDomain
 		}
 	}
-	internalURL, err := applyScaling(ctx, r.Client, object, plan, scalingTarget{Deployment: name, Service: name, ServicePort: 80, Labels: labels}, r.Config, host)
+	internalURL, routeHost, err := applyScaling(ctx, r.Client, object, plan, scalingTarget{Deployment: name, Service: name, ServicePort: port, Labels: labels}, r.Config, host)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	backend := ingressBackend{Service: name, Port: 80}
+	backend := ingressBackend{Service: name, Port: port}
 	if plan.Metric == kiongav1.ScalingMetricRequests {
 		backend = ingressBackend{Service: RouteServiceName(name), Port: r.Config.InterceptorPort}
 	}
@@ -320,6 +335,7 @@ func (r *WorkloadReconciler) reconcile(ctx context.Context, object client.Object
 
 	status.Image = image
 	status.InternalURL = internalURL
+	status.Host = routeHost
 	status.ScalingMetric = plan.Metric
 	status.ReadyReplicas = deployment.Status.ReadyReplicas
 	ingressCondition.ObservedGeneration = object.GetGeneration()
@@ -485,7 +501,7 @@ func resolvedResources(value corev1.ResourceRequirements, cpu, memory string) (c
 }
 
 func (r *WorkloadReconciler) SetupWithManager(manager ctrl.Manager) error {
-	controller := ctrl.NewControllerManagedBy(manager).Named(r.Kind.Component).For(r.Kind.NewObject(), builder.WithPredicates(specOrAnnotationChanged)).
+	controller := ctrl.NewControllerManagedBy(manager).Named(r.Kind.Component).For(r.Kind.NewObject(), builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&networkingv1.Ingress{}).
 		Owns(&policyv1.PodDisruptionBudget{}).Owns(&autoscalingv2.HorizontalPodAutoscaler{}).Owns(&batchv1.Job{}).
 		// A rotated workload Secret must roll the pods that load it.
@@ -498,11 +514,6 @@ func (r *WorkloadReconciler) SetupWithManager(manager ctrl.Manager) error {
 	}
 	return controller.Complete(r)
 }
-
-// specOrAnnotationChanged lets spec changes (generation) and annotation
-// changes (the redeploy annotation) through, and drops the update events the
-// reconciler's own status writes cause. Child objects are watched separately.
-var specOrAnnotationChanged = predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{})
 
 // updateStatusIfChanged writes status only when the reconcile changed it, so
 // a healthy resource costs no API writes.
