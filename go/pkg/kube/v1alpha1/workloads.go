@@ -31,9 +31,11 @@ type WorkloadReplicaSpec struct {
 
 // SourceSpec builds the workload image from a Git repository with BuildKit.
 type SourceSpec struct {
-	// Git is the repository URL, for example https://github.com/acme/billing.git.
+	// Git is a public HTTPS repository URL, for example
+	// https://github.com/acme/billing.git. Builds carry no Git credentials, so
+	// SSH URLs and credentials embedded in the URL are rejected.
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:Pattern=`^(https://|ssh://|git@)[^\s#]+$`
+	// +kubebuilder:validation:Pattern=`^https://[^\s#@]+$`
 	Git string `json:"git"`
 	// Ref is a branch, tag or commit. Empty means the default branch.
 	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._/-]*$`

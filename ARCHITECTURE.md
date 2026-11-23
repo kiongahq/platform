@@ -224,7 +224,9 @@ reference, so deleting the custom resource deletes them.
   It writes the digest to its termination message. The Deployment then rolls
   to `<registry>/<namespace>-<name>@<digest>`. Changing the annotation
   `kionga.dev/redeploy` rebuilds the same ref. A failed build keeps the
-  previous image running. Rootless BuildKit needs unconfined seccomp and
+  previous image running. Builds carry no Git credentials, so `source.git`
+  must be a public `https://` URL. SSH URLs and URLs with credentials in them
+  are rejected. Rootless BuildKit needs unconfined seccomp and
   AppArmor profiles, so Pod Security `baseline` and `restricted` reject the
   build pod.
 - **Model deployments** (`modeldeployment_controller.go`). MLflow's

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -74,6 +75,9 @@ func (r *WorkloadReconciler) resolveImage(ctx context.Context, object client.Obj
 	if spec.Source == nil {
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionBuild)
 		return spec.Image, nil
+	}
+	if err := validateGitURL(spec.Source.Git); err != nil {
+		return "", err
 	}
 	if r.Config.Build.Registry == "" {
 		return "", invalid("BuildNotConfigured", "source builds need KIONGA_BUILD_REGISTRY on the operator")
@@ -246,4 +250,16 @@ func (r *WorkloadReconciler) buildJob(object client.Object, source *kiongav1.Sou
 			},
 		},
 	}
+}
+
+// validateGitURL accepts public HTTPS repositories only. Builds carry no Git
+// credentials, so an SSH URL could never clone, and credentials in the URL
+// would sit in the custom resource and the Job spec in plain text. The CRD
+// schema enforces the same rule; this covers objects written before it.
+func validateGitURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || strings.ContainsAny(raw, "#@ \t\n") {
+		return invalid("UnsupportedSource", "source.git must be a public https:// URL without credentials, got %q", raw)
+	}
+	return nil
 }

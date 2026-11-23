@@ -563,3 +563,22 @@ func TestBuildJobCommandIsExact(t *testing.T) {
 		t.Fatalf("buildctl arguments:\n got  %q\n want %q", got, want)
 	}
 }
+
+// Builds carry no Git credentials: SSH URLs could never clone and embedded
+// credentials would be stored in plain text, so both are refused.
+func TestSourceBuildRejectsUnsupportedGitURLs(t *testing.T) {
+	for _, git := range []string{"git@github.com:acme/billing.git", "ssh://git@github.com/acme/billing.git", "https://token@github.com/acme/billing.git", "http://github.com/acme/billing.git", "https://github.com/acme/billing.git#main"} {
+		app := application("billing", kiongav1.WorkloadSpec{Source: &kiongav1.SourceSpec{Git: git}})
+		c := testClient(testScheme(t), app)
+		reconcileOnce(t, applicationReconciler(c, false), "billing")
+		var stored kiongav1.KiongaApplication
+		get(t, c, "billing", &stored)
+		if condition(stored.Status.Conditions, ConditionReady).Reason != "UnsupportedSource" {
+			t.Errorf("%s: %#v", git, stored.Status)
+		}
+		var jobs batchv1.JobList
+		if err := c.List(context.Background(), &jobs); err != nil || len(jobs.Items) != 0 {
+			t.Errorf("%s: no build may start: %v %d", git, err, len(jobs.Items))
+		}
+	}
+}
