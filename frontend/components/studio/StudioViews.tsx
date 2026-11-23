@@ -1,5 +1,6 @@
 "use client";
 import {publicationHref} from "@/lib/publication";
+import {useWebsiteURL} from "@/lib/site";
 import {Select} from "@/components/ui/Select";
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -55,6 +56,7 @@ function State({
 }
 export function PostsView({ view }: { view: StudioView }) {
   const { session } = useStudio();
+  const website = useWebsiteURL();
   const [filter, setFilter] = useState("all");
   useEffect(() => {
     setFilter(new URLSearchParams(location.search).get("status") || "all");
@@ -134,12 +136,12 @@ export function PostsView({ view }: { view: StudioView }) {
                   <span className="status">
                     {statuses[post.status] || post.status}
                   </span>
-                  {post.status === "published" && (
-                    <Link
-                      href={publicationHref(`/blog/read?slug=${encodeURIComponent(post.slug)}`)}
+                  {post.status === "published" && publicationHref("/", website) && (
+                    <a
+                      href={publicationHref(`/blog/read?slug=${encodeURIComponent(post.slug)}`, website)}
                     >
                       View
-                    </Link>
+                    </a>
                   )}
                   <Link href={editURL(post.id)}>
                     {post.can_edit ? "Edit" : "Open"}
@@ -329,6 +331,7 @@ export function MediaView() {
 }
 export function AuthorsView() {
   const { notify } = useStudio();
+  const website = useWebsiteURL();
   const { data, error, loading, reload } = useLoad<{
     items: Member[];
     can_manage: boolean;
@@ -501,13 +504,13 @@ export function AuthorsView() {
                           Remove
                         </button>
                       </div>
-                    ) : (
-                      <Link
-                        href={publicationHref(`/blog?author=${encodeURIComponent(member.display_name)}`)}
+                    ) : publicationHref("/", website) ? (
+                      <a
+                        href={publicationHref(`/blog?author=${encodeURIComponent(member.display_name)}`, website)}
                       >
                         Posts
-                      </Link>
-                    )}
+                      </a>
+                    ) : null}
                   </td>
                 </tr>
               ))}

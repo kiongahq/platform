@@ -1,5 +1,6 @@
 "use client";
 import { publicationHref } from "@/lib/publication";
+import { useWebsiteURL } from "@/lib/site";
 import { SessionNotice } from "@/components/layout/SessionNotice";
 import React, {
   createContext,
@@ -51,6 +52,7 @@ export function StudioShell({
     [notice, setNotice] = useState("");
   const guard = useRef<(() => boolean | Promise<boolean>) | null>(null);
   const router = useRouter();
+  const publication = publicationHref("/blog", useWebsiteURL());
   const setGuard = useCallback(
     (next: (() => boolean | Promise<boolean>) | null) => {
       guard.current = next;
@@ -127,8 +129,8 @@ export function StudioShell({
           <span>Kionga <strong>Studio</strong></span>
         </Link>
         <nav aria-label="Publication">
-          <a
-            href={publicationHref()}
+          {publication && <a
+            href={publication}
             onClick={async (e) => {
               if (
                 guard.current &&
@@ -138,12 +140,12 @@ export function StudioShell({
                 !e.altKey
               ) {
                 e.preventDefault();
-                if (await guard.current()) location.assign(publicationHref());
+                if (await guard.current()) location.assign(publication);
               }
             }}
           >
             <Icon name="blogs" /> View publication
-          </a>
+          </a>}
           <Link href="/console" onClick={(e) => void navigate(e, "/console")}>
             <Icon name="overview" /> ML console
           </Link>
@@ -161,7 +163,7 @@ export function StudioShell({
                   await editorial("/api/v1/editorial/session", {
                     method: "DELETE",
                   });
-                  location.assign(publicationHref());
+                  location.assign(publication || "/console");
                 } catch (failure) {
                   setError((failure as Error).message);
                 }

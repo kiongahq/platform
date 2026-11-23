@@ -14,6 +14,7 @@ import {
   type CSSProperties,
 } from "react";
 import { useAutoCollapse } from "@/components/layout/useAutoCollapse";
+import { useWebsiteURL } from "@/lib/site";
 import { useQuery } from "@/hooks/useQuery";
 import { UnsavedContext } from "@/hooks/useUnsaved";
 import {
@@ -42,6 +43,7 @@ const groups = [
       ["projects", "Projects"],
       ["pipelines", "Pipelines"],
       ["functions", "Functions"],
+      ["applications", "Applications"],
     ],
   },
   {
@@ -99,6 +101,7 @@ function ConsoleApplication({ view: requestedView }: { view?: string }) {
     me = useQuery<Identity>("/api/v1/me"),
     projects = useQuery<Entity>("/api/v1/project-options"),
     workspaceQuery = useQuery<Entity>("/api/v1/workspaces");
+  const website = useWebsiteURL();
   const view = requestedView ?? (pathname.split("/")[2] || "overview");
   const identity: Identity = me.data
     ? {
@@ -403,6 +406,12 @@ function ConsoleApplication({ view: requestedView }: { view?: string }) {
                 <span>Langflow canvas</span>
               </Link>
             )}
+            {website && (
+              <a id="website-link" aria-label="Kionga website" href={website} target="_blank" rel="noopener noreferrer">
+                <Icon name="website" />
+                <span>Kionga website</span>
+              </a>
+            )}
           </div>
           <button
             className="sidebar-resizer"
@@ -488,6 +497,7 @@ function ConsoleApplication({ view: requestedView }: { view?: string }) {
                   "projects",
                   "pipelines",
                   "functions",
+                  "applications",
                   "models",
                   "agents",
                   "agent-designer",

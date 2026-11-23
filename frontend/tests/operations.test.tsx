@@ -110,7 +110,7 @@ test("function deployment maps Kafka trigger and environment into the existing A
     ),
   );
   fireEvent.click(view.getByRole("button", { name: "Deploy function" }));
-  fireEvent.change(view.getByLabelText("Name"), { target: { value: "score" } });
+  fireEvent.change(view.getByLabelText(/^Name/), { target: { value: "score" } });
   fireEvent.change(view.getByLabelText("OCI image"), {
     target: { value: "registry.example/score:1" },
   });
@@ -272,7 +272,7 @@ test("policy editor preserves UTC condition semantics across form and JSON modes
   fireEvent.change(view.getByLabelText("Policy ID"), {
     target: { value: "office-hours" },
   });
-  fireEvent.change(view.getByLabelText("Name"), {
+  fireEvent.change(view.getByLabelText(/^Name/), {
     target: { value: "Office hours" },
   });
   fireEvent.click(view.getByRole("button", { name: "Add statement" }));
@@ -549,4 +549,79 @@ test("schedule changes refresh revision history while retaining the open definit
   await waitFor(() => assert.ok(view.getByText("Revision 2")));
   assert.ok(view.getByRole("dialog", {name: "Daily training"}));
   assert.ok(view.getByRole("button", {name: "Resume"}));
+});
+
+const appWriter = { ...identity, permissions: { applications_write: true, models_write: true } };
+test("applications show the not-configured state with enablement steps on Compose", async () => {
+  setup({
+    "/api/v1/applications": { __status: 409, body: { error: "not_configured", message: "Applications run only on Kubernetes. This install runs on Compose.", steps: ["Install Kionga on Kubernetes with the Helm chart.", "Set applications.baseDomain."] } },
+    "/api/v1/project-options": { items: [] },
+  }, "http://localhost/console/applications");
+  const view = app("applications", { identity: appWriter });
+  await waitFor(() => view.getByRole("heading", { name: "Applications are not enabled on this install" }));
+  assert.ok(view.getByText(/runs on Compose/));
+  assert.equal(view.getAllByRole("listitem").length, 2);
+  assert.equal(view.queryByRole("button", { name: "Deploy application" }), null);
+});
+
+test("applications list status, address and replicas, and create maps the form to the API", async () => {
+  setup({
+    "/api/v1/applications": { configured: true, base_domain: "apps.example.com", items: [{ name: "billing", project_id: "p1", status: "ready", url: "https://billing.apps.example.com", ready_replicas: 2, replicas: { min: 0, max: 4 }, scaling: { metric: "requests", target: 50 } }] },
+    "/api/v1/project-options": { items: [{ id: "p1", name: "Payments" }] },
+    "POST /api/v1/applications": { name: "docs-site", status: "pending" },
+  }, "http://localhost/console/applications");
+  const navigations: string[][] = [];
+  const view = app("applications", { identity: appWriter, onNavigate: (...args: string[]) => navigations.push(args) });
+  await waitFor(() => view.getByRole("link", { name: "billing.apps.example.com" }));
+  assert.equal(view.getByRole("link", { name: "billing.apps.example.com" }).getAttribute("href"), "https://billing.apps.example.com");
+  assert.ok(view.getByText("2 ready (0–4)"));
+  assert.ok(view.getByText("50 requests"));
+  fireEvent.click(view.getByRole("button", { name: "Deploy application" }));
+  fireEvent.change(view.getByLabelText(/^Source/), { target: { value: "git" } });
+  fireEvent.change(view.getByLabelText(/^Name/), { target: { value: "docs-site" } });
+  fireEvent.change(view.getByLabelText(/^Git repository/), { target: { value: "https://github.com/acme/docs.git" } });
+  fireEvent.change(view.getByLabelText(/^Minimum replicas/), { target: { value: "0" } });
+  fireEvent.change(view.getByLabelText(/^Secrets/), { target: { value: "docs-db, docs-api" } });
+  fireEvent.click(view.getAllByRole("button", { name: "Deploy application" }).at(-1)!);
+  await waitFor(() => assert.ok(calls.some((call) => call.method === "POST")));
+  const body = calls.find((call) => call.method === "POST")!.body;
+  assert.deepEqual(body, {
+    name: "docs-site", project_id: "p1", port: 8080, env: {}, secret_refs: ["docs-db", "docs-api"],
+    resources: { cpu: "250m", memory: "256Mi" }, replicas: { min: 0, max: 3 }, scaling: { metric: "requests", target: 100 },
+    health_path: "/", visibility: "sso", source: { git: "https://github.com/acme/docs.git", ref: "main", dockerfile: "Dockerfile" },
+  });
+  assert.equal("image" in body, false);
+  await waitFor(() => assert.deepEqual(navigations.at(-1), ["applications", "docs-site"]));
+});
+
+test("application detail shows conditions, logs and events and redeploys", async () => {
+  setup({
+    "/api/v1/applications": { configured: true, items: [{ name: "billing", project_id: "p1", status: "ready" }] },
+    "/api/v1/project-options": { items: [] },
+    "/api/v1/applications/billing": { name: "billing", status: "failed", message: "image pull failed", url: "https://billing.apps.example.com", replicas: { min: 1, max: 3 }, conditions: [{ type: "Ready", status: "False", reason: "Failed", message: "image pull failed" }] },
+    "/api/v1/applications/billing/logs?tail=200": { items: [{ pod: "billing-7d9-abcde", phase: "Running", lines: "listening on :3000\n" }] },
+    "/api/v1/applications/billing/events": { items: [{ type: "Warning", reason: "BackOff", object: "Pod/billing-7d9-abcde", message: "Back-off pulling image", last_seen: "2026-11-19T10:00:00Z" }] },
+    "POST /api/v1/applications/billing/redeploy": { name: "billing", status: "pending" },
+  }, "http://localhost/console/applications?resource=billing");
+  const view = app("applications", { identity: appWriter, resource: "billing" });
+  await waitFor(() => view.getByText(/listening on :3000/));
+  assert.ok(view.getAllByText("image pull failed").length >= 1);
+  assert.ok(view.getByText("BackOff"));
+  fireEvent.click(view.getAllByRole("button", { name: "Redeploy" }).at(-1)!);
+  await waitFor(() => assert.ok(calls.some((call) => call.method === "POST" && call.path === "/api/v1/applications/billing/redeploy")));
+});
+
+test("model deploy asks for a canary weight and shows the deployment reason", async () => {
+  setup({
+    "/api/v1/models": { items: [{ id: "m1", project_id: "p1", name: "Churn", version: "4", stage: "production", gate_status: "passed", deployment_status: "failed", deployment_message: "artifact not found", artifact_uri: "models:/churn/4" }] },
+    "/api/v1/project-options": { items: [] },
+    "POST /api/v1/models/m1/deploy": { id: "m1", deployment_status: "pending" },
+  }, "http://localhost/console/models");
+  const view = app("models", { identity: appWriter });
+  await waitFor(() => view.getByText(/artifact not found/));
+  fireEvent.click(view.getByRole("button", { name: "Deploy" }));
+  fireEvent.change(view.getByLabelText(/^Canary weight/), { target: { value: "20" } });
+  fireEvent.click(view.getAllByRole("button", { name: "Deploy" }).at(-1)!);
+  await waitFor(() => assert.ok(calls.some((call) => call.method === "POST")));
+  assert.deepEqual(calls.find((call) => call.method === "POST")!.body, { canary_weight: 20 });
 });

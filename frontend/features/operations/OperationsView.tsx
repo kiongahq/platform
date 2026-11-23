@@ -1,5 +1,6 @@
 "use client";
 import { publicationHref } from "@/lib/publication";
+import { useWebsiteURL } from "@/lib/site";
 import {
   useResource,
   items,
@@ -9,6 +10,7 @@ import {
   type OperationsProps,
 } from "./shared";
 import { Overview, Models, Functions } from "./Resources";
+import { Applications } from "./Applications";
 import { Features, Storage, Catalog, Realtime } from "./Data";
 import { Projects } from "./Projects";
 import { Pipelines } from "./Pipelines";
@@ -30,6 +32,8 @@ export function OperationsView(props: OperationsProps) {
       return <Models {...props} />;
     case "functions":
       return <Functions {...props} />;
+    case "applications":
+      return <Applications {...props} />;
     case "features":
       return <Features />;
     case "storage":
@@ -54,6 +58,8 @@ export function OperationsView(props: OperationsProps) {
 }
 function PublishedBlogs() {
   const query = useResource("/api/v1/blogs");
+  const website = useWebsiteURL();
+  const publication = publicationHref("/blog", website);
   return (
     <>
       <header className="page-header">
@@ -62,7 +68,7 @@ function PublishedBlogs() {
           and publishing.
         </p>
         <div className="button-row">
-          <a href={publicationHref()}>View publication</a>
+          {publication && <a href={publication}>View publication</a>}
           <a href="/studio">Writing studio</a>
         </div>
       </header>
@@ -83,15 +89,18 @@ function PublishedBlogs() {
               render: (row) => date(row.published_at || row.created_at),
             },
           ]}
-          actions={(row) => (
-            <a
-              href={publicationHref(
-                `/blog/read?slug=${encodeURIComponent(row.slug)}`,
-              )}
-            >
-              Read article
-            </a>
-          )}
+          actions={(row) =>
+            publication ? (
+              <a
+                href={publicationHref(
+                  `/blog/read?slug=${encodeURIComponent(row.slug)}`,
+                  website,
+                )}
+              >
+                Read article
+              </a>
+            ) : null
+          }
         />
       </State>
     </>

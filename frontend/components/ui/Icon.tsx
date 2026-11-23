@@ -5,12 +5,16 @@ import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
 import ManageHistoryOutlinedIcon from "@mui/icons-material/ManageHistoryOutlined";
 import SaveAsIcon from "@mui/icons-material/SaveAs";
 import SmartToyOutlinedIcon from "@mui/icons-material/SmartToyOutlined";
+import RocketLaunchOutlinedIcon from "@mui/icons-material/RocketLaunchOutlined";
+import LanguageOutlinedIcon from "@mui/icons-material/LanguageOutlined";
 const materialIcons = {
   "agent-designer": AccountTreeOutlinedIcon,
   "agent-definitions": SmartToyOutlinedIcon,
   "agent-teams": GroupsOutlinedIcon,
   "team-runs": ManageHistoryOutlinedIcon,
   langflow: HubOutlinedIcon,
+  applications: RocketLaunchOutlinedIcon,
+  website: LanguageOutlinedIcon,
   storage: SaveAsIcon,
   bucket: SaveAsIcon,
 };

@@ -1,9 +1,9 @@
 # Publications
 
 Publishing is an optional platform capability. An adopting organization can use
-the editorial studio, article API and reader interface to document its own
-engineering practices. Its articles are not product marketing content and do not
-appear on the product landing page.
+the editorial studio and article API to document its own engineering practices.
+The install serves no reader pages and no landing page: articles are rendered
+by a separate website that reads the public article API.
 
 Kionga's engineering publication must have its own domain, editorial identity
 and content. It is not a shared article feed for
@@ -12,21 +12,17 @@ editorial membership, revisions, media and publishing workflow.
 
 ## Reader domain
 
-Set `NEXT_PUBLIC_PUBLICATION_URL` to the publication's HTTP or HTTPS origin before
-building the frontend. Console and studio reader links use this origin. Without
-it, local development retains `/blog` and `/blog/read?slug=…` reader routes.
+The console and studio link to published articles on the website configured
+by `KIONGA_WEBSITE_URL` (read at runtime through `GET /api/v1/site`), or on
+`NEXT_PUBLIC_PUBLICATION_URL` when a frontend build sets it. With neither set,
+the links are hidden. Article paths on that site are `/blog` and
+`/blog/read?slug=…`.
 
-For container builds, pass `--build-arg NEXT_PUBLIC_PUBLICATION_URL=…` to
-`Dockerfile.gateway`; Compose builds must forward the same build argument. The
-reader has dedicated publication navigation; the product landing page links to
-neither the reader nor the editorial studio.
-
-Use `config/publication.Caddyfile` as an optional reader-only virtual host. Set
-`KIONGA_PUBLICATION_DOMAIN` to the actual domain and
+Use `config/publication.Caddyfile` as an optional public host for the article
+API and media only. Set `KIONGA_PUBLICATION_DOMAIN` to the actual domain and
 `KIONGA_PUBLICATION_UPSTREAM` to the gateway that owns that publication's data.
-Configure DNS and TLS at the edge. Keep `/studio`, authentication and publishing
-writes on the authenticated platform origin. The example virtual host exposes
-reader pages, public article reads, media and static assets only.
+Keep `/studio`, authentication and publishing writes on the authenticated
+platform origin.
 
 For Kionga's own engineering publication, use a separate installation and data
 store. Adopters connect their own installation; they must not point their reader

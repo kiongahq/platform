@@ -3,13 +3,10 @@ const { test, expect } = require('@playwright/test');
 test('public Next pages hydrate without runtime errors', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  for (const route of ['/', '/login', '/api-docs', '/blog']) {
+  for (const route of ['/login', '/api-docs']) {
     await page.goto(route);
     await expect(page.locator(route === '/login' ? '#local-login' : 'h1')).toBeVisible();
   }
-  await expect(page.getByRole('searchbox')).toBeVisible();
-  await page.getByRole('searchbox').fill('unmatched migration test topic');
-  await expect(page.locator('.blog-empty')).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -42,16 +39,12 @@ test('Swagger renders the gateway contract outside product navigation', async ({
   expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(1);
 });
 
-test('product landing excludes publication content and reader has independent navigation', async ({page})=>{
-  const editorial=[];
-  page.on('request',request=>{if(new URL(request.url()).pathname==='/api/v1/blogs')editorial.push(request.url());});
+test('the install has no landing or blog pages: the root leads to sign-in', async ({page, request}) => {
+  const root = await request.get('/', { maxRedirects: 0 });
+  expect(root.status()).toBe(302);
+  expect(root.headers().location).toBe('/console');
+  for (const route of ['/blog', '/blog/read?slug=any']) expect((await request.get(route, { maxRedirects: 0 })).status()).not.toBe(200);
   await page.goto('/');
-  await expect(page.locator('.ascii-flow')).toHaveClass(/ascii-painted/);
-  await expect(page.locator('#landing-blog-grid')).toHaveCount(0);
-  await expect(page.getByRole('link',{name:'Engineering blog',exact:true})).toHaveCount(0);
-  expect(editorial).toEqual([]);
-  await page.goto('/blog');
-  await expect(page.getByRole('navigation',{name:'Publication',exact:true})).toBeVisible();
-  await expect(page.getByRole('link',{name:'Open console',exact:true})).toHaveCount(0);
-  await expect(page.getByRole('link',{name:'Writing studio',exact:true})).toHaveCount(0);
+  await expect(page).toHaveURL(/\/login\?/);
+  await expect(page.locator('.ascii-flow')).toHaveCount(0);
 });

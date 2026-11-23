@@ -119,7 +119,13 @@ runs and the commit conventions.
 The [`frontend/`](frontend/README.md) application uses Next.js, React and
 TypeScript. Run `make run` to build the frontend and start the Go gateway, or
 `make frontend` before building Go directly. Canonical routes include `/console`,
-`/blog` and `/studio`. Each console and studio screen has a page route. Retired `.html` page URLs are unavailable.
+`/studio` and `/api-docs`; `/` redirects to the console, which sends signed-out
+visitors to sign-in. The install ships no marketing pages: set
+`KIONGA_WEBSITE_URL` to show a link to the Kionga website. Each console and
+studio screen has a page route. Retired `.html` page URLs are unavailable.
+
+Kubernetes workloads (applications, functions, model deployments) are described
+in [docs/kubernetes-workloads.md](docs/kubernetes-workloads.md).
 
 ## License
 

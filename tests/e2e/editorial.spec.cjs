@@ -183,7 +183,7 @@ test("author writes an article with blocks, uploads an image, autosaves and subm
   expect((await page.request.get(`/api/v1/blogs/${slug}`)).status()).toBe(404);
 });
 
-test("editor publishes and the public page renders the image with alt text", async ({
+test("editor publishes and the public API serves the image with alt text", async ({
   page,
 }, testInfo) => {
   expect(slug).not.toBe("");
@@ -216,33 +216,22 @@ test("editor publishes and the public page renders the image with alt text", asy
     fullPage: true,
   });
 
-  await page.goto(`/blog/read?slug=${encodeURIComponent(slug)}`);
-  const image = page.locator("#article-content figure img");
-  await expect(image).toHaveAttribute(
-    "alt",
+  // The install serves no blog pages; the website reads the public API.
+  const published = await page.request.get(`/api/v1/blogs/${slug}`);
+  expect(published.status()).toBe(200);
+  const article = await published.json();
+  const imageBlock = (article.blocks || []).find((block) => block.type === "image");
+  expect(imageBlock?.data?.alt).toBe(
     "Diagram of a request flowing from the gateway to a model server",
   );
-  await expect(image).toHaveAttribute("srcset", /480w/);
-  await expect
-    .poll(() => image.evaluate((node) => node.complete && node.naturalWidth))
-    .toBeGreaterThan(0);
-  await expect(page.locator("#article-content figcaption")).toContainText(
-    "One request, end to end",
-  );
-  await expect(page.locator(".article-byline")).toContainText("Ada Author");
-  const overflow = await page.evaluate(
-    () =>
-      document.documentElement.scrollWidth -
-      document.documentElement.clientWidth,
-  );
-  expect(overflow).toBeLessThanOrEqual(1);
-  await page.screenshot({
-    path: screenshotPath(testInfo, "blog-article-with-image"),
-    fullPage: true,
-  });
+  expect(imageBlock?.data?.caption || "").toContain("One request, end to end");
+  expect(article.author).toContain("Ada Author");
   // Anonymous readers get the published image.
   const anonymous = await requestFactory.newContext({ baseURL: page.url() });
-  const src = await image.getAttribute("src");
+  expect((await anonymous.get(`/api/v1/blogs/${slug}`)).status()).toBe(200);
+  const src = imageBlock.data.media_id
+    ? `/media/blog/${encodeURIComponent(imageBlock.data.media_id)}/960`
+    : imageBlock.data.url || imageBlock.data.src;
   expect((await anonymous.get(src)).status()).toBe(200);
   await anonymous.dispose();
 });
