@@ -136,20 +136,15 @@ func applicationSpec(app api.Application) map[string]any {
 	if resources := resourceRequirements(app.Resources.CPU, app.Resources.Memory); resources != nil {
 		spec["resources"] = resources
 	}
+	if app.RedeployedAt != nil {
+		spec["restartedAt"] = app.RedeployedAt.UTC().Format(time.RFC3339)
+	}
 	return spec
 }
 
-// redeployAnnotation asks the operator for a new rollout (and a new source
-// build) whenever its value changes.
-const redeployAnnotation = "kionga.dev/redeploy"
-
 func applicationObject(app api.Application, namespace string) *unstructured.Unstructured {
-	object := newWorkloadObject("KiongaApplication", applicationObjectName(app.Name), namespace,
+	return newWorkloadObject("KiongaApplication", applicationObjectName(app.Name), namespace,
 		map[string]any{"kionga.dev/project": app.ProjectID, "kionga.dev/application": app.Name}, applicationSpec(app))
-	if app.RedeployedAt != nil {
-		object.SetAnnotations(map[string]string{redeployAnnotation: app.RedeployedAt.UTC().Format(time.RFC3339)})
-	}
-	return object
 }
 
 // withLiveStatus merges the custom resource's status into the record.
@@ -392,7 +387,7 @@ func (s *Server) redeployApplication(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	saved = withLiveStatus(saved, object)
-	// The operator has not seen the new redeploy annotation yet; until it does the
+	// The operator has not seen the new restartedAt yet; until it does the
 	// application is rolling out, whatever the previous status said.
 	saved.Status = "pending"
 	writeJSON(w, http.StatusAccepted, saved)

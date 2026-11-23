@@ -131,17 +131,6 @@ func applyWorkload(ctx context.Context, client dynamic.Interface, gvr schema.Gro
 	updated := existing.DeepCopy()
 	updated.Object["spec"] = object.Object["spec"]
 	updated.SetLabels(object.GetLabels())
-	// Merge the gateway's annotations; others (kubectl, the operator) stay.
-	if wanted := object.GetAnnotations(); len(wanted) > 0 {
-		annotations := updated.GetAnnotations()
-		if annotations == nil {
-			annotations = map[string]string{}
-		}
-		for key, value := range wanted {
-			annotations[key] = value
-		}
-		updated.SetAnnotations(annotations)
-	}
 	return resources.Update(ctx, updated, metav1.UpdateOptions{})
 }
 
