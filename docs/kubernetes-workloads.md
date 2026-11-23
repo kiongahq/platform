@@ -23,7 +23,12 @@ has it). `KIONGA_RUNTIME=compose` forces Compose mode.
 
 The gateway's service account needs, in the target namespace: get, list,
 create, update and delete on `kiongaapplications`, `kiongafunctions` and
-`kiongamodeldeployments`; list on `pods`; get on `pods/log`; list on `events`.
+`kiongamodeldeployments`; list on `pods`; get on `pods/log`; list on `events`; get on `secrets`
+(named, to check `secret_refs`); get on `deployments`.
+
+`secret_refs` may name only Secrets labelled `kionga.dev/workload-secret=true`;
+the operator skips any other Secret, so the gateway answers 422 for a
+missing or unlabelled one. The gateway creates no workload Secrets itself.
 
 ## Applications
 

@@ -45,6 +45,8 @@ func newKubeHarness(t *testing.T, coreObjects ...runtime.Object) *kubeHarness {
 		functionsGVR:        "KiongaFunctionList",
 		modelDeploymentsGVR: "KiongaModelDeploymentList",
 	})
+	// The labelled Secret the shared application fixture references.
+	coreObjects = append([]runtime.Object{workloadSecret("billing-db", true)}, coreObjects...)
 	core := kubefake.NewClientset(coreObjects...)
 	previous := kubeAccessFactory
 	kubeAccessFactory = func() (*kubeAccess, error) {

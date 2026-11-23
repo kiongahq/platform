@@ -378,3 +378,32 @@ func TestApplicationResponsesCarryGenerations(t *testing.T) {
 		t.Fatalf("observed update: %v", listed)
 	}
 }
+
+func workloadSecret(name string, labelled bool) *corev1.Secret {
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace}}
+	if labelled {
+		secret.Labels = map[string]string{"kionga.dev/workload-secret": "true"}
+	}
+	return secret
+}
+
+func TestApplicationSecretRefsMustBeLabelledWorkloadSecrets(t *testing.T) {
+	harness := newKubeHarness(t, workloadSecret("kionga-agent-runtime-x", false))
+	projectID := createTestProject(t, harness.server)
+	for _, tc := range []struct{ ref, want string }{
+		{"kionga-agent-runtime-x", "is not labelled kionga.dev/workload-secret=true"},
+		{"missing-secret", "does not exist"},
+	} {
+		body := strings.Replace(createAppBody(projectID, ""), `"secret_refs":["billing-db"]`, `"secret_refs":["billing-db","`+tc.ref+`"]`, 1)
+		recorder := harness.do(t, http.MethodPost, "/api/v1/applications", body)
+		if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), tc.want) || !strings.Contains(recorder.Body.String(), `"field":"secret_refs"`) {
+			t.Fatalf("%s: %d %s", tc.ref, recorder.Code, recorder.Body.String())
+		}
+	}
+	if list, _ := harness.dynamic.Resource(applicationsGVR).Namespace(testNamespace).List(context.Background(), metav1.ListOptions{}); len(list.Items) != 0 {
+		t.Fatal("a refused secret ref must not create the application")
+	}
+	if created := harness.do(t, http.MethodPost, "/api/v1/applications", createAppBody(projectID, "")); created.Code != http.StatusCreated {
+		t.Fatalf("a labelled Secret is accepted: %d %s", created.Code, created.Body.String())
+	}
+}
