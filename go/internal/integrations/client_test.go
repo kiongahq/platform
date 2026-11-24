@@ -3,8 +3,10 @@ package integrations
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -89,5 +91,61 @@ func TestMLflowArtifactLocationCalls(t *testing.T) {
 	}
 	if uri, err := mlflow.LoggedModelArtifactURI(ctx, "m-123"); err != nil || uri != "s3://kionga-models/1/models/m-123/artifacts" {
 		t.Fatalf("logged model uri: %q %v", uri, err)
+	}
+}
+
+// The gateway reads a model version's files through the MLflow server's own
+// artifact route, bounded, and never copies a response body into an error.
+func TestMLflowModelVersionArtifact(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/model-versions/get-artifact" {
+			t.Errorf("unexpected call %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token-1" {
+			t.Errorf("authorization = %q", got)
+		}
+		query := r.URL.Query()
+		if query.Get("name") != "churn model" || query.Get("version") != "3" {
+			t.Errorf("unexpected query %s", r.URL.RawQuery)
+		}
+		switch query.Get("path") {
+		case "MLmodel":
+			_, _ = w.Write([]byte("artifact_path: model\n"))
+		case "big.json":
+			_, _ = w.Write([]byte(strings.Repeat("x", 65)))
+		case "big-chunked.json":
+			w.(http.Flusher).Flush()
+			_, _ = w.Write([]byte(strings.Repeat("x", 65)))
+		case "missing":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error_code":"RESOURCE_DOES_NOT_EXIST","message":"artifact body text"}`))
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error_code":"not an identifier: artifact body text"}`))
+		}
+	}))
+	defer server.Close()
+	mlflow := NewMLflow(server.URL+"/", "token-1")
+	ctx := context.Background()
+	if raw, err := mlflow.ModelVersionArtifact(ctx, "churn model", "3", "MLmodel", 64); err != nil || string(raw) != "artifact_path: model\n" {
+		t.Fatalf("MLmodel = %q, %v", raw, err)
+	}
+	for _, path := range []string{"big.json", "big-chunked.json"} {
+		if _, err := mlflow.ModelVersionArtifact(ctx, "churn model", "3", path, 64); !errors.Is(err, ErrTooLarge) {
+			t.Fatalf("%s: err = %v, want ErrTooLarge", path, err)
+		}
+	}
+	var status *StatusError
+	if _, err := mlflow.ModelVersionArtifact(ctx, "churn model", "3", "missing", 64); !errors.As(err, &status) || status.Status != http.StatusNotFound || status.Code != "RESOURCE_DOES_NOT_EXIST" || strings.Contains(err.Error(), "artifact body text") {
+		t.Fatalf("missing: err = %v", err)
+	}
+	if _, err := mlflow.ModelVersionArtifact(ctx, "churn model", "3", "broken", 64); !errors.As(err, &status) || status.Status != http.StatusInternalServerError || status.Code != "" || strings.Contains(err.Error(), "artifact body text") {
+		t.Fatalf("broken: err = %v", err)
+	}
+	if !mlflow.Configured() || NewMLflow("", "token").Configured() {
+		t.Fatal("Configured must follow the base URL")
+	}
+	if _, err := NewMLflow("", "").ModelVersionArtifact(ctx, "a", "1", "MLmodel", 64); err == nil {
+		t.Fatal("an unconfigured client must fail")
 	}
 }
