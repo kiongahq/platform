@@ -97,13 +97,9 @@ func functionSpec(req api.DeployFunctionRequest) map[string]any {
 	if req.RunAsUser != nil {
 		spec["runAsUser"] = *req.RunAsUser
 	}
-	if len(req.Annotations) > 0 {
-		annotations := map[string]any{}
-		for key, value := range req.Annotations {
-			annotations[key] = value
-		}
-		spec["annotations"] = annotations
-	}
+	// Request annotations stay on the function record. KiongaFunction has no
+	// spec.annotations, so the API server would drop them, or refuse the
+	// object where unknown fields are an error.
 	return spec
 }
 
@@ -153,8 +149,10 @@ func (k kubeFunctions) Invoke(ctx context.Context, name string, payload []byte) 
 	if err != nil {
 		return nil, err
 	}
-	if reason := readWorkloadStatus(object).failureReason("Ready"); reason != "" {
-		return nil, fmt.Errorf("function %s failed: %s", name, reason)
+	if status := readWorkloadStatus(object); !status.previousBuildDeployed() {
+		if reason := status.failureReason("Ready"); reason != "" {
+			return nil, fmt.Errorf("function %s failed: %s", name, reason)
+		}
 	}
 	endpoint, host := k.target(object)
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/", bytes.NewReader(payload)) // #nosec G704 -- endpoint is the configured interceptor or an in-cluster Service name derived from a validated DNS label
