@@ -37,14 +37,19 @@ export function triggerLabel(value: unknown): string {
   return key ? (triggerLabels[key] ?? key) : "Unknown";
 }
 /**
- * Who started a run, as the same identity label the console uses elsewhere
- * (email, falling back to the subject). Only the signed-in identity has a known
- * email here, so other owners show their subject. Missing owner shows "Unknown".
+ * Who started a run. The gateway's owner_label wins when present: it resolves
+ * the owner to an email only for callers allowed to see it (administrators,
+ * operators and the owner) and is the subject for everyone else. Gateways that
+ * do not send it fall back to the signed-in identity's own email, then the
+ * subject. Missing owner shows "Unknown".
  */
 export function ownerLabel(
   subject: unknown,
   identity?: { subject?: string; email?: string } | null,
+  label?: unknown,
 ): string {
+  const resolved = typeof label === "string" ? label.trim() : "";
+  if (resolved) return resolved;
   const owner = typeof subject === "string" ? subject.trim() : "";
   if (!owner) return "Unknown";
   return identity?.subject === owner && identity.email
@@ -243,7 +248,11 @@ export function Pipelines({
                   value={{
                     run_id: run.data.id,
                     project: run.data.project_id,
-                    owner: ownerLabel(run.data.owner_subject, identity),
+                    owner: ownerLabel(
+                      run.data.owner_subject,
+                      identity,
+                      run.data.owner_label,
+                    ),
                     trigger: triggerLabel(run.data.trigger),
                     engine_run_id: run.data.engine_run_id,
                     execution_mode: run.data.execution_mode,

@@ -654,6 +654,22 @@ test("run dialog shows the signed-in owner as an email and a manual trigger", as
   assert.equal(fact(dialog, "trigger"), "Manual");
 });
 
+test("run dialog prefers the gateway's owner label over the subject", async () => {
+  const view = openRun({ ...baseRun, owner_subject: "svc-trainer", owner_label: "trainer@example.com", trigger: "schedule" });
+  let dialog = await waitFor(() => view.getByRole("dialog", { name: "Nightly" }));
+  await waitFor(() => assert.equal(fact(dialog, "owner"), "trainer@example.com"));
+  cleanup();
+  // A label equal to the subject (the caller may not see the email) shows as is.
+  const hidden = openRun({ ...baseRun, owner_subject: "svc-trainer", owner_label: "svc-trainer", trigger: "schedule" });
+  dialog = await waitFor(() => hidden.getByRole("dialog", { name: "Nightly" }));
+  await waitFor(() => assert.equal(fact(dialog, "owner"), "svc-trainer"));
+  cleanup();
+  // A blank label falls back to today's behaviour.
+  const blank = openRun({ ...baseRun, owner_subject: "admin", owner_label: " ", trigger: "manual" });
+  dialog = await waitFor(() => blank.getByRole("dialog", { name: "Nightly" }));
+  await waitFor(() => assert.equal(fact(dialog, "owner"), "admin@example.com"));
+});
+
 test("run dialog shows another owner's subject and a schedule or API trigger", async () => {
   const scheduled = openRun({ ...baseRun, owner_subject: "svc-trainer", trigger: "schedule" });
   let dialog = await waitFor(() => scheduled.getByRole("dialog", { name: "Nightly" }));
