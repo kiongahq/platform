@@ -420,7 +420,7 @@ func Allowed(principal Principal, method, path string) bool {
 	if (strings.HasPrefix(path, "/api/v1/agent-designs") || strings.HasPrefix(path, "/api/v1/agent-versions") || strings.HasPrefix(path, "/api/v1/agent-evaluations") || strings.HasPrefix(path, "/api/v1/agent-approvals") || strings.HasPrefix(path, "/api/v1/agent-definitions") || strings.HasPrefix(path, "/api/v1/agent-teams") || strings.HasPrefix(path, "/api/v1/team-runs")) && hasRole(principal, RoleService) {
 		return false
 	}
-	if strings.HasPrefix(path, "/workspaces/") || (strings.HasPrefix(path, "/api/v1/workspaces/") && strings.HasSuffix(path, "/launch")) {
+	if strings.HasPrefix(path, "/workspaces/") || (strings.HasPrefix(path, "/api/v1/workspaces/") && (strings.HasSuffix(path, "/launch") || strings.HasSuffix(path, "/start") || strings.HasSuffix(path, "/stop"))) {
 		if principal.Credential == "api_token" || hasRole(principal, RoleService) || hasRole(principal, RoleViewer) {
 			return false
 		}

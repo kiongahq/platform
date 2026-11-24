@@ -73,6 +73,8 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/v1/project-options", server.projectOptions)
 	mux.HandleFunc("GET /api/v1/workspaces", server.workspaces)
 	mux.HandleFunc("POST /api/v1/workspaces/{kind}/launch", server.launchWorkspace)
+	mux.HandleFunc("POST /api/v1/workspaces/{kind}/start", server.startWorkspace)
+	mux.HandleFunc("POST /api/v1/workspaces/{kind}/stop", server.stopWorkspace)
 	mux.HandleFunc("GET /api/v1/langflow-workspaces", server.langflowWorkspaces)
 	mux.HandleFunc("POST /api/v1/langflow-workspaces", server.createLangflowWorkspace)
 	mux.HandleFunc("POST /api/v1/langflow-workspaces/{id}/launch", server.launchLangflowWorkspace)
