@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	clienttesting "k8s.io/client-go/testing"
+	"sigs.k8s.io/yaml"
 
 	"github.com/kiongahq/platform/pkg/api"
 )
@@ -157,6 +160,21 @@ func TestKubernetesFunctionInvokeGoesThroughTheInterceptor(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("async call never reached the function")
+	}
+
+	// A failed rebuild leaves the previous build deployed, so calls still go through.
+	harness.setStatus(t, functionsGVR, "sentiment-fn", map[string]any{"phase": "Failed", "image": "registry/fn@sha256:aa", "conditions": []any{readyCondition("Ready", "False", "BuildFailed", "the build failed. The previous version is still serving.")}})
+	if listed := harness.do(t, http.MethodGet, "/api/v1/functions", ""); !strings.Contains(listed.Body.String(), `"status":"failed"`) || !strings.Contains(listed.Body.String(), "The previous version is still serving.") {
+		t.Fatalf("a failed rebuild is failed, with what still serves: %s", listed.Body.String())
+	}
+	if invoked := harness.do(t, http.MethodPost, "/api/v1/functions/sentiment-fn/invoke", `{}`); invoked.Code != http.StatusOK {
+		t.Fatalf("the previous build must stay callable after a failed rebuild: %d %s", invoked.Code, invoked.Body.String())
+	}
+	<-recorder.calls
+	// A failed first build has nothing deployed to call.
+	harness.setStatus(t, functionsGVR, "sentiment-fn", map[string]any{"phase": "Failed", "conditions": []any{readyCondition("Ready", "False", "BuildFailed", "the build failed: BackoffLimitExceeded")}})
+	if failed := harness.do(t, http.MethodPost, "/api/v1/functions/sentiment-fn/invoke", `{}`); failed.Code != http.StatusBadGateway || !strings.Contains(failed.Body.String(), "the build failed") {
+		t.Fatalf("a function that never built must not be invoked: %d %s", failed.Code, failed.Body.String())
 	}
 
 	harness.setStatus(t, functionsGVR, "sentiment-fn", map[string]any{"phase": "Failed", "message": "image pull backoff"})
@@ -461,6 +479,61 @@ func TestKubernetesFunctionRunAsUser(t *testing.T) {
 	if listed := harness.do(t, http.MethodGet, "/api/v1/functions", ""); !strings.Contains(listed.Body.String(), `"status":"failed"`) || !strings.Contains(listed.Body.String(), "runs as root, which is not allowed") {
 		t.Fatalf("the cause must reach the caller: %s", listed.Body.String())
 	}
+}
+
+func TestKubernetesFunctionSpecHoldsOnlyDeclaredFields(t *testing.T) {
+	harness := newKubeHarness(t)
+	projectID := createTestProject(t, harness.server)
+	body := `{"project_id":"` + projectID + `","name":"nightly","image":"registry/fn:1","cpu":"250m","memory":"128Mi","env_vars":{"MODE":"fast"},"run_as_user":1000,"visibility":"sso","replicas":{"min":1,"max":2},"scaling":{"metric":"cpu","target":70},"annotations":{"io.kionga.invocation":"async","topic":"cron-function","schedule":"0 * * * *"}}`
+	deployed := harness.do(t, http.MethodPost, "/api/v1/functions", body)
+	if deployed.Code != http.StatusAccepted {
+		t.Fatalf("deploy: %d %s", deployed.Code, deployed.Body.String())
+	}
+	// KiongaFunction declares no spec.annotations; the record keeps them.
+	if annotations, _ := jsonBody(t, deployed)["annotations"].(map[string]any); annotations["schedule"] != "0 * * * *" {
+		t.Fatalf("the record must keep the annotations: %s", deployed.Body.String())
+	}
+	declared := crdSpecFields(t, "kionga.dev_kiongafunctions.yaml")
+	for field := range harness.object(t, functionsGVR, "nightly").Object["spec"].(map[string]any) {
+		if !declared[field] {
+			t.Fatalf("spec.%s is not a field of KiongaFunction", field)
+		}
+	}
+	// The same holds for an application that sets every field.
+	created := harness.do(t, http.MethodPost, "/api/v1/applications", createAppBody(projectID, `"run_as_user":1000`))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	harness.do(t, http.MethodPost, "/api/v1/applications/billing/redeploy", "")
+	declared = crdSpecFields(t, "kionga.dev_kiongaapplications.yaml")
+	for field := range harness.object(t, applicationsGVR, "billing").Object["spec"].(map[string]any) {
+		if !declared[field] {
+			t.Fatalf("spec.%s is not a field of KiongaApplication", field)
+		}
+	}
+}
+
+// crdSpecFields reads the spec fields a generated CRD declares.
+func crdSpecFields(t *testing.T, file string) map[string]bool {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "config", "crd", file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var crd map[string]any
+	if err := yaml.Unmarshal(raw, &crd); err != nil {
+		t.Fatal(err)
+	}
+	versions, _, _ := unstructured.NestedSlice(crd, "spec", "versions")
+	properties, found, _ := unstructured.NestedMap(versions[0].(map[string]any), "schema", "openAPIV3Schema", "properties", "spec", "properties")
+	if !found || len(properties) == 0 {
+		t.Fatalf("%s declares no spec fields", file)
+	}
+	fields := map[string]bool{}
+	for name := range properties {
+		fields[name] = true
+	}
+	return fields
 }
 
 func TestKubernetesFunctionVisibility(t *testing.T) {
