@@ -4,7 +4,6 @@ import { request } from "@/lib/api";
 import {
   admin,
   can,
-  csv,
   Detail,
   encode,
   Facts,
@@ -22,6 +21,7 @@ import {
   type RecordData,
 } from "./shared";
 import { StorageConnectionDialog } from "./StorageConnectionDialog";
+import { FeatureStoreDialog } from "./FeatureStoreDialog";
 export function Platform({ identity }: OperationsProps) {
   const components = useResource("/api/v1/components"),
     connections = useResource("/api/v1/connections"),
@@ -38,9 +38,12 @@ export function Platform({ identity }: OperationsProps) {
     providers = useResource(
       admin(identity) ? "/api/v1/admin/feature-store-providers" : null,
     );
-  const [modal, setModal] = useState<"" | "connection" | "feature">(""),
+  const [modal, setModal] = useState<"" | "connection">(""),
     [detail, setDetail] = useState<RecordData | null>(null),
     [storageDialog, setStorageDialog] = useState<{
+      connection: RecordData | null;
+    } | null>(null),
+    [featureDialog, setFeatureDialog] = useState<{
       connection: RecordData | null;
     } | null>(null);
   const [connectionInitial, setConnectionInitial] = useState<RecordData>({
@@ -198,7 +201,7 @@ export function Platform({ identity }: OperationsProps) {
           <section className="panel">
             <header className="page-header">
               <h2>Feature store connections</h2>
-              <button onClick={() => setModal("feature")}>
+              <button onClick={() => setFeatureDialog({ connection: null })}>
                 Add feature store
               </button>
             </header>
@@ -228,6 +231,16 @@ export function Platform({ identity }: OperationsProps) {
                 ]}
                 actions={(row) => (
                   <>
+                    {/* The internal store is configured by the platform
+                        environment; the API refuses to replace it. */}
+                    {row.id !== "internal" && (
+                      <button
+                        disabled={action.busy}
+                        onClick={() => setFeatureDialog({ connection: row })}
+                      >
+                        Edit
+                      </button>
+                    )}
                     <button
                       disabled={action.busy}
                       onClick={() =>
@@ -360,11 +373,7 @@ export function Platform({ identity }: OperationsProps) {
       )}
       {modal && (
         <Modal
-          title={
-            modal === "connection"
-              ? "Connect infrastructure"
-              : "Connect feature store"
-          }
+          title="Connect infrastructure"
           onClose={() => setModal("")}
         >
           {modal === "connection" ? (
@@ -404,55 +413,24 @@ export function Platform({ identity }: OperationsProps) {
               submit="Save and test"
               onSubmit={(value) => saveAndTest("/api/v1/connections", value)}
             />
-          ) : modal === "feature" ? (
-            <Form
-              fields={[
-                {
-                  name: "provider",
-                  label: "Provider",
-                  type: "select",
-                  required: true,
-                  options: items(providers.data)
-                    .filter((item) => item.kind === "external")
-                    .map((item) => ({
-                      value: item.name,
-                      label: item.title + (item.adapter ? "" : " (no adapter)"),
-                      disabled: !item.adapter,
-                    })),
-                },
-                { name: "name", label: "Name", required: true },
-                {
-                  name: "url",
-                  label: "Provider URL",
-                  required: true,
-                  type: "url",
-                },
-                { name: "feature_services", label: "Feature services" },
-                { name: "secret_ref", label: "Secret reference" },
-                {
-                  name: "allowed_projects",
-                  label: "Allowed project IDs",
-                  help: "Comma-separated; empty shares with all projects.",
-                },
-              ]}
-              submit="Save and test"
-              onSubmit={(value) =>
-                saveAndTest("/api/v1/admin/feature-stores", {
-                  provider: value.provider,
-                  name: value.name,
-                  config: {
-                    url: value.url,
-                    ...(value.feature_services
-                      ? { feature_services: value.feature_services }
-                      : {}),
-                  },
-                  secret_ref: value.secret_ref?.trim() || "",
-                  allowed_projects: csv(value.allowed_projects),
-                })
-              }
-            />
           ) : null}
         </Modal>
+      )}
+      {featureDialog && (
+        <FeatureStoreDialog
+          connection={featureDialog.connection}
+          providers={items(providers.data)}
+          onClose={() => setFeatureDialog(null)}
+          onSaved={(checked) => {
+            setFeatureDialog(null);
+            action
+              .run(
+                async () => checked,
+                checked.health?.detail || "Store checked.",
+              )
+              .catch(() => {});
+          }}
+        />
       )}
       {storageDialog && (
         <StorageConnectionDialog

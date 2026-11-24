@@ -89,6 +89,10 @@ func TestFeatureStoreConnectionLifecycleNeverEchoesSecrets(t *testing.T) {
 	if response := call(t, admin, http.MethodDelete, "/api/v1/admin/feature-stores/internal", ""); response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("internal store cannot be deleted: %d", response.Code)
 	}
+	// The console offers no Edit action for the internal store because of this.
+	if response := call(t, admin, http.MethodPut, "/api/v1/admin/feature-stores/internal", body); response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("internal store cannot be replaced: %d %s", response.Code, response.Body.String())
+	}
 }
 
 func TestFeatureStoreValidation(t *testing.T) {
