@@ -498,7 +498,7 @@ export function Profile({ identity, onNavigate }: OperationsProps) {
 }
 
 const WORKSPACE_POLL_MS = 3000;
-const startable = ["stopped", "failed"];
+const startable = ["stopped"];
 const stoppable = ["ready", "starting", "failed"];
 /**
  * JupyterLab and the IDE share one pod and one volume per person. Start and

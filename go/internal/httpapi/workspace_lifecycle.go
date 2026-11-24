@@ -211,10 +211,11 @@ func (s *Server) changeWorkspaceLifecycle(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Record the intent before the change so no state change is unaudited.
-	// A failed change is recorded as such below.
+	// Record the request before the change so no state change is unaudited,
+	// then the outcome: workspace.started or workspace.stopped on success,
+	// workspace.start_failed or workspace.stop_failed otherwise.
 	by := actor(r)
-	if err := s.recordWorkspaceLifecycle(match.GetName(), subject, kind, action, map[string]string{"start": "workspace.started", "stop": "workspace.stopped"}[action], by); err != nil {
+	if err := s.recordWorkspaceLifecycle(match.GetName(), subject, kind, action, "workspace."+action+"_requested", by); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Could not record the audit event; the workspace was not changed")
 		return
 	}
@@ -245,6 +246,10 @@ func (s *Server) changeWorkspaceLifecycle(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusBadGateway, "workspace_unavailable", fmt.Sprintf("Could not %s the workspace; retry", action))
 		}
 		return
+	}
+	done := map[string]string{"start": "workspace.started", "stop": "workspace.stopped"}[action]
+	if auditErr := s.recordWorkspaceLifecycle(match.GetName(), subject, kind, action, done, by); auditErr != nil {
+		log.Printf("workspaces: could not record %s of %s: %v", done, match.GetName(), auditErr)
 	}
 	writeJSON(w, http.StatusOK, workspaceLifecycleResponse{ID: kind, Changed: true, workspaceLifecycleView: workspaceLifecycleState(updated)})
 }

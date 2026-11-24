@@ -152,3 +152,14 @@ test("a viewer sees a disabled workspace with no start or stop controls", async 
   assert.equal(disabled.closest("button")!.disabled, true);
   assert.equal(view.queryByRole("button", { name: /^(Start|Stop) / }), null);
 });
+
+test("a failed workspace offers Stop but not a Start that would do nothing", async () => {
+  setup();
+  listing = () => ({
+    items: [entry("ide", "Browser IDE", "failed", managed("failed"))],
+  });
+  const view = settings();
+  const start = (await view.findByRole("button", { name: "Start Browser IDE" })) as HTMLButtonElement;
+  assert.equal(start.disabled, true);
+  assert.equal((view.getByRole("button", { name: "Stop Browser IDE" }) as HTMLButtonElement).disabled, false);
+});

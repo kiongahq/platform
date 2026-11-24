@@ -126,7 +126,7 @@ func TestStopSuspendsWithoutTouchingTheVolumeAndIsAudited(t *testing.T) {
 			t.Fatalf("stop must never delete anything: %#v", action)
 		}
 	}
-	if actions := h.auditActions("alice-ws"); len(actions) != 1 || actions[0] != "workspace.stopped" {
+	if actions := h.auditActions("alice-ws"); len(actions) != 2 || actions[0] != "workspace.stopped" || actions[1] != "workspace.stop_requested" {
 		t.Fatalf("audit: %v", actions)
 	}
 	if event := h.store.Audit()[0]; event.Actor != "alice@example.com" {
@@ -149,7 +149,7 @@ func TestStartAndStopAreIdempotent(t *testing.T) {
 	if first["changed"] != true || first["state"] != "starting" || second["changed"] != false {
 		t.Fatalf("start: %v then %v", first, second)
 	}
-	if actions := h.auditActions("alice-ws"); len(actions) != 1 || actions[0] != "workspace.started" {
+	if actions := h.auditActions("alice-ws"); len(actions) != 2 || actions[0] != "workspace.started" || actions[1] != "workspace.start_requested" {
 		t.Fatalf("audit: %v", actions)
 	}
 }
@@ -240,7 +240,7 @@ func TestFailedChangeLeavesTheWorkspaceAloneAndIsAudited(t *testing.T) {
 	if disabled, _, _ := unstructured.NestedBool(h.workspace(t, "alice-ws").Object, "spec", "disabled"); disabled {
 		t.Fatal("a refused update must not change the workspace")
 	}
-	if actions := h.auditActions("alice-ws"); len(actions) != 2 || actions[0] != "workspace.stop_failed" {
+	if actions := h.auditActions("alice-ws"); len(actions) != 2 || actions[0] != "workspace.stop_failed" || actions[1] != "workspace.stop_requested" {
 		t.Fatalf("audit: %v", actions)
 	}
 }
