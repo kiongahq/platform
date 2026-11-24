@@ -6,6 +6,7 @@ import (
 	"github.com/kiongahq/platform/internal/pipelinespec"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -20,6 +21,18 @@ var (
 	agentGraphModule = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*$`)
 	agentVersion     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`)
 )
+
+// AgentLLMBackends is the one list of model backends an agent may use. The
+// validation below reads it, and a test compares it with the options the console
+// deploy form offers (frontend/features/agents/agentBackends.ts).
+var AgentLLMBackends = []string{"mock", "openai", "anthropic", "openai-compatible", "self-hosted"}
+
+// agentLLMBackendList renders the list for the validation error, e.g.
+// "mock, openai, anthropic, openai-compatible, or self-hosted".
+func agentLLMBackendList() string {
+	last := len(AgentLLMBackends) - 1
+	return strings.Join(AgentLLMBackends[:last], ", ") + ", or " + AgentLLMBackends[last]
+}
 
 // ValidateFunctionRequest applies the portable subset of the OpenFaaS and
 // Kubernetes function contracts before anything is sent to the runtime.
@@ -143,10 +156,8 @@ func NormalizeAgentRequest(req *api.DeployAgentRequest) error {
 	if req.LLMBackend == "" {
 		req.LLMBackend = "mock"
 	}
-	switch req.LLMBackend {
-	case "mock", "openai", "anthropic", "openai-compatible", "self-hosted":
-	default:
-		return errors.New("agent llm_backend must be mock, openai, anthropic, openai-compatible, or self-hosted")
+	if !slices.Contains(AgentLLMBackends, req.LLMBackend) {
+		return errors.New("agent llm_backend must be " + agentLLMBackendList())
 	}
 	seenTools := make(map[string]bool, len(req.Tools))
 	tools := make([]string, 0, len(req.Tools))
