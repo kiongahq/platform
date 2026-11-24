@@ -130,3 +130,34 @@ func TestPostgresRevokesTokensWhenAccessIsWithdrawn(t *testing.T) {
 	defer repository.Close()
 	storetest.TokenRevocation(t, repository, fmt.Sprint(time.Now().UnixNano()))
 }
+
+// Two connections stand for two gateway replicas on one database.
+func TestPostgresSingleUseTokensAcrossReplicas(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	tenant := "sign-in-" + suffix
+	first, err := store.OpenPostgres(context.Background(), databaseURL, tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := store.OpenPostgres(context.Background(), databaseURL, tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	storetest.SingleUseTokens(t, first, second, suffix)
+
+	// Another tenant on the same database shares nothing.
+	other, err := store.OpenPostgres(context.Background(), databaseURL, tenant+"-other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if err := other.RedeemOnce(context.Background(), "ticket", "once-"+suffix, time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("another tenant was refused a token id used elsewhere: %v", err)
+	}
+}

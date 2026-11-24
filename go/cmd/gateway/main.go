@@ -65,6 +65,9 @@ func main() {
 					if err := postgres.PurgeExpiredWorkspaceEdgeSessions(ctx); err != nil {
 						log.Printf("workspace session cleanup failed: %v", err)
 					}
+					if err := postgres.PurgeExpiredSignInState(ctx); err != nil {
+						log.Printf("sign-in state cleanup failed: %v", err)
+					}
 				}
 			}
 		}()
