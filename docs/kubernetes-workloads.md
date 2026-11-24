@@ -65,11 +65,13 @@ write `status.observedGeneration`.
 generation. While the build for the current source (or a redeploy of it) is
 running, the operator reports phase `Building` and `Ready=False` with reason
 `Building`, and the gateway reports `pending`, even when an earlier build is
-healthy. The earlier build keeps serving and the message says so. A failed
-build is phase `Failed` with reason `BuildFailed` and the build's message; the
-earlier build, if there is one, keeps serving, the message says so, and a
-function in that state can still be invoked. A first build that fails leaves
-nothing deployed.
+healthy. The earlier build's pods are left alone, a redeploy included: they
+roll only once the new image exists. The message says whether the earlier
+build is still serving or is deployed but not ready. A failed build is phase
+`Failed` with reason `BuildFailed` and the build's message, followed by the
+same note; the earlier build stays deployed and a function in that state can
+still be invoked. A first build that fails leaves nothing deployed. Changing a
+source workload to an image drops `status.lastBuild`.
 
 ### Container user
 

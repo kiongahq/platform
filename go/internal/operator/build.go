@@ -73,7 +73,10 @@ func BuildRepository(registry, namespace, workload string) string {
 // succeeded yet.
 func (r *WorkloadReconciler) resolveImage(ctx context.Context, object client.Object, spec *kiongav1.WorkloadSpec, status *kiongav1.WorkloadStatus) (string, error) {
 	if spec.Source == nil {
+		// An image workload has no build. A build left from when it had a
+		// source says nothing about it.
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionBuild)
+		status.LastBuild = nil
 		return spec.Image, nil
 	}
 	if err := validateGitURL(spec.Source.Git); err != nil {

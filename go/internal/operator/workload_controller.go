@@ -282,9 +282,16 @@ func (r *WorkloadReconciler) reconcile(ctx context.Context, object client.Object
 		for key, value := range selector {
 			deployment.Spec.Template.Labels[key] = value
 		}
+		// A redeploy of a source workload rolls the pods once its build has
+		// succeeded, with the new image. Until then the pod template keeps
+		// the redeploy it already carries, so the running pods stay.
+		restartedAt := spec.RestartedAt
+		if pending, _ := unbuiltSource(spec, status, ""); pending != "" {
+			restartedAt = deployment.Spec.Template.Annotations[RestartedAtAnnotation]
+		}
 		deployment.Spec.Template.Annotations = map[string]string{"kionga.dev/secret-hash": secretHash}
-		if spec.RestartedAt != "" {
-			deployment.Spec.Template.Annotations[RestartedAtAnnotation] = spec.RestartedAt
+		if restartedAt != "" {
+			deployment.Spec.Template.Annotations[RestartedAtAnnotation] = restartedAt
 		}
 		deployment.Spec.Template.Spec = r.podSpec(spec, image, port, resources)
 		return controllerutil.SetControllerReference(object, deployment, r.Scheme())
@@ -362,8 +369,8 @@ func (r *WorkloadReconciler) reconcile(ctx context.Context, object client.Object
 	apimeta.SetStatusCondition(&status.Conditions, plan.Condition)
 	phase, ready := DeploymentHealth(deployment, plan.Min)
 	ready.ObservedGeneration = object.GetGeneration()
-	previous := "The previous version stays deployed."
-	if deployment.Status.AvailableReplicas > 0 {
+	previous := "The previous version stays deployed but is not ready."
+	if phase == "Ready" {
 		previous = "The previous version is still serving."
 	}
 	if pending, verdict := unbuiltSource(spec, status, previous); verdict != nil {
