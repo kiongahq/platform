@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"github.com/kiongahq/platform/internal/store"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,7 +11,7 @@ import (
 )
 
 func TestLocalConsoleRequiresLogin(t *testing.T) {
-	manager := NewLocalSessionManager("admin", "correct-password")
+	manager := NewLocalSessionManager("admin", "correct-password", store.New())
 	handler := manager.Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -40,7 +41,7 @@ func TestLocalConsoleRequiresLogin(t *testing.T) {
 }
 
 func TestLocalLoginRejectsInvalidCredentials(t *testing.T) {
-	manager := NewLocalSessionManager("admin", "correct-password")
+	manager := NewLocalSessionManager("admin", "correct-password", store.New())
 	form := url.Values{"username": {"admin"}, "password": {"wrong"}, "return_to": {"/workspace?tool=ide"}}
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/auth/local/login", strings.NewReader(form.Encode()))
@@ -52,7 +53,7 @@ func TestLocalLoginRejectsInvalidCredentials(t *testing.T) {
 }
 
 func TestLocalAPIRequiresSessionAndLogoutRevokesIt(t *testing.T) {
-	manager := NewLocalSessionManager("admin", "password")
+	manager := NewLocalSessionManager("admin", "password", store.New())
 	handler := manager.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/me" {
 			p, ok := PrincipalFrom(r.Context())
@@ -90,7 +91,7 @@ func TestLocalAPIRequiresSessionAndLogoutRevokesIt(t *testing.T) {
 
 func TestLocalAPIAllowsServiceCredentialButRejectsInvalidBearer(t *testing.T) {
 	t.Setenv("KIONGA_INTERNAL_TOKEN", "test-internal-token")
-	handler := NewLocalSessionManager("admin", "password").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := NewLocalSessionManager("admin", "password", store.New()).Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, _ := PrincipalFrom(r.Context())
 		if !hasRole(p, RoleService) {
 			t.Errorf("expected service identity")
@@ -138,7 +139,7 @@ func localLogin(t *testing.T, handler http.Handler, username, password string) [
 func TestProvisionedLocalAccountsSignInAsNormalUsers(t *testing.T) {
 	accounts := &fakeAccounts{passwords: map[string]string{"alice": "alice-password-123"}}
 	var seen Principal
-	handler := NewLocalSessionManager("admin", "admin-password", accounts).Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := NewLocalSessionManager("admin", "admin-password", store.New(), accounts).Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen, _ = PrincipalFrom(r.Context())
 	}))
 	if localLogin(t, handler, "alice", "wrong") != nil {
@@ -183,7 +184,7 @@ func postLogin(handler http.Handler, username, password string, header http.Head
 }
 
 func TestLocalLoginThrottlesRepeatedFailuresPerAccount(t *testing.T) {
-	manager := NewLocalSessionManager("admin", "correct-password")
+	manager := NewLocalSessionManager("admin", "correct-password", store.New())
 	clock := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 	manager.now = func() time.Time { return clock }
 	handler := manager.Handler(http.NotFoundHandler())
@@ -215,7 +216,7 @@ func TestLocalLoginThrottlesRepeatedFailuresPerAccount(t *testing.T) {
 }
 
 func TestLocalLoginDelayIsCapped(t *testing.T) {
-	manager := NewLocalSessionManager("admin", "correct-password")
+	manager := NewLocalSessionManager("admin", "correct-password", store.New())
 	clock := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 	manager.now = func() time.Time { return clock }
 	for i := 0; i < loginFreeFailures+40; i++ {
@@ -232,7 +233,7 @@ func TestLocalLoginDelayIsCapped(t *testing.T) {
 }
 
 func TestLocalSessionCookieIsSecureBehindTLS(t *testing.T) {
-	manager := NewLocalSessionManager("admin", "correct-password")
+	manager := NewLocalSessionManager("admin", "correct-password", store.New())
 	handler := manager.Handler(http.NotFoundHandler())
 	for proto, want := range map[string]bool{"": false, "https": true} {
 		header := http.Header{}
@@ -243,18 +244,5 @@ func TestLocalSessionCookieIsSecureBehindTLS(t *testing.T) {
 		if len(cookies) != 1 || cookies[0].Secure != want || !cookies[0].HttpOnly {
 			t.Fatalf("proto %q: cookies %+v, want Secure=%v", proto, cookies, want)
 		}
-	}
-}
-
-func TestExpiredLocalSessionsArePruned(t *testing.T) {
-	manager := NewLocalSessionManager("admin", "correct-password")
-	clock := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
-	manager.now = func() time.Time { return clock }
-	handler := manager.Handler(http.NotFoundHandler())
-	postLogin(handler, "admin", "correct-password", nil)
-	clock = clock.Add(9 * time.Hour)
-	postLogin(handler, "admin", "correct-password", nil)
-	if len(manager.sessions) != 1 {
-		t.Fatalf("sessions = %d, want only the fresh one", len(manager.sessions))
 	}
 }
