@@ -124,16 +124,22 @@ operator) and records the upstream in the annotation `kionga.dev/upstream`
    console session (signed-out visitors go to sign-in and come back);
 2. checks the caller may use the application's project (applications
    service, project assignment, not suspended), then hands a signed ticket
-   (60 seconds, this application only) to `https://<name>.<base>/_kionga/sso`;
-3. sets a host-only `kionga_app_session` cookie (8 hours) and returns to the
-   path;
+   (60 seconds, this application only, single use) to
+   `https://<name>.<base>/_kionga/sso`;
+3. records the ticket as used, sets a host-only `kionga_app_session` cookie
+   (8 hours) and returns to the path;
 4. re-checks access on every request, then reverse-proxies to the upstream
    with `X-Kionga-Subject` set and its own cookie removed.
 
 Tickets and sessions are signed with a key derived from
 `KIONGA_CREDENTIAL_KEY` (or `KIONGA_INTERNAL_TOKEN`), so every gateway replica
-accepts them. Public and internal applications are never served by the
-gateway.
+accepts them. A ticket works once: the gateway records its id in its own
+store when it is redeemed (PostgreSQL, shared by every replica; in memory for
+the single-process file store) and refuses a second use on any replica with
+`401`. If the store cannot record the redemption the ticket is refused with
+`503`; opening the application again starts a new sign-in. No extra service
+or setting is needed. Public and internal applications are never served by
+the gateway.
 
 ## Functions
 
@@ -191,3 +197,17 @@ version that answered.
 
 On Compose, Deploy needs `SERVING_MANAGER_URL`. Without it Deploy answers
 `409 not_configured` and records nothing.
+
+`GET /api/v1/models/{id}/input-example` returns a sample `/invocations`
+payload for the model version, for the console's Test dialog. The gateway
+reads the version's `MLmodel` file, and its saved input example when it has
+one, through the MLflow server's `model-versions/get-artifact` route, so it
+needs `MLFLOW_URL` (and `MLFLOW_TOKEN`, a secret, when MLflow requires one)
+but no object storage credentials. `source` is `input_example` for the saved
+example, or `signature` for a skeleton built from the signature's input names
+and types with placeholder values. Without `MLFLOW_URL` the route answers 409
+`not_configured`; a model with neither, a Hub reference or a version MLflow
+does not know answers 404 `input_example_unavailable`; an MLflow that is
+unreachable, refuses the gateway or fails on a file answers 502
+`mlflow_unavailable`, never a derived skeleton. Redirects are not followed. The
+`MLmodel` file is read up to 256 KiB and the sample up to 64 KiB.

@@ -54,3 +54,13 @@ func TestScaffoldJobDocuments(t *testing.T) {
 func TestFileStoreRevokesTokensWhenAccessIsWithdrawn(t *testing.T) {
 	storetest.TokenRevocation(t, store.New(filepath.Join(t.TempDir(), "state.json")), "file")
 }
+
+func TestStoreSingleUseTokens(t *testing.T) {
+	repo := store.New()
+	storetest.SingleUseTokens(t, repo, repo, "file")
+}
+
+func TestStoreLocalSessions(t *testing.T) {
+	repo := store.New()
+	storetest.LocalSessions(t, repo, repo, "file")
+}

@@ -41,7 +41,9 @@ import (
 //     application's project, then redirects to
 //     https://<app host>/_kionga/sso?ticket=<signed, 60 s, one application>.
 //  3. The application host turns the ticket into a host-only session cookie
-//     (8 hours) and redirects to the original path.
+//     (8 hours) and redirects to the original path. A ticket works once:
+//     its id is recorded in the store every replica shares, and a second
+//     redemption on any replica is refused.
 //  4. Every proxied request re-checks the subject's access (suspension,
 //     service grant and project) before it is forwarded, so revoking access
 //     applies on the next request.
@@ -50,13 +52,23 @@ import (
 // KIONGA_CREDENTIAL_KEY (or KIONGA_INTERNAL_TOKEN), so every gateway replica
 // accepts them. Without either key, a per-process random key is used, which
 // suits a single development replica only.
+//
+// Single use needs state the replicas share. That is the gateway's own
+// store: PostgreSQL in every multi-replica install, or the memory of the one
+// process that serves a file store. If the store cannot record a redemption
+// the ticket is refused, never accepted unrecorded.
 
 const (
-	appSessionCookie   = "kionga_app_session"
-	appTicketTTL       = 60 * time.Second
-	appSessionTTL      = 8 * time.Hour
-	appSSOPath         = "/_kionga/sso"
-	upstreamAnnotation = "kionga.dev/upstream"
+	appSessionCookie = "kionga_app_session"
+	appTicketTTL     = 60 * time.Second
+	// A redemption record outlives its ticket by this margin, so a replica
+	// whose clock runs behind cannot accept a ticket whose record was
+	// already purged.
+	appTicketRecordMargin = 5 * time.Minute
+	appTicketPurpose      = "application_ticket"
+	appSessionTTL         = 8 * time.Hour
+	appSSOPath            = "/_kionga/sso"
+	upstreamAnnotation    = "kionga.dev/upstream"
 )
 
 func init() {
@@ -66,7 +78,10 @@ func init() {
 }
 
 type appToken struct {
-	Kind    string `json:"k"`
+	Kind string `json:"k"`
+	// ID is a ticket's unique id, recorded when the ticket is redeemed.
+	// Sessions carry none.
+	ID      string `json:"i,omitempty"`
 	App     string `json:"a"`
 	Subject string `json:"s"`
 	// Roles carries the console-time roles for subjects without an access
@@ -137,6 +152,42 @@ func verifyAppToken(raw, kind, app string, now time.Time) (appToken, error) {
 		return token, errors.New("expired")
 	}
 	return token, nil
+}
+
+const appTicketRefused = "Sign-in link expired, already used or invalid. Open the application again."
+
+var errAppTicketStore = errors.New("sign-in state unavailable")
+
+func newAppTicketID() (string, error) {
+	random := make([]byte, 16)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(random), nil
+}
+
+// redeemAppTicket makes a verified ticket single-use. It records the ticket
+// id in the shared store and fails when the id was recorded before (a
+// replay, on this replica or another), when the ticket has no id, or when
+// the store cannot answer (errAppTicketStore): an unrecorded ticket is never
+// accepted. It runs only after the signature check, so a caller without a
+// valid ticket cannot add records. Ticket fields and store errors are logged
+// quoted (%q), so no value can start a log line of its own.
+func (s *Server) redeemAppTicket(r *http.Request, ticket appToken) error {
+	if ticket.ID == "" {
+		return errors.New("ticket has no id")
+	}
+	expires := time.Unix(ticket.Expires, 0).Add(appTicketRecordMargin)
+	err := s.store.RedeemOnce(r.Context(), appTicketPurpose, ticket.App+"/"+ticket.ID, expires)
+	if errors.Is(err, store.ErrAlreadyRedeemed) {
+		log.Printf("application %q sign-in: ticket for %q was presented again and refused", ticket.App, ticket.Subject)
+		return err
+	}
+	if err != nil {
+		log.Printf("application %q sign-in: could not record the ticket, refusing it: %q", ticket.App, err.Error())
+		return errAppTicketStore
+	}
+	return nil
 }
 
 // safeAppNext returns next when it is a local path on the application host,
@@ -269,7 +320,12 @@ func (s *Server) applicationSignIn(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	ticket := signAppToken(appToken{Kind: "ticket", App: app.Name, Subject: value.Subject, Roles: value.Roles, Next: safeAppNext(r.URL.Query().Get("next")), Expires: time.Now().Add(appTicketTTL).Unix()})
+	id, err := newAppTicketID()
+	if err != nil {
+		http.Error(w, "Sign-in is temporarily unavailable. Try again.", http.StatusServiceUnavailable)
+		return
+	}
+	ticket := signAppToken(appToken{Kind: "ticket", ID: id, App: app.Name, Subject: value.Subject, Roles: value.Roles, Next: safeAppNext(r.URL.Query().Get("next")), Expires: time.Now().Add(appTicketTTL).Unix()})
 	target := "https://" + app.Name + "." + base + appSSOPath + "?ticket=" + url.QueryEscape(ticket)
 	http.Redirect(w, r, target, http.StatusFound) // #nosec G710 -- host is <validated application name>.<configured base domain>
 }
@@ -286,8 +342,17 @@ func (s *Server) applicationEdge(w http.ResponseWriter, r *http.Request, name st
 	if r.URL.Path == appSSOPath {
 		w.Header().Set("Cache-Control", "no-store")
 		ticket, err := verifyAppToken(r.URL.Query().Get("ticket"), "ticket", name, now)
+		if err == nil {
+			err = s.redeemAppTicket(r, ticket)
+		}
+		if errors.Is(err, errAppTicketStore) {
+			http.Error(w, "Sign-in is temporarily unavailable. Open the application again.", http.StatusServiceUnavailable)
+			return
+		}
 		if err != nil {
-			http.Error(w, "Sign-in link expired or invalid. Open the application again.", http.StatusUnauthorized)
+			// One answer for every refusal, a replay included. Opening the
+			// application again starts a new sign-in.
+			http.Error(w, appTicketRefused, http.StatusUnauthorized)
 			return
 		}
 		if !s.applicationAccess(s.subjectPrincipal(ticket.Subject, ticket.Roles), app) {

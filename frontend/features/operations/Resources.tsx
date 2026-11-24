@@ -281,30 +281,74 @@ export function Functions({ identity, project }: OperationsProps) {
   );
 }
 
-// The console cannot read a model's input signature or input example (the
-// gateway has no MLflow artifact access), so the payload starts empty and the
-// example is a labelled placeholder, never a value that could be mistaken for
-// this model's schema.
+// The payload always starts empty. The placeholder is a labelled example,
+// never a value that could be mistaken for what the user typed: the generic
+// MLflow scoring format, or, when the gateway can read the model from MLflow,
+// this model's own sample. "Use example" is the only thing that fills it in.
 export const PREDICT_PLACEHOLDER = `Example of the MLflow scoring format only. Replace it with inputs that match this model's signature.\n{"dataframe_split": {"columns": ["feature_a", "feature_b"], "data": [[1.0, 2.0]]}}`;
 export const PREDICT_HELP =
   "Sent to the model's /invocations endpoint. Accepted shapes: dataframe_split, dataframe_records, instances or inputs. Field names and types come from the model's signature in its MLmodel file.";
+// Keyed by the source the input-example route reports.
+export const PREDICT_SAMPLE_LABELS: Record<string, string> = {
+  input_example: "This model's saved input example.",
+  signature:
+    "Derived from this model's signature: the field names and types are the model's, the values are placeholders. Replace them before you predict.",
+};
+type PredictSample = { source: string; text: string };
+// Anything but a known source with an object payload counts as no sample.
+function predictSample(body: any): PredictSample | null {
+  const payload = body?.payload;
+  if (!PREDICT_SAMPLE_LABELS[body?.source] || !payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  return { source: body.source, text: JSON.stringify(payload, null, 2) };
+}
 export function ModelPredictForm({ model, onResult }: { model: RecordData; onResult: (value: unknown) => void }) {
+  const [sample, setSample] = useState<PredictSample | null>(null),
+    [filled, setFilled] = useState({ count: 0, payload: "" });
+  useEffect(() => {
+    const controller = new AbortController();
+    setSample(null);
+    // Not configured, no sample or unreachable: the generic example stays.
+    request(`/api/v1/models/${encode(model.id)}/input-example`, { signal: controller.signal })
+      .then((body) => { if (!controller.signal.aborted) setSample(predictSample(body)); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [model.id]);
   return (
-    <Form
-      initial={{ payload: "" }}
-      fields={[
-        { name: "payload", label: "Request payload", type: "json", required: true, placeholder: PREDICT_PLACEHOLDER, help: PREDICT_HELP },
-      ]}
-      submit="Predict"
-      onSubmit={async (value) =>
-        onResult(
-          await request(`/api/v1/models/${encode(model.id)}/predict`, {
-            method: "POST",
-            body: value.payload,
-          }),
-        )
-      }
-    />
+    <>
+      {sample && (
+        <div className="stack" data-testid="predict-sample">
+          <small>{PREDICT_SAMPLE_LABELS[sample.source]}</small>
+          <div className="button-row">
+            <button type="button" onClick={() => setFilled((previous) => ({ count: previous.count + 1, payload: sample.text }))}>
+              Use example
+            </button>
+          </div>
+        </div>
+      )}
+      <Form
+        key={filled.count}
+        initial={{ payload: filled.payload }}
+        fields={[
+          {
+            name: "payload",
+            label: "Request payload",
+            type: "json",
+            required: true,
+            placeholder: sample ? `${PREDICT_SAMPLE_LABELS[sample.source]}\n${sample.text}` : PREDICT_PLACEHOLDER,
+            help: PREDICT_HELP,
+          },
+        ]}
+        submit="Predict"
+        onSubmit={async (value) =>
+          onResult(
+            await request(`/api/v1/models/${encode(model.id)}/predict`, {
+              method: "POST",
+              body: value.payload,
+            }),
+          )
+        }
+      />
+    </>
   );
 }
 

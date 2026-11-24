@@ -65,6 +65,9 @@ func main() {
 					if err := postgres.PurgeExpiredWorkspaceEdgeSessions(ctx); err != nil {
 						log.Printf("workspace session cleanup failed: %v", err)
 					}
+					if err := postgres.PurgeExpiredSignInState(ctx); err != nil {
+						log.Printf("sign-in state cleanup failed: %v", err)
+					}
 				}
 			}
 		}()
@@ -183,7 +186,7 @@ func main() {
 			}
 			password = "kionga-local"
 		}
-		local = auth.NewLocalSessionManager(username, password, httpapi.LocalAccountStore{Docs: repository})
+		local = auth.NewLocalSessionManager(username, password, repository, httpapi.LocalAccountStore{Docs: repository})
 	}
 	providers, err := auth.ParseProviders(os.Getenv("KIONGA_SSO_PROVIDERS"))
 	if err != nil {

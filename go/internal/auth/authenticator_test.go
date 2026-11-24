@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/kiongahq/platform/internal/store"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -109,7 +110,7 @@ func newAuthSetup(t *testing.T, withLocal bool, providers []Provider) *authSetup
 	}
 	var local *LocalSessionManager
 	if withLocal {
-		local = NewLocalSessionManager("admin", "break-glass-password")
+		local = NewLocalSessionManager("admin", "break-glass-password", store.New())
 	}
 	authenticator, err := NewAuthenticator(sso, verifier, local, providers)
 	if err != nil {
@@ -338,7 +339,7 @@ func TestSSOConfigurationIsValidated(t *testing.T) {
 	if _, err := ParseProviders(`{"id":"x"}`); err == nil {
 		t.Error("providers must be a list")
 	}
-	local := NewLocalSessionManager("admin", "x")
+	local := NewLocalSessionManager("admin", "x", store.New())
 	if _, err := NewAuthenticator(nil, nil, nil, nil); err == nil {
 		t.Error("at least one sign-in method is required")
 	}
@@ -412,7 +413,7 @@ func TestNonBearerAuthorizationFallsBackToTheSessionButBadBearerFails(t *testing
 }
 
 func TestProvidersEndpointReturnsAnEmptyListWithoutSSO(t *testing.T) {
-	authenticator, err := NewAuthenticator(nil, nil, NewLocalSessionManager("admin", "x"), nil)
+	authenticator, err := NewAuthenticator(nil, nil, NewLocalSessionManager("admin", "x", store.New()), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
