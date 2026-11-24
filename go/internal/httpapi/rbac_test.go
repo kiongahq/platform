@@ -79,3 +79,32 @@ func TestEngineerRoleBoundary(t *testing.T) {
 		t.Fatalf("engineer must not manage connections, got %d %s", connection.Code, connection.Body.String())
 	}
 }
+
+func TestMeReportsConfiguredAgentImageDefault(t *testing.T) {
+	read := func() string {
+		response := httptest.NewRecorder()
+		testServer().ServeHTTP(response, newTestRequest(http.MethodGet, "/api/v1/me", nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("unexpected status: %d %s", response.Code, response.Body.String())
+		}
+		var payload struct {
+			Defaults map[string]string `json:"defaults"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		value, present := payload.Defaults["agent_image"]
+		if !present {
+			t.Fatalf("defaults.agent_image must always be present: %s", response.Body.String())
+		}
+		return value
+	}
+	t.Setenv("KIONGA_NATIVE_AGENT_IMAGE", "")
+	if got := read(); got != "" {
+		t.Fatalf("no configured image must report empty, got %q", got)
+	}
+	t.Setenv("KIONGA_NATIVE_AGENT_IMAGE", "  ghcr.io/kiongahq/agent-runtime@sha256:abc  ")
+	if got := read(); got != "ghcr.io/kiongahq/agent-runtime@sha256:abc" {
+		t.Fatalf("configured image must be reported trimmed, got %q", got)
+	}
+}
