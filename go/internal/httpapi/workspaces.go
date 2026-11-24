@@ -11,6 +11,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -158,28 +159,9 @@ func discoverWorkspaceNamed(ctx context.Context, client dynamic.Interface, names
 	if err != nil {
 		return nil, fmt.Errorf("Workspace discovery is unavailable; contact your administrator")
 	}
-	var match *unstructured.Unstructured
-	for i := range list.Items {
-		item := &list.Items[i]
-		owner, _, _ := unstructured.NestedString(item.Object, "spec", "subject")
-		if owner != subject {
-			continue
-		}
-		services, _, _ := unstructured.NestedStringSlice(item.Object, "spec", "services")
-		assigned := false
-		for _, service := range services {
-			if service == kind {
-				assigned = true
-				break
-			}
-		}
-		if !assigned || (selected != "" && item.GetName() != selected) {
-			continue
-		}
-		if match != nil {
-			return nil, fmt.Errorf("Multiple workspaces are assigned to this identity; contact your administrator")
-		}
-		match = item
+	match, ambiguous := matchWorkspace(list.Items, subject, kind, selected)
+	if ambiguous {
+		return nil, fmt.Errorf("Multiple workspaces are assigned to this identity; contact your administrator")
 	}
 	if match == nil {
 		return nil, fmt.Errorf("Your workspace is still being provisioned")
@@ -219,6 +201,28 @@ func discoverWorkspaceNamed(ctx context.Context, client dynamic.Interface, names
 	}
 	target, _ := url.Parse("http://" + match.GetName() + "." + namespace + ".svc:" + port)
 	return &workspaceDestination{URL: target, token: string(token), jobToken: jobToken, name: match.GetName()}, nil
+}
+
+// matchWorkspace picks the one KiongaWorkspace owned by subject that serves
+// kind (and carries the selected name when one is given). ambiguous reports
+// more than one candidate; the caller must refuse to guess.
+func matchWorkspace(items []unstructured.Unstructured, subject, kind, selected string) (match *unstructured.Unstructured, ambiguous bool) {
+	for i := range items {
+		item := &items[i]
+		owner, _, _ := unstructured.NestedString(item.Object, "spec", "subject")
+		if owner != subject {
+			continue
+		}
+		services, _, _ := unstructured.NestedStringSlice(item.Object, "spec", "services")
+		if !slices.Contains(services, kind) || (selected != "" && item.GetName() != selected) {
+			continue
+		}
+		if match != nil {
+			return nil, true
+		}
+		match = item
+	}
+	return match, false
 }
 
 func (s *Server) projectOptions(w http.ResponseWriter, r *http.Request) {
@@ -291,6 +295,8 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 		State     string `json:"state"`
 		URL       string `json:"url,omitempty"`
 		Message   string `json:"message"`
+		// Lifecycle describes start and stop for JupyterLab and the IDE.
+		Lifecycle *workspaceLifecycleView `json:"lifecycle,omitempty"`
 	}
 	items := make([]entry, 3)
 	var wg sync.WaitGroup
@@ -310,6 +316,16 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 				e.Message = "Choose an instance in Langflow"
 				e.URL = "/console/langflow"
 				return
+			}
+			if lifecycleKind(kind) {
+				e.Lifecycle = s.lifecycleView(r, kind)
+				if lc := e.Lifecycle; lc != nil && lc.Managed && lc.State != "" && lc.State != lifecycleReady {
+					e.State, e.Message = lc.State, lc.Message
+					if lc.State == lifecycleStopped {
+						e.Message = "Stopped. Start it to use " + workspaceDisplayName(kind) + "."
+					}
+					return
+				}
 			}
 			target, err := workspaceTarget(kind, r)
 			if err != nil {

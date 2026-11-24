@@ -303,29 +303,10 @@ export function Settings({ identity }: OperationsProps) {
       <section className="panel">
         <h2>Developer workspaces</h2>
         <State {...workspaces} retry={workspaces.reload}>
-          <div className="button-row">
-            {items(workspaces.data)
-              .filter((item) => has(identity, item.id))
-              .map((item) =>
-                item.id === "langflow" ? (
-                  <a key={item.id} href="/console/langflow">
-                    Langflow workspaces
-                  </a>
-                ) : item.available ? (
-                  <a
-                    key={item.id}
-                    href={`/workspace?tool=${encodeURIComponent(item.id)}`}
-                  >
-                    {item.name}
-                  </a>
-                ) : (
-                  <button key={item.id} disabled title={item.message}>
-                    {item.name}: {item.state || "unavailable"}
-                  </button>
-                ),
-              )}
-            <a href="/api-docs">API reference</a>
-          </div>
+          <DeveloperWorkspaces
+            identity={identity}
+            initial={items(workspaces.data)}
+          />
         </State>
       </section>
       {create && (
@@ -512,6 +493,151 @@ export function Profile({ identity, onNavigate }: OperationsProps) {
           />
         </Modal>
       )}
+    </>
+  );
+}
+
+const WORKSPACE_POLL_MS = 3000;
+const startable = ["stopped"];
+const stoppable = ["ready", "starting", "failed"];
+/**
+ * JupyterLab and the IDE share one pod and one volume per person. Start and
+ * stop apply to both; stopping keeps every file. Compose installs run them
+ * as stack services, so the controls give way to an explanation there.
+ */
+export function DeveloperWorkspaces({
+  identity,
+  initial,
+}: {
+  identity: OperationsProps["identity"];
+  initial: RecordData[];
+}) {
+  const [rows, setRows] = useState<RecordData[]>(initial),
+    action = useAction();
+  useEffect(() => setRows(initial), [initial]);
+  const transitioning = rows.some((item) => item.lifecycle?.transitioning);
+  useEffect(() => {
+    if (!transitioning) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      request("/api/v1/workspaces")
+        .then((data) => live && setRows(items(data)))
+        .catch(() => {});
+    }, WORKSPACE_POLL_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [transitioning, rows]);
+  async function change(item: RecordData, verb: "start" | "stop") {
+    await action
+      .run(
+        async () => {
+          await request(`/api/v1/workspaces/${encodeURIComponent(item.id)}/${verb}`, {
+            method: "POST",
+          });
+          setRows(items(await request("/api/v1/workspaces")));
+        },
+        verb === "start" ? `${item.name} is starting.` : `${item.name} is stopping.`,
+      )
+      .catch(() => {});
+  }
+  const visible = rows.filter((item) => has(identity, item.id));
+  const managed = visible.filter(
+    (item) => item.id !== "langflow" && item.lifecycle,
+  );
+  return (
+    <>
+      <div className="button-row">
+        {visible
+          .filter((item) => !managed.includes(item))
+          .map((item) =>
+            item.id === "langflow" ? (
+              <a key={item.id} href="/console/langflow">
+                Langflow workspaces
+              </a>
+            ) : item.available ? (
+              <a
+                key={item.id}
+                href={`/workspace?tool=${encodeURIComponent(item.id)}`}
+              >
+                {item.name}
+              </a>
+            ) : (
+              <button key={item.id} disabled title={item.message}>
+                {item.name}: {item.state || "unavailable"}
+              </button>
+            ),
+          )}
+        <a href="/api-docs">API reference</a>
+      </div>
+      {managed.length > 0 && (
+        <div className="resource-list" aria-label="Workspace controls">
+          {managed.map((item) => {
+            const lifecycle = item.lifecycle as RecordData;
+            if (!lifecycle.managed && lifecycle.state === undefined)
+              return (
+                <article key={item.id}>
+                  <strong>{item.name}</strong> <Status value={item.state} />
+                  <p>{lifecycle.message}</p>
+                  {item.available && (
+                    <div className="button-row">
+                      <a href={`/workspace?tool=${encodeURIComponent(item.id)}`}>
+                        Open {item.name}
+                      </a>
+                    </div>
+                  )}
+                </article>
+              );
+            const state = String(lifecycle.state || item.state || "");
+            const shared =
+              Array.isArray(lifecycle.services) && lifecycle.services.length > 1;
+            return (
+              <article key={item.id}>
+                <strong>{item.name}</strong> <Status value={state || "unknown"} />
+                <p>{lifecycle.message || item.message}</p>
+                {shared && (
+                  <p>
+                    JupyterLab and the IDE run in one workspace. Starting or
+                    stopping either one applies to both. Files are kept when
+                    stopped.
+                  </p>
+                )}
+                <div className="button-row">
+                  {item.available && (
+                    <a href={`/workspace?tool=${encodeURIComponent(item.id)}`}>
+                      Open {item.name}
+                    </a>
+                  )}
+                  {lifecycle.managed && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label={`Start ${item.name}`}
+                        disabled={
+                          action.busy || !startable.includes(state)
+                        }
+                        onClick={() => void change(item, "start")}
+                      >
+                        Start
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Stop ${item.name}`}
+                        disabled={action.busy || !stoppable.includes(state)}
+                        onClick={() => void change(item, "stop")}
+                      >
+                        Stop
+                      </button>
+                    </>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+      <div aria-live="polite">{action.feedback}</div>
     </>
   );
 }

@@ -24,6 +24,8 @@ func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 			"/api/v1/project-options":                               map[string]any{"get": map[string]any{"summary": "Minimal metadata for assigned projects, independent of service grants"}},
 			"/api/v1/workspaces":                                    map[string]any{"get": map[string]any{"summary": "Authorized workspace availability and launch links"}},
 			"/api/v1/workspaces/{kind}/launch":                      map[string]any{"post": map[string]any{"summary": "Prepare an assigned project folder and open Jupyter or IDE"}},
+			"/api/v1/workspaces/{kind}/start":                       map[string]any{"post": map[string]any{"summary": "Start your JupyterLab or IDE workspace (Kubernetes only; 409 not_configured on Compose). Idempotent; returns the new state. Administrators may pass ?subject= for another person"}},
+			"/api/v1/workspaces/{kind}/stop":                        map[string]any{"post": map[string]any{"summary": "Stop your JupyterLab or IDE workspace without deleting its volume (Kubernetes only; 409 not_configured on Compose). Idempotent; stops both tools because they share a pod"}},
 			"/api/v1/langflow-workspaces":                           map[string]any{"get": map[string]any{"summary": "List Langflow workspaces assigned to the caller"}, "post": map[string]any{"summary": "Create a project-scoped Langflow workspace on Kubernetes"}},
 			"/api/v1/langflow-workspaces/{id}/launch":               map[string]any{"post": map[string]any{"summary": "Open a Langflow canvas through a Kionga workspace session"}},
 			"/api/v1/langflow-workspaces/{id}/start":                map[string]any{"post": map[string]any{"summary": "Start a stopped Langflow workspace"}},
