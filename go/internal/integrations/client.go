@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -113,6 +114,85 @@ func (m MLflow) LoggedModelArtifactURI(ctx context.Context, modelID string) (str
 		return "", err
 	}
 	return result.Model.Info.ArtifactURI, nil
+}
+
+// StatusError is a non-2xx answer from an integration. It carries the status
+// and the integration's machine-readable error code only: response bodies can
+// hold artifact contents and are never copied into an error.
+type StatusError struct {
+	Status int
+	Code   string
+}
+
+func (e *StatusError) Error() string {
+	if e.Code != "" {
+		return fmt.Sprintf("integration returned %d (%s)", e.Status, e.Code)
+	}
+	return fmt.Sprintf("integration returned %d", e.Status)
+}
+
+// ErrTooLarge reports a response body larger than the caller's limit.
+var ErrTooLarge = errors.New("integration response exceeds the size limit")
+
+// getBytes GETs path and returns the body when it is at most limit bytes.
+func (c *Client) getBytes(ctx context.Context, path string, limit int64) ([]byte, error) {
+	if c.BaseURL == "" {
+		return nil, errors.New("integration base URL is not configured")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if c.Token != "" {
+		request.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	// A redirect is never followed: the configured server answers itself, and
+	// following one would send the gateway, and possibly its token, wherever
+	// the answer points. The 3xx is reported as a StatusError.
+	client := *c.HTTP
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		var failure struct {
+			ErrorCode string `json:"error_code"`
+		}
+		_ = json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&failure)
+		if !errorCodePattern.MatchString(failure.ErrorCode) {
+			failure.ErrorCode = ""
+		}
+		return nil, &StatusError{Status: response.StatusCode, Code: failure.ErrorCode}
+	}
+	if response.ContentLength > limit {
+		return nil, ErrTooLarge
+	}
+	raw, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > limit {
+		return nil, ErrTooLarge
+	}
+	return raw, nil
+}
+
+// errorCodePattern keeps a reported error code to an identifier, so nothing
+// else from a response body reaches an error message or a log line.
+var errorCodePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
+
+// Configured reports whether an MLflow server URL is set.
+func (m MLflow) Configured() bool { return m.client != nil && m.client.BaseURL != "" }
+
+// ModelVersionArtifact reads one file of a registered model version through
+// the MLflow server's own artifact route (GET /model-versions/get-artifact),
+// so the caller needs no access to the artifact store behind it. A body
+// larger than limit bytes is ErrTooLarge; a non-2xx answer is a *StatusError.
+func (m MLflow) ModelVersionArtifact(ctx context.Context, name, version, path string, limit int64) ([]byte, error) {
+	query := url.Values{"name": {name}, "version": {version}, "path": {path}}
+	return m.client.getBytes(ctx, "/model-versions/get-artifact?"+query.Encode(), limit)
 }
 
 type Langfuse struct{ client *Client }
