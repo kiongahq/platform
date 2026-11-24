@@ -121,7 +121,12 @@ func (s *Server) activateConnection(w http.ResponseWriter, r *http.Request) {
 	if !s.verifyRuntime(w, r, *c) {
 		return
 	}
-	item, err := s.store.ActivateConnection(c.ID, actor(r))
+	// The store activates only the target verified above.
+	item, err := s.store.ActivateConnection(*c, actor(r))
+	if errors.Is(err, store.ErrConnectionChanged) {
+		writeError(w, http.StatusConflict, "connection_changed", err.Error())
+		return
+	}
 	writeMutation(w, item, err, http.StatusOK)
 }
 

@@ -58,7 +58,9 @@ type Repository interface {
 	// UpdateConnection replaces a connection's name, service, address and
 	// credential reference; the bool records a passing check of the new target.
 	UpdateConnection(string, api.CreateConnectionRequest, bool, string) (api.Connection, error)
-	ActivateConnection(string, string) (api.Connection, error)
+	// ActivateConnection activates the connection the caller verified, and
+	// refuses when its target changed since (ErrConnectionChanged).
+	ActivateConnection(api.Connection, string) (api.Connection, error)
 	UpdateConnectionStatus(string, string, string, string) (api.Connection, error)
 	AgentSessions(string) []api.AgentSession
 	AgentTraces(string) []api.AgentTrace

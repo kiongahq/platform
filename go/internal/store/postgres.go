@@ -650,28 +650,6 @@ func (p *Postgres) ReportMaterialization(name string, entityCount int, actor str
 	return api.FeatureView{}, ErrNotFound
 }
 
-func (p *Postgres) CreateConnection(req api.CreateConnectionRequest, actor string) (api.Connection, error) {
-	if err := ValidateConnectionRequest(req); err != nil {
-		return api.Connection{}, err
-	}
-	// The file store has always refused a second connection with the same
-	// name; without this a rename could not keep names unique here.
-	if connectionNameTaken(p.Connections(), req.Name, "") {
-		return api.Connection{}, ErrConflict
-	}
-	connection := api.Connection{ID: id("conn"), Name: req.Name, Type: req.Type, Endpoint: req.Endpoint, SecretRef: req.SecretRef, Status: "pending", CreatedAt: time.Now().UTC()}
-	return connection, p.write("connection", connection.ID, connection, "connection.created", actor, nil)
-}
-
-func (p *Postgres) UpdateConnectionStatus(connectionID, status, message, actor string) (api.Connection, error) {
-	connection, err := get[api.Connection](p, "connection", connectionID)
-	if err != nil {
-		return connection, err
-	}
-	now := time.Now().UTC()
-	connection.Status, connection.Message, connection.CheckedAt = status, message, &now
-	return connection, p.write("connection", connection.ID, connection, "connection.checked", actor, map[string]any{"status": status})
-}
 func (p *Postgres) AgentSessions(agentID string) []api.AgentSession {
 	values := list[api.AgentSession](p, "agent_session")
 	result := []api.AgentSession{}

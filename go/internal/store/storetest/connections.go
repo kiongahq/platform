@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -109,8 +110,20 @@ func Connections(t *testing.T, repository store.Repository) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.ActivateConnection(created.ID, "admin"); err != nil {
-		t.Fatal(err)
+	// Activation applies to the target that was verified, not to a later edit.
+	stale := created
+	stale.Endpoint = "http://elsewhere:4200/api"
+	if _, err := repository.ActivateConnection(stale, "admin"); !errors.Is(err, store.ErrConnectionChanged) {
+		t.Fatalf("activation of a target that is not the stored one: %v", err)
+	}
+	if got := find(created.ID); got.ActivatedAt != nil {
+		t.Fatalf("a refused activation activated the connection: %+v", got)
+	}
+	if _, err := repository.ActivateConnection(api.Connection{ID: "conn-missing-" + suffix}, "admin"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("activation of a missing connection: %v", err)
+	}
+	if got, err := repository.ActivateConnection(created, "admin"); err != nil || got.ActivatedAt == nil || got.Status != "healthy" {
+		t.Fatalf("activate: %+v %v", got, err)
 	}
 	retyped := runtime
 	retyped.Type = "openfaas"
@@ -147,5 +160,47 @@ func Connections(t *testing.T, repository store.Repository) {
 	slices.Sort(names)
 	if len(slices.Compact(names)) != 3 {
 		t.Fatalf("names are not unique: %v", names)
+	}
+
+	// Concurrent creates and renames to one name: exactly one of each wins.
+	race := func(attempt func(int) error) (won int) {
+		t.Helper()
+		var wg sync.WaitGroup
+		results := make([]error, 8)
+		for i := range results {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				results[i] = attempt(i)
+			}()
+		}
+		wg.Wait()
+		for _, err := range results {
+			switch {
+			case err == nil:
+				won++
+			case !errors.Is(err, store.ErrConflict):
+				t.Fatalf("concurrent write: %v", err)
+			}
+		}
+		return won
+	}
+	if won := race(func(int) error {
+		_, err := repository.CreateConnection(request("contended"), "admin")
+		return err
+	}); won != 1 {
+		t.Fatalf("%d concurrent creates took the same name", won)
+	}
+	others := make([]api.Connection, 8)
+	for i := range others {
+		if others[i], err = repository.CreateConnection(request(fmt.Sprintf("spare-%d", i)), "admin"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if won := race(func(i int) error {
+		_, err := repository.UpdateConnection(others[i].ID, request("Wanted"), false, "admin")
+		return err
+	}); won != 1 {
+		t.Fatalf("%d concurrent renames took the same name", won)
 	}
 }

@@ -282,3 +282,35 @@ func TestConnectionUpdateIsDocumentedAndRouted(t *testing.T) {
 		t.Fatalf("engineer update: %d %s", denied.Code, denied.Body.String())
 	}
 }
+
+// An edit that lands while a check is in flight must not be labelled or
+// activated by that check: the check saw the previous target.
+func TestCheckDoesNotVouchForAConcurrentEdit(t *testing.T) {
+	repository := store.New()
+	admin := connectionServer(repository, localAdmin)
+	var connection api.Connection
+	var edit atomic.Bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if edit.Load() {
+			moved := api.CreateConnectionRequest{Name: connection.Name, Type: "prefect", Endpoint: "http://unchecked.example.test/api", SecretRef: "none"}
+			if _, err := repository.UpdateConnection(connection.ID, moved, false, "someone-else"); err != nil {
+				t.Errorf("concurrent edit: %v", err)
+			}
+		}
+		_, _ = w.Write([]byte("true"))
+	}))
+	defer upstream.Close()
+	for _, action := range []string{"activate", "test"} {
+		edit.Store(false)
+		connection = connectionFixture(t, repository, "pipelines-"+action, "prefect", upstream.URL+"/api")
+		edit.Store(true)
+		response := call(t, admin, http.MethodPost, "/api/v1/connections/"+connection.ID+"/"+action, `{}`)
+		if response.Code != 409 || !strings.Contains(response.Body.String(), "connection_changed") {
+			t.Fatalf("%s: %d %s", action, response.Code, response.Body.String())
+		}
+		got := storedConnection(t, repository, connection.ID)
+		if got.Endpoint != "http://unchecked.example.test/api" || got.ActivatedAt != nil || got.Status != "pending" {
+			t.Fatalf("%s vouched for an unchecked target: %+v", action, got)
+		}
+	}
+}
