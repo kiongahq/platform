@@ -45,7 +45,7 @@ func SaveApplication(docs Documents, req api.ApplicationRequest, create bool, ow
 		}
 		next.Image, next.Source, next.Port, next.Env, next.SecretRefs = req.Image, req.Source, req.Port, req.Env, req.SecretRefs
 		next.Resources, next.Replicas, next.Scaling = req.Resources, *req.Replicas, *req.Scaling
-		next.HealthPath, next.Visibility = req.HealthPath, req.Visibility
+		next.HealthPath, next.Visibility, next.RunAsUser = req.HealthPath, req.Visibility, req.RunAsUser
 		next.URL = api.ApplicationURL(req.Name, baseDomain)
 		if req.Visibility == "internal" {
 			next.URL = "" // no host; reachable in the cluster only

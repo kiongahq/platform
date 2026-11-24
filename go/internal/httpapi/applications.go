@@ -42,11 +42,11 @@ func init() {
 	})
 	openapiPaths["/api/v1/applications"] = map[string]any{
 		"get":  map[string]any{"summary": "List applications with live status, URL and ready replicas (Kubernetes only; 409 not_configured on Compose)"},
-		"post": map[string]any{"summary": "Deploy an application from an image or a git source (Kubernetes only)"},
+		"post": map[string]any{"summary": "Deploy an application from an image or a git source (Kubernetes only). Optional run_as_user (1 to 2147483647, never 0) sets the numeric non-root user the containers run as, for an image that runs as root or names its user"},
 	}
 	openapiPaths["/api/v1/applications/{name}"] = map[string]any{
 		"get":    map[string]any{"summary": "Read an application with status, conditions and last build"},
-		"put":    map[string]any{"summary": "Replace an application's configuration; the operator rolls it out"},
+		"put":    map[string]any{"summary": "Replace an application's configuration, run_as_user included (omitting it clears it); the operator rolls it out"},
 		"delete": map[string]any{"summary": "Delete an application and its Kubernetes workload"},
 	}
 	openapiPaths["/api/v1/applications/{name}/redeploy"] = map[string]any{"post": map[string]any{"summary": "Restart the application's pods (and rebuild a git source)"}}
@@ -135,6 +135,9 @@ func applicationSpec(app api.Application) map[string]any {
 	}
 	if resources := resourceRequirements(app.Resources.CPU, app.Resources.Memory); resources != nil {
 		spec["resources"] = resources
+	}
+	if app.RunAsUser != nil {
+		spec["runAsUser"] = *app.RunAsUser
 	}
 	if app.RedeployedAt != nil {
 		spec["restartedAt"] = app.RedeployedAt.UTC().Format(time.RFC3339)
@@ -324,7 +327,7 @@ func (s *Server) saveApplication(w http.ResponseWriter, r *http.Request, access 
 		return
 	}
 	draft := api.Application{Name: req.Name, ProjectID: req.ProjectID, Image: req.Image, Source: req.Source, Port: req.Port, Env: req.Env, SecretRefs: req.SecretRefs,
-		Resources: req.Resources, Replicas: *req.Replicas, Scaling: *req.Scaling, HealthPath: req.HealthPath, Visibility: req.Visibility, RedeployedAt: previous.RedeployedAt}
+		Resources: req.Resources, Replicas: *req.Replicas, Scaling: *req.Scaling, HealthPath: req.HealthPath, Visibility: req.Visibility, RunAsUser: req.RunAsUser, RedeployedAt: previous.RedeployedAt}
 	object, err := applyWorkload(r.Context(), access.dynamic, applicationsGVR, applicationObject(draft, access.namespace))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "deploy_failed", "Kubernetes rejected the application: "+err.Error())

@@ -430,6 +430,39 @@ func TestModelDeploymentStatusMapping(t *testing.T) {
 	}
 }
 
+func TestKubernetesFunctionRunAsUser(t *testing.T) {
+	harness := newKubeHarness(t)
+	projectID := createTestProject(t, harness.server)
+	for _, refused := range []string{"0", "-5", "2147483648"} {
+		recorder := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+projectID+`","name":"fn","image":"registry/fn:1","run_as_user":`+refused+`}`)
+		if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "run_as_user") {
+			t.Fatalf("run_as_user %s: %d %s", refused, recorder.Code, recorder.Body.String())
+		}
+	}
+	deployed := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+projectID+`","name":"fn","image":"registry/fn:1","run_as_user":1000}`)
+	if deployed.Code != http.StatusAccepted || jsonBody(t, deployed)["run_as_user"] != float64(1000) {
+		t.Fatalf("deploy: %d %s", deployed.Code, deployed.Body.String())
+	}
+	if user, found, _ := unstructured.NestedInt64(harness.object(t, functionsGVR, "fn").Object, "spec", "runAsUser"); !found || user != 1000 {
+		t.Fatalf("spec.runAsUser must be 1000: %d %v", user, found)
+	}
+	if listed := harness.do(t, http.MethodGet, "/api/v1/functions", ""); !strings.Contains(listed.Body.String(), `"run_as_user":1000`) {
+		t.Fatalf("the user must be recorded: %s", listed.Body.String())
+	}
+	// A deploy without the user clears it, like every other field.
+	if again := harness.do(t, http.MethodPost, "/api/v1/functions", `{"project_id":"`+projectID+`","name":"fn","image":"registry/fn:1"}`); again.Code != http.StatusAccepted {
+		t.Fatalf("redeploy: %d %s", again.Code, again.Body.String())
+	}
+	if _, found, _ := unstructured.NestedInt64(harness.object(t, functionsGVR, "fn").Object, "spec", "runAsUser"); found {
+		t.Fatal("a deploy without run_as_user must clear spec.runAsUser")
+	}
+	message := "The pods cannot start: image registry/fn:1 runs as root, which is not allowed. Set a numeric non-root user (runAsUser, for example 1000) or rebuild the image with a numeric non-root USER."
+	harness.setStatus(t, functionsGVR, "fn", map[string]any{"phase": "Failed", "conditions": []any{readyCondition("Ready", "False", "ImageRunsAsRoot", message)}})
+	if listed := harness.do(t, http.MethodGet, "/api/v1/functions", ""); !strings.Contains(listed.Body.String(), `"status":"failed"`) || !strings.Contains(listed.Body.String(), "runs as root, which is not allowed") {
+		t.Fatalf("the cause must reach the caller: %s", listed.Body.String())
+	}
+}
+
 func TestKubernetesFunctionVisibility(t *testing.T) {
 	harness := newKubeHarness(t)
 	projectID := createTestProject(t, harness.server)
