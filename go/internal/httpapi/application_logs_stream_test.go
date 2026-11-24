@@ -20,12 +20,12 @@ func TestLogEntryParsesTimestampsAndSkipsWhatTheClientHas(t *testing.T) {
 		{"2026-11-19T10:00:00.600000000Z new line", "new line", "2026-11-19T10:00:00.6Z", true},
 		{"no timestamp at all", "no timestamp at all", "", true},
 	} {
-		entry, keep := logEntry("pod-a", "app", tc.raw, since)
+		entry, keep := logEntry("pod-a", "app", tc.raw, &podResume{floor: since})
 		if keep != tc.keep || (keep && (entry.Line != tc.line || entry.Time != tc.at || entry.Pod != "pod-a")) {
 			t.Fatalf("%q: keep=%v entry=%+v", tc.raw, keep, entry)
 		}
 	}
-	if entry, keep := logEntry("pod-a", "app", "2026-11-19T09:00:00Z from the tail", time.Time{}); !keep || entry.Line != "from the tail" {
+	if entry, keep := logEntry("pod-a", "app", "2026-11-19T09:00:00Z from the tail", &podResume{}); !keep || entry.Line != "from the tail" {
 		t.Fatalf("without a resume point every line is kept: %+v", entry)
 	}
 }

@@ -6,6 +6,25 @@ import (
 	"testing"
 )
 
+func userID(value int64) *int64 { return &value }
+
+func TestRunAsUserIsOptionalAndNeverRoot(t *testing.T) {
+	req := validApplication()
+	if err := NormalizeApplicationRequest(&req); err != nil || req.RunAsUser != nil {
+		t.Fatalf("no user is the default: %v %v", err, req.RunAsUser)
+	}
+	for _, valid := range []int64{1, 1000, 65534, MaxRunAsUser} {
+		req := validApplication()
+		req.RunAsUser = userID(valid)
+		if err := NormalizeApplicationRequest(&req); err != nil || *req.RunAsUser != valid {
+			t.Fatalf("%d is a valid user: %v", valid, err)
+		}
+	}
+	if err := ValidateRunAsUser(userID(0)); err == nil || !strings.Contains(err.Error(), "root") {
+		t.Fatalf("root must be refused with the reason: %v", err)
+	}
+}
+
 func validApplication() ApplicationRequest {
 	return ApplicationRequest{Name: "billing", ProjectID: "prj-1", Image: "ghcr.io/acme/billing:1"}
 }
@@ -42,6 +61,9 @@ func TestNormalizeApplicationRequestRejects(t *testing.T) {
 			r.Source = &ApplicationSource{Git: "https://github.com/acme/a.git#main"}
 		}},
 		{"bad visibility", "visibility", func(r *ApplicationRequest) { r.Visibility = "private" }},
+		{"root user", "run_as_user", func(r *ApplicationRequest) { r.RunAsUser = userID(0) }},
+		{"negative user", "run_as_user", func(r *ApplicationRequest) { r.RunAsUser = userID(-1) }},
+		{"user above the range", "run_as_user", func(r *ApplicationRequest) { r.RunAsUser = userID(MaxRunAsUser + 1) }},
 		{"cpu at zero", "replicas.min", func(r *ApplicationRequest) {
 			r.Replicas = &ReplicaRange{Min: 0, Max: 2}
 			r.Scaling = &WorkloadScaling{Metric: "cpu"}

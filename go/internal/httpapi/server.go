@@ -555,7 +555,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runs(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.authorizerFor(r).visibleRuns(s.store.Runs()))
+	writeJSON(w, http.StatusOK, s.ownerLabelsFor(r).runs(s.authorizerFor(r).visibleRuns(s.store.Runs())))
 }
 func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 	item, err := s.store.Run(r.PathValue("id"))
@@ -565,7 +565,7 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 			err = store.ErrNotFound
 		}
 	}
-	writeMutation(w, item, err, http.StatusOK)
+	writeMutation(w, s.ownerLabelsFor(r).run(item), err, http.StatusOK)
 }
 
 // runFor loads a run the caller may read and checks action on it. It writes
