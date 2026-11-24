@@ -95,17 +95,31 @@ func (s *Server) verifyRuntime(w http.ResponseWriter, r *http.Request, c api.Con
 		writeError(w, 422, "credential_unavailable", err.Error())
 		return false
 	}
-	for _, run := range s.store.Runs() {
-		if run.Status == "queued" || run.Status == "running" {
-			writeError(w, 409, "runs_active", "Wait for running and queued pipelines to finish before changing runtimes.")
-			return false
-		}
+	if s.runsInFlight() {
+		writeError(w, 409, "runs_active", "Wait for running and queued pipelines to finish before changing runtimes.")
+		return false
 	}
 	if err := checkConnection(r, c); err != nil {
 		writeError(w, 422, "connection_failed", err.Error())
 		return false
 	}
+	// The service check can take seconds; a pipeline submitted meanwhile must
+	// not have its runtime changed under it. This narrows the gap to the write
+	// that follows; it is not a lock shared with pipeline submission.
+	if s.runsInFlight() {
+		writeError(w, 409, "runs_active", "Wait for running and queued pipelines to finish before changing runtimes.")
+		return false
+	}
 	return true
+}
+
+func (s *Server) runsInFlight() bool {
+	for _, run := range s.store.Runs() {
+		if run.Status == "queued" || run.Status == "running" {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) activateConnection(w http.ResponseWriter, r *http.Request) {

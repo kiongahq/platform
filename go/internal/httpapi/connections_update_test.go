@@ -314,3 +314,36 @@ func TestCheckDoesNotVouchForAConcurrentEdit(t *testing.T) {
 		}
 	}
 }
+
+// A pipeline submitted while the service is being checked keeps its runtime.
+func TestRuntimeDoesNotChangeUnderARunSubmittedDuringTheCheck(t *testing.T) {
+	repository := store.New()
+	admin := connectionServer(repository, localAdmin)
+	project, err := repository.CreateProject(api.CreateProjectRequest{Name: "Runtime project"}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var submit atomic.Bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if submit.Load() {
+			if _, err := repository.SubmitPipeline(api.SubmitPipelineRequest{ProjectID: project.ID, Name: "train"}, "someone-else"); err != nil {
+				t.Errorf("submit: %v", err)
+			}
+		}
+		_, _ = w.Write([]byte("true"))
+	}))
+	defer upstream.Close()
+	connection := connectionFixture(t, repository, "pipelines", "prefect", upstream.URL+"/api")
+	path := "/api/v1/connections/" + connection.ID
+	if activated := call(t, admin, http.MethodPost, path+"/activate", `{}`); activated.Code != 200 {
+		t.Fatalf("activate: %d %s", activated.Code, activated.Body.String())
+	}
+	submit.Store(true)
+	moved := call(t, admin, http.MethodPut, path, connectionBody("pipelines", "prefect", upstream.URL+"/api/", "none"))
+	if moved.Code != 409 || !strings.Contains(moved.Body.String(), "runs_active") {
+		t.Fatalf("change under a run submitted during the check: %d %s", moved.Code, moved.Body.String())
+	}
+	if got := storedConnection(t, repository, connection.ID); got.Endpoint != upstream.URL+"/api" {
+		t.Fatalf("runtime changed under a run: %+v", got)
+	}
+}
