@@ -24,6 +24,7 @@ import {
   type RecordData,
   type Field,
 } from "./shared";
+import { USER_ROLES, USER_ROLE_HELP } from "./userRoles";
 const userFields: Field[] = [
   { name: "subject", label: "Account subject", required: true },
   { name: "email", label: "Email" },
@@ -31,7 +32,8 @@ const userFields: Field[] = [
     name: "role",
     label: "Role",
     type: "select",
-    options: ["user", "viewer", "operator", "admin"].map(option),
+    options: USER_ROLES.map((item) => option(item.value)),
+    help: USER_ROLE_HELP,
   },
   {
     name: "services",
