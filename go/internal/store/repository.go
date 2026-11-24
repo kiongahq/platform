@@ -62,6 +62,9 @@ type Repository interface {
 	// refuses when its target changed since (ErrConnectionChanged).
 	ActivateConnection(api.Connection, string) (api.Connection, error)
 	UpdateConnectionStatus(string, string, string, string) (api.Connection, error)
+	// RecordConnectionCheck stores a check result for the record that was
+	// checked, and refuses when its target changed since (ErrConnectionChanged).
+	RecordConnectionCheck(api.Connection, string, string, string) (api.Connection, error)
 	AgentSessions(string) []api.AgentSession
 	AgentTraces(string) []api.AgentTrace
 	RecordTrace(api.RecordTraceRequest) (api.AgentTrace, error)

@@ -266,3 +266,40 @@ func (p *Postgres) connectionWrite(action, actor string, decide func([]api.Conne
 	}
 	return next, tx.Commit(ctx)
 }
+
+// RecordConnectionCheck stores the result of a check of the given record. The
+// result describes the service, address and credential that were checked, so
+// it is refused with ErrConnectionChanged when the stored target differs.
+func (s *Store) RecordConnectionCheck(checked api.Connection, status, message, actor string) (api.Connection, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.data.Connections {
+		c := &s.data.Connections[i]
+		if c.ID != checked.ID {
+			continue
+		}
+		if !sameConnectionTarget(*c, checked) {
+			return api.Connection{}, ErrConnectionChanged
+		}
+		now := time.Now().UTC()
+		c.Status, c.Message, c.CheckedAt = status, message, &now
+		s.record("connection.checked", "connection", c.ID, actor, map[string]any{"status": status})
+		return *c, s.persist()
+	}
+	return api.Connection{}, ErrNotFound
+}
+
+func (p *Postgres) RecordConnectionCheck(checked api.Connection, status, message, actor string) (api.Connection, error) {
+	return p.connectionWrite("connection.checked", actor, func(existing []api.Connection) (api.Connection, map[string]any, error) {
+		current, err := findConnection(existing, checked.ID)
+		if err != nil {
+			return current, nil, err
+		}
+		if !sameConnectionTarget(current, checked) {
+			return current, nil, ErrConnectionChanged
+		}
+		now := time.Now().UTC()
+		current.Status, current.Message, current.CheckedAt = status, message, &now
+		return current, map[string]any{"status": status}, nil
+	})
+}

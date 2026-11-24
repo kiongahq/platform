@@ -110,6 +110,21 @@ func Connections(t *testing.T, repository store.Repository) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A check result is recorded only for the target that was checked.
+	checkedElsewhere := created
+	checkedElsewhere.SecretRef = "env:KIONGA_PLATFORM_SECRET_OTHER"
+	if _, err := repository.RecordConnectionCheck(checkedElsewhere, "healthy", "Connection succeeded", "admin"); !errors.Is(err, store.ErrConnectionChanged) {
+		t.Fatalf("check of a target that is not the stored one: %v", err)
+	}
+	if got := find(created.ID); got.Status != "pending" || got.CheckedAt != nil {
+		t.Fatalf("a refused check result was recorded: %+v", got)
+	}
+	if got, err := repository.RecordConnectionCheck(created, "unhealthy", "Service returned 503", "admin"); err != nil || got.Status != "unhealthy" || got.Message != "Service returned 503" || got.CheckedAt == nil {
+		t.Fatalf("check result: %+v %v", got, err)
+	}
+	if _, err := repository.RecordConnectionCheck(api.Connection{ID: "conn-missing-" + suffix}, "healthy", "", "admin"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("check of a missing connection: %v", err)
+	}
 	// Activation applies to the target that was verified, not to a later edit.
 	stale := created
 	stale.Endpoint = "http://elsewhere:4200/api"

@@ -1732,13 +1732,13 @@ func (s *Server) testConnection(w http.ResponseWriter, r *http.Request) {
 	if checkErr := checkConnection(r, *connection); checkErr != nil {
 		status, message = "unhealthy", checkErr.Error()
 	}
-	// The result describes the target that was checked. If the connection was
-	// edited meanwhile, recording it would label an unchecked target.
-	if latest := s.findConnection(connection.ID); latest == nil || store.ConnectionTargetChanged(*latest, api.CreateConnectionRequest{Type: connection.Type, Endpoint: connection.Endpoint, SecretRef: connection.SecretRef}) {
-		writeError(w, http.StatusConflict, "connection_changed", store.ErrConnectionChanged.Error())
+	// The result describes the target that was checked: the store refuses to
+	// record it for a connection that was edited meanwhile.
+	item, updateErr := s.store.RecordConnectionCheck(*connection, status, message, actor(r))
+	if errors.Is(updateErr, store.ErrConnectionChanged) {
+		writeError(w, http.StatusConflict, "connection_changed", updateErr.Error())
 		return
 	}
-	item, updateErr := s.store.UpdateConnectionStatus(connection.ID, status, message, actor(r))
 	writeMutation(w, item, updateErr, http.StatusOK)
 }
 
