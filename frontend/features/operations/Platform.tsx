@@ -21,6 +21,7 @@ import {
   type OperationsProps,
   type RecordData,
 } from "./shared";
+import { StorageConnectionDialog } from "./StorageConnectionDialog";
 export function Platform({ identity }: OperationsProps) {
   const components = useResource("/api/v1/components"),
     connections = useResource("/api/v1/connections"),
@@ -37,10 +38,11 @@ export function Platform({ identity }: OperationsProps) {
     providers = useResource(
       admin(identity) ? "/api/v1/admin/feature-store-providers" : null,
     );
-  const [modal, setModal] = useState<"" | "connection" | "feature" | "storage">(
-      "",
-    ),
-    [detail, setDetail] = useState<RecordData | null>(null);
+  const [modal, setModal] = useState<"" | "connection" | "feature">(""),
+    [detail, setDetail] = useState<RecordData | null>(null),
+    [storageDialog, setStorageDialog] = useState<{
+      connection: RecordData | null;
+    } | null>(null);
   const [connectionInitial, setConnectionInitial] = useState<RecordData>({
     type: "prefect",
     secret_ref: "none",
@@ -277,7 +279,7 @@ export function Platform({ identity }: OperationsProps) {
           <section className="panel">
             <header className="page-header">
               <h2>Object storage connections</h2>
-              <button onClick={() => setModal("storage")}>
+              <button onClick={() => setStorageDialog({ connection: null })}>
                 Add object storage
               </button>
             </header>
@@ -302,6 +304,12 @@ export function Platform({ identity }: OperationsProps) {
                 ]}
                 actions={(row) => (
                   <>
+                    <button
+                      disabled={action.busy}
+                      onClick={() => setStorageDialog({ connection: row })}
+                    >
+                      Edit
+                    </button>
                     <button
                       disabled={action.busy}
                       onClick={() =>
@@ -355,9 +363,7 @@ export function Platform({ identity }: OperationsProps) {
           title={
             modal === "connection"
               ? "Connect infrastructure"
-              : modal === "feature"
-                ? "Connect feature store"
-                : "Connect object storage"
+              : "Connect feature store"
           }
           onClose={() => setModal("")}
         >
@@ -445,47 +451,23 @@ export function Platform({ identity }: OperationsProps) {
                 })
               }
             />
-          ) : (
-            <Form
-              initial={{ path_style: true }}
-              fields={[
-                { name: "name", label: "Name", required: true },
-                {
-                  name: "endpoint",
-                  label: "S3 endpoint",
-                  type: "url",
-                  required: true,
-                },
-                { name: "region", label: "Region" },
-                { name: "bucket", label: "Bucket", required: true },
-                {
-                  name: "path_style",
-                  label: "Path-style addressing",
-                  type: "checkbox",
-                },
-                {
-                  name: "ca_bundle",
-                  label: "Custom CA bundle",
-                  type: "textarea",
-                },
-                {
-                  name: "secret_ref",
-                  label: "Secret reference",
-                  required: true,
-                },
-                { name: "allowed_projects", label: "Allowed project IDs" },
-              ]}
-              submit="Save and test"
-              onSubmit={(value) =>
-                saveAndTest("/api/v1/admin/storage-connections", {
-                  ...value,
-                  secret_ref: value.secret_ref.trim(),
-                  allowed_projects: csv(value.allowed_projects),
-                })
-              }
-            />
-          )}
+          ) : null}
         </Modal>
+      )}
+      {storageDialog && (
+        <StorageConnectionDialog
+          connection={storageDialog.connection}
+          onClose={() => setStorageDialog(null)}
+          onSaved={(checked) => {
+            setStorageDialog(null);
+            action
+              .run(
+                async () => checked,
+                checked.health?.detail || checked.message || "Connection checked.",
+              )
+              .catch(() => {});
+          }}
+        />
       )}
       {detail && (
         <Modal

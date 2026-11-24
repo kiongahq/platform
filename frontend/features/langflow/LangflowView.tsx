@@ -15,6 +15,7 @@ import {
   type ViewProps,
   type Field,
 } from "@/features/shared/View";
+import { StorageConnectionDialog } from "@/features/operations/StorageConnectionDialog";
 export function LangflowView({ identity, project, onNavigate }: ViewProps) {
   const workspaces = useQuery<Entity>("/api/v1/langflow-workspaces"),
     snapshots = useQuery<Entity>("/api/v1/langflow-snapshots"),
@@ -424,6 +425,7 @@ function LangflowResources({
       key: "registered-storage",
       title: "Registered storage",
       path: "/api/v1/registered-storage",
+      storageDialog: true,
     },
     {
       key: "knowledge-bases",
@@ -490,13 +492,17 @@ function ResourceSection({
   projectOptions: Array<{ value: string; label: string }>;
 }) {
   const query = useQuery<Entity>(spec.path),
-    [open, setOpen] = useState(false), [backend, setBackend] = useState("qdrant");
+    [open, setOpen] = useState(false), [backend, setBackend] = useState("qdrant"),
+    [storageOpen, setStorageOpen] = useState(false);
   return (
     <section>
       <header className="toolbar">
         <h2>{spec.title}</h2>
         {admin && spec.admin && (
           <button aria-label={`Register ${spec.title.toLowerCase()}`} onClick={() => setOpen(!open)}>Register</button>
+        )}
+        {admin && spec.storageDialog && (
+          <button onClick={() => setStorageOpen(true)}>Register storage</button>
         )}
       </header>
       <DataState
@@ -506,7 +512,8 @@ function ResourceSection({
       >
         <ResourceTable
           rows={items(query.data).filter(
-            (item) => !project || item.project_id === project,
+            (item) =>
+              !project || spec.storageDialog || item.project_id === project,
           )}
           columns={[
             { key: "name", label: "Name" },
@@ -516,6 +523,16 @@ function ResourceSection({
           actions={(item) => <Detail value={item} />}
         />
       </DataState>
+      {storageOpen && (
+        <StorageConnectionDialog
+          defaultProjects={project ? [project] : projectOptions.length === 1 ? [projectOptions[0].value] : []}
+          onClose={() => setStorageOpen(false)}
+          onSaved={() => {
+            setStorageOpen(false);
+            query.reload();
+          }}
+        />
+      )}
       {open && (<div className="panel">
         {spec.key === "knowledge-bases" && <label className="field">Backend<Select value={backend} onChange={event => setBackend(event.target.value)}><option value="qdrant">Qdrant</option><option value="pgvector">PostgreSQL pgvector</option></Select></label>}
         <ActionForm
