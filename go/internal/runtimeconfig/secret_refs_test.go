@@ -145,3 +145,41 @@ func TestConfigFileRejectsReferenceVariables(t *testing.T) {
 		}
 	}
 }
+
+// The Kubeflow Pipelines path was removed. No connection type is exempt for
+// KFP_TOKEN, the gateway no longer loads it, and the only exemptions left are the
+// two services the platform still talks to with a gateway credential.
+func TestKubeflowPipelinesCredentialIsGone(t *testing.T) {
+	for _, name := range SecretNames {
+		if strings.HasPrefix(name, "KFP_") {
+			t.Errorf("SecretNames still lists %s", name)
+		}
+	}
+	if PlatformSecrets("kfp").Permits("env:KFP_TOKEN") {
+		t.Error("a kfp connection can still read KFP_TOKEN")
+	}
+	if got := PlatformSecrets("kfp").Exempt; got != "" {
+		t.Errorf("kfp has an exemption: %q", got)
+	}
+	exempt := map[string]string{}
+	for _, kind := range []string{"openfaas", "mlflow", "prefect", "kubernetes", "kfp", ""} {
+		if name := PlatformSecrets(kind).Exempt; name != "" {
+			exempt[kind] = name
+		}
+	}
+	if len(exempt) != 2 || exempt["openfaas"] != "OPENFAAS_PASSWORD" || exempt["mlflow"] != "MLFLOW_TOKEN" {
+		t.Errorf("unexpected exemptions: %v", exempt)
+	}
+}
+
+// KFP_TOKEN_FILE is no longer read: the file is ignored instead of loaded.
+func TestKubeflowPipelinesTokenFileIsIgnored(t *testing.T) {
+	setenvClean(t, "KFP_TOKEN")
+	t.Setenv("KFP_TOKEN_FILE", secretFile(t, "old-kfp-token"))
+	if err := Load(); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("KFP_TOKEN"); got != "" {
+		t.Fatalf("KFP_TOKEN loaded: %q", got)
+	}
+}
