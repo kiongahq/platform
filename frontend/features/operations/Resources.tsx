@@ -254,7 +254,7 @@ export function Functions({ identity, project }: OperationsProps) {
       {invoke && (
         <Modal title={`Invoke ${invoke.name}`} onClose={() => setInvoke(null)}>
           <Form
-            initial={{ payload: "{}" }}
+            initial={{ payload: "" }}
             fields={[{ name: "payload", label: "JSON payload", type: "json" }]}
             submit={
               invoke.annotations?.["io.kionga.invocation"] === "async"
@@ -278,6 +278,33 @@ export function Functions({ identity, project }: OperationsProps) {
         </Modal>
       )}
     </>
+  );
+}
+
+// The console cannot read a model's input signature or input example (the
+// gateway has no MLflow artifact access), so the payload starts empty and the
+// example is a labelled placeholder, never a value that could be mistaken for
+// this model's schema.
+export const PREDICT_PLACEHOLDER = `Example of the MLflow scoring format only. Replace it with inputs that match this model's signature.\n{"dataframe_split": {"columns": ["feature_a", "feature_b"], "data": [[1.0, 2.0]]}}`;
+export const PREDICT_HELP =
+  "Sent to the model's /invocations endpoint. Accepted shapes: dataframe_split, dataframe_records, instances or inputs. Field names and types come from the model's signature in its MLmodel file.";
+export function ModelPredictForm({ model, onResult }: { model: RecordData; onResult: (value: unknown) => void }) {
+  return (
+    <Form
+      initial={{ payload: "" }}
+      fields={[
+        { name: "payload", label: "Request payload", type: "json", required: true, placeholder: PREDICT_PLACEHOLDER, help: PREDICT_HELP },
+      ]}
+      submit="Predict"
+      onSubmit={async (value) =>
+        onResult(
+          await request(`/api/v1/models/${encode(model.id)}/predict`, {
+            method: "POST",
+            body: value.payload,
+          }),
+        )
+      }
+    />
   );
 }
 
@@ -557,21 +584,7 @@ export function Models({ identity, project, resource, onNavigate }: OperationsPr
       )}
       {predict && (
         <Modal title={`Test ${predict.name}`} onClose={() => setPredict(null)}>
-          <Form
-            initial={{ payload: "{}" }}
-            fields={[
-              { name: "payload", label: "Request payload", type: "json" },
-            ]}
-            submit="Predict"
-            onSubmit={async (value) =>
-              setOutput(
-                await request(`/api/v1/models/${encode(predict.id)}/predict`, {
-                  method: "POST",
-                  body: value.payload,
-                }),
-              )
-            }
-          />
+          <ModelPredictForm model={predict} onResult={setOutput} />
           {output !== undefined && <Detail value={output} />}
         </Modal>
       )}
