@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kiongahq/platform/internal/store"
@@ -53,4 +54,16 @@ func TestScaffoldJobDocuments(t *testing.T) {
 
 func TestFileStoreRevokesTokensWhenAccessIsWithdrawn(t *testing.T) {
 	storetest.TokenRevocation(t, store.New(filepath.Join(t.TempDir(), "state.json")), "file")
+}
+
+func TestStoreConnections(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	storetest.Connections(t, store.New(path))
+	renamed := false
+	for _, item := range store.New(path).Connections() {
+		renamed = renamed || strings.HasPrefix(item.Name, "runtime-renamed-")
+	}
+	if !renamed {
+		t.Fatal("connection update was not persisted")
+	}
 }

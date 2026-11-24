@@ -651,8 +651,13 @@ func (p *Postgres) ReportMaterialization(name string, entityCount int, actor str
 }
 
 func (p *Postgres) CreateConnection(req api.CreateConnectionRequest, actor string) (api.Connection, error) {
-	if req.Name == "" || req.Type == "" || req.SecretRef == "" {
-		return api.Connection{}, errors.New("name, type and secret_ref are required")
+	if err := ValidateConnectionRequest(req); err != nil {
+		return api.Connection{}, err
+	}
+	// The file store has always refused a second connection with the same
+	// name; without this a rename could not keep names unique here.
+	if connectionNameTaken(p.Connections(), req.Name, "") {
+		return api.Connection{}, ErrConflict
 	}
 	connection := api.Connection{ID: id("conn"), Name: req.Name, Type: req.Type, Endpoint: req.Endpoint, SecretRef: req.SecretRef, Status: "pending", CreatedAt: time.Now().UTC()}
 	return connection, p.write("connection", connection.ID, connection, "connection.created", actor, nil)

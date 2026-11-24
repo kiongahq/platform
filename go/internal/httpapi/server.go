@@ -23,7 +23,6 @@ import (
 	"github.com/kiongahq/platform/internal/pipelinespec"
 	"github.com/kiongahq/platform/internal/platform"
 	"github.com/kiongahq/platform/internal/policy"
-	"github.com/kiongahq/platform/internal/runtimeconfig"
 	"github.com/kiongahq/platform/internal/store"
 	"github.com/kiongahq/platform/pkg/api"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -158,6 +157,7 @@ func New(data store.Repository, static fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/v1/tools", server.registerTool)
 	mux.HandleFunc("GET /api/v1/connections", server.connections)
 	mux.HandleFunc("POST /api/v1/connections", server.createConnection)
+	mux.HandleFunc("PUT /api/v1/connections/{id}", server.updateConnection)
 	mux.HandleFunc("POST /api/v1/connections/{id}/test", server.testConnection)
 	mux.HandleFunc("POST /api/v1/connections/{id}/activate", server.activateConnection)
 	mux.HandleFunc("GET /api/v1/audit", server.audit)
@@ -1704,8 +1704,8 @@ func (s *Server) createConnection(w http.ResponseWriter, r *http.Request) {
 		writeDenied(w, decision)
 		return
 	}
-	if strings.HasPrefix(req.SecretRef, "env:") && !runtimeconfig.PlatformSecrets(req.Type).Permits(req.SecretRef) {
-		writeError(w, http.StatusUnprocessableEntity, "invalid_request", "Use env:KIONGA_PLATFORM_SECRET_<NAME>, or list the variable in KIONGA_PLATFORM_SECRET_REFS. The gateway's own secrets cannot be referenced.")
+	if message := connectionSecretIssue(req); message != "" {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_request", message)
 		return
 	}
 	item, err := s.store.CreateConnection(req, actor(r))
