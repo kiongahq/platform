@@ -50,7 +50,7 @@ func init() {
 		"delete": map[string]any{"summary": "Delete an application and its Kubernetes workload"},
 	}
 	openapiPaths["/api/v1/applications/{name}/redeploy"] = map[string]any{"post": map[string]any{"summary": "Restart the application's pods (and rebuild a git source)"}}
-	openapiPaths["/api/v1/applications/{name}/logs"] = map[string]any{"get": map[string]any{"summary": "Recent logs of the application's pods (tail, container, since). With follow=true, a bounded Server-Sent Events stream (max_seconds, resumable with Last-Event-ID or since)"}}
+	openapiPaths["/api/v1/applications/{name}/logs"] = map[string]any{"get": map[string]any{"summary": "Recent logs of the application's pods (tail, container, since). With follow=true, a bounded Server-Sent Events stream (max_seconds; each event id is a per-pod cursor, resumable with Last-Event-ID or since, which also accept an RFC 3339 timestamp)"}}
 	openapiPaths["/api/v1/applications/{name}/events"] = map[string]any{"get": map[string]any{"summary": "Kubernetes events for the application, its pods and replica sets"}}
 }
 
