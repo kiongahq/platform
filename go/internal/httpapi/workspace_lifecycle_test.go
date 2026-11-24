@@ -13,6 +13,7 @@ import (
 	"github.com/kiongahq/platform/internal/auth"
 	"github.com/kiongahq/platform/internal/store"
 	"github.com/kiongahq/platform/pkg/api"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -328,5 +329,28 @@ func TestConcurrentIdenticalRequestIsANoOp(t *testing.T) {
 	}
 	if actions := h.auditActions("alice-ws"); len(actions) != 0 {
 		t.Fatalf("the losing request must leave no audit trace: %v", actions)
+	}
+}
+
+func TestConflictThenSupersededRequestIsClosedInTheAudit(t *testing.T) {
+	h := newLifecycleHarness(t, developerWorkspace("alice-ws", "alice", false, "workbench"))
+	gets := 0
+	h.dynamic.PrependReactor("get", "kiongaworkspaces", func(clienttesting.Action) (bool, runtime.Object, error) {
+		gets++
+		if gets == 1 {
+			return false, nil, nil // first read sees the workspace running
+		}
+		return true, developerWorkspace("alice-ws", "alice", true, "workbench"), nil
+	})
+	h.dynamic.PrependReactor("update", "kiongaworkspaces", func(clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewConflict(schema.GroupResource{Resource: "kiongaworkspaces"}, "alice-ws", errors.New("changed"))
+	})
+	body := jsonBody(t, h.as(t, devAlice, http.MethodPost, "/api/v1/workspaces/workbench/stop"))
+	if body["changed"] != false {
+		t.Fatalf("superseded: %v", body)
+	}
+	actions := h.auditActions("alice-ws")
+	if len(actions) != 2 || actions[0] != "workspace.stop_superseded" || actions[1] != "workspace.stop_requested" {
+		t.Fatalf("a request that was written and then superseded must be closed, never claimed as a change: %v", actions)
 	}
 }

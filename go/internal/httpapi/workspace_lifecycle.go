@@ -267,6 +267,12 @@ func (s *Server) changeWorkspaceLifecycle(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !changed {
+		if requested {
+			// Audit records cannot be withdrawn: close the request honestly.
+			if auditErr := s.recordWorkspaceLifecycle(match.GetName(), subject, kind, action, "workspace."+action+"_superseded", by); auditErr != nil {
+				log.Printf("workspaces: could not record superseded %s of %s: %v", action, match.GetName(), auditErr)
+			}
+		}
 		writeJSON(w, http.StatusOK, workspaceLifecycleResponse{ID: kind, workspaceLifecycleView: workspaceLifecycleState(updated)})
 		return
 	}
