@@ -1,6 +1,11 @@
 package store
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/kiongahq/platform/pkg/api"
@@ -130,5 +135,46 @@ func TestAgentRequestValidatesRunnableContract(t *testing.T) {
 		if err := NormalizeAgentRequest(&invalid[index]); err == nil {
 			t.Errorf("invalid agent contract %d was accepted", index)
 		}
+	}
+}
+
+func TestAgentLLMBackendsAcceptedAndRejected(t *testing.T) {
+	for _, backend := range AgentLLMBackends {
+		req := api.DeployAgentRequest{ProjectID: "prj-demo", Name: "support", Version: "1", Image: "image:1", GraphModule: "agents.support:build", LLMBackend: backend}
+		if err := NormalizeAgentRequest(&req); err != nil {
+			t.Errorf("backend %q from AgentLLMBackends was rejected: %v", backend, err)
+		}
+	}
+	req := api.DeployAgentRequest{ProjectID: "prj-demo", Name: "support", Version: "1", Image: "image:1", GraphModule: "agents.support:build", LLMBackend: "vllm"}
+	err := NormalizeAgentRequest(&req)
+	if err == nil || err.Error() != "agent llm_backend must be mock, openai, anthropic, openai-compatible, or self-hosted" {
+		t.Fatalf("vllm must be rejected with the documented message, got %v", err)
+	}
+}
+
+// The console deploy form must offer exactly the backends the gateway accepts,
+// in the same order. The frontend list is parsed from source so a change on
+// either side fails here.
+func TestConsoleAgentBackendsMatchGateway(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "..", "frontend", "features", "agents", "agentBackends.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := regexp.MustCompile(`\{\s*value:\s*'([^']+)',\s*label:\s*'([^']+)'\s*\}`)
+	var values []string
+	for _, match := range entry.FindAllStringSubmatch(string(source), -1) {
+		if match[1] != match[2] {
+			t.Errorf("label %q must equal value %q", match[2], match[1])
+		}
+		values = append(values, match[1])
+	}
+	if len(values) == 0 {
+		t.Fatal("no backends parsed from agentBackends.ts; the file format changed")
+	}
+	if !slices.Equal(values, AgentLLMBackends) {
+		t.Fatalf("console backends %v differ from gateway backends %v", values, AgentLLMBackends)
+	}
+	if !strings.Contains(string(source), "DEFAULT_AGENT_LLM_BACKEND: AgentLLMBackend = 'mock'") {
+		t.Error("the console default backend must stay mock")
 	}
 }
