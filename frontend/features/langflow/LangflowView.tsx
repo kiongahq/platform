@@ -512,7 +512,8 @@ function ResourceSection({
       >
         <ResourceTable
           rows={items(query.data).filter(
-            (item) => !project || item.project_id === project,
+            (item) =>
+              !project || spec.storageDialog || item.project_id === project,
           )}
           columns={[
             { key: "name", label: "Name" },
@@ -524,6 +525,7 @@ function ResourceSection({
       </DataState>
       {storageOpen && (
         <StorageConnectionDialog
+          defaultProjects={project ? [project] : projectOptions.length === 1 ? [projectOptions[0].value] : []}
           onClose={() => setStorageOpen(false)}
           onSaved={() => {
             setStorageOpen(false);

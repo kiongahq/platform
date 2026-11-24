@@ -9,8 +9,12 @@ const COLLECTION = "/api/v1/admin/storage-connections";
  * settings are read: the credential itself is never stored or returned by the
  * API, secret_ref is the name of the gateway variable that holds it, and the
  * API rejects a ca_bundle that contains a private key. */
-export function storageFormValues(connection?: RecordData | null): RecordData {
-  if (!connection) return { path_style: true };
+export function storageFormValues(
+  connection?: RecordData | null,
+  defaultProjects: string[] = [],
+): RecordData {
+  if (!connection)
+    return { path_style: true, allowed_projects: defaultProjects.join(", ") };
   return {
     name: connection.name ?? "",
     endpoint: connection.endpoint ?? "",
@@ -40,10 +44,14 @@ export function storageBody(value: RecordData): RecordData {
  */
 export function StorageConnectionDialog({
   connection,
+  defaultProjects,
   onClose,
   onSaved,
 }: {
   connection?: RecordData | null;
+  /** Project IDs granted access when creating (the gateway lists storage only
+   * for projects named here, so an empty grant is visible to nobody). */
+  defaultProjects?: string[];
   onClose: () => void;
   onSaved: (checked: RecordData) => void;
 }) {
@@ -57,7 +65,7 @@ export function StorageConnectionDialog({
       onClose={onClose}
     >
       <Form
-        initial={storageFormValues(connection)}
+        initial={storageFormValues(connection, defaultProjects)}
         fields={[
           { name: "name", label: "Name", required: true },
           {

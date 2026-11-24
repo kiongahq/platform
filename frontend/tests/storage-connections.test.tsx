@@ -93,7 +93,8 @@ const list = { "/api/v1/admin/storage-connections": { items: [stored] } };
 const writes = (calls: Call[]) => calls.filter((c) => c.method !== "GET");
 
 test("storageFormValues shows the stored reference name and never invents credentials", () => {
-  assert.deepEqual(storageFormValues(null), { path_style: true });
+  assert.deepEqual(storageFormValues(null), { path_style: true, allowed_projects: "" });
+  assert.equal(storageFormValues(null, ["p1"]).allowed_projects, "p1");
   const values = storageFormValues(stored);
   assert.equal(values.secret_ref, "env:KIONGA_STORAGE_SECRET_WAREHOUSE");
   assert.equal(values.allowed_projects, "p1, p2");
@@ -224,7 +225,7 @@ const projects = [{ id: "p1", name: "Project one" }];
 const langflowRoutes = {
   "/api/v1/langflow-workspaces": { mode: "local", items: [{ id: "local", name: "Local canvas", state: "configured" }] },
   "/api/v1/project-options": { items: projects },
-  "/api/v1/registered-storage": { items: [] },
+  "/api/v1/registered-storage": { items: [{ id: "st-5", name: "lake", bucket: "b" }] },
 };
 
 test("Langflow administrators register storage from the section and it refreshes", async () => {
@@ -235,6 +236,7 @@ test("Langflow administrators register storage from the section and it refreshes
   });
   const view = render(<LangflowView view="langflow" identity={admin} project="p1" resource="" onNavigate={() => {}} />);
   await waitFor(() => assert.ok(view.getByText("Local canvas")));
+  await waitFor(() => assert.ok(view.getByText("lake")));
   const before = calls.filter((c) => c.url === "/api/v1/registered-storage").length;
   fireEvent.click(view.getByRole("button", { name: "Register storage" }));
   const form = within(await view.findByRole("dialog", { name: "Connect object storage", hidden: true }));
@@ -246,6 +248,7 @@ test("Langflow administrators register storage from the section and it refreshes
   await waitFor(() => assert.ok(calls.some((c) => c.url.endsWith("/st-5/test"))));
   assert.equal(writes(calls)[0].url, "/api/v1/admin/storage-connections");
   assert.equal(writes(calls)[0].method, "POST");
+  assert.deepEqual(writes(calls)[0].body.allowed_projects, ["p1"]);
   await waitFor(() => assert.ok(calls.filter((c) => c.url === "/api/v1/registered-storage").length > before));
   await waitFor(() => assert.equal(view.queryByRole("dialog", { hidden: true, name: "Connect object storage" }), null));
 });
