@@ -146,7 +146,12 @@ func (c *Client) getBytes(ctx context.Context, path string, limit int64) ([]byte
 	if c.Token != "" {
 		request.Header.Set("Authorization", "Bearer "+c.Token)
 	}
-	response, err := c.HTTP.Do(request)
+	// A redirect is never followed: the configured server answers itself, and
+	// following one would send the gateway, and possibly its token, wherever
+	// the answer points. The 3xx is reported as a StatusError.
+	client := *c.HTTP
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
 	}

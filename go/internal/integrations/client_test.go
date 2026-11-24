@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -147,5 +148,40 @@ func TestMLflowModelVersionArtifact(t *testing.T) {
 	}
 	if _, err := NewMLflow("", "").ModelVersionArtifact(ctx, "a", "1", "MLmodel", 64); err == nil {
 		t.Fatal("an unconfigured client must fail")
+	}
+}
+
+// A redirect from MLflow is never followed: the gateway would otherwise fetch
+// whatever address the answer names, with its token on a same-host redirect.
+func TestMLflowModelVersionArtifactDoesNotFollowRedirects(t *testing.T) {
+	var followed atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		followed.Add(1)
+		_, _ = w.Write([]byte("internal content"))
+	}))
+	defer target.Close()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) > 1 {
+			followed.Add(1)
+			return
+		}
+		destination := target.URL + "/metadata"
+		if r.URL.Query().Get("path") == "same-host" {
+			destination = "/elsewhere"
+		}
+		http.Redirect(w, r, destination, http.StatusFound)
+	}))
+	defer server.Close()
+	for _, path := range []string{"other-host", "same-host"} {
+		calls.Store(0)
+		raw, err := NewMLflow(server.URL, "token-1").ModelVersionArtifact(context.Background(), "churn", "3", path, 64)
+		var status *StatusError
+		if !errors.As(err, &status) || status.Status != http.StatusFound || raw != nil {
+			t.Fatalf("%s: got %q, %v; want a 302 StatusError", path, raw, err)
+		}
+	}
+	if followed.Load() != 0 {
+		t.Fatal("the client followed a redirect")
 	}
 }

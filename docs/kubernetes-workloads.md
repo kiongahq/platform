@@ -150,5 +150,6 @@ example, or `signature` for a skeleton built from the signature's input names
 and types with placeholder values. Without `MLFLOW_URL` the route answers 409
 `not_configured`; a model with neither, a Hub reference or a version MLflow
 does not know answers 404 `input_example_unavailable`; an MLflow that is
-unreachable or refuses the gateway answers 502 `mlflow_unavailable`. The
+unreachable, refuses the gateway or fails on a file answers 502
+`mlflow_unavailable`, never a derived skeleton. Redirects are not followed. The
 `MLmodel` file is read up to 256 KiB and the sample up to 64 KiB.

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -42,7 +43,14 @@ func newStubMLflow(t *testing.T, files map[string]string) *stubMLflow {
 		}
 		content, found := files[query.Get("path")]
 		if !found {
-			w.WriteHeader(http.StatusInternalServerError)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		// "status:<code>" stands for MLflow failing on that one file.
+		if code, failing := strings.CutPrefix(content, "status:"); failing {
+			status, _ := strconv.Atoi(code)
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`upstream said: confidential detail`))
 			return
 		}
 		_, _ = w.Write([]byte(content))
@@ -213,6 +221,30 @@ func TestInputExampleFallsBackToTheSignatureWhenTheExampleIsUnreadable(t *testin
 			}
 			if response.Body.Len() > maxInputExampleBytes {
 				t.Fatalf("response is %d bytes", response.Body.Len())
+			}
+		})
+	}
+}
+
+// MLflow refusing or failing on the example file is an MLflow failure. It is
+// reported, never hidden behind a skeleton derived from the signature.
+func TestInputExampleReportsMLflowFailingOnTheExampleFile(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"serving example refused": {"MLmodel": mlmodelWithExample, "serving_input_example.json": "status:401", "input_example.json": `{"columns": ["a"], "data": [[1]]}`},
+		"serving example failing": {"MLmodel": mlmodelWithExample, "serving_input_example.json": "status:500", "input_example.json": `{"columns": ["a"], "data": [[1]]}`},
+		"raw example forbidden":   {"MLmodel": mlmodelWithExample, "input_example.json": "status:403"},
+		"raw example failing":     {"MLmodel": mlmodelWithExample, "input_example.json": "status:503"},
+		"raw example redirected":  {"MLmodel": mlmodelWithExample, "input_example.json": "status:302"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			newStubMLflow(t, files)
+			server := testServer()
+			response, body := getInputExample(t, server, registerDeployableModel(t, server))
+			if response.Code != http.StatusBadGateway || body.Error != "mlflow_unavailable" || body.Source != "" || body.Payload != nil {
+				t.Fatalf("unexpected answer: %d %s", response.Code, response.Body.String())
+			}
+			if strings.Contains(response.Body.String(), "confidential") {
+				t.Fatalf("the response repeats the MLflow body: %s", response.Body.String())
 			}
 		})
 	}

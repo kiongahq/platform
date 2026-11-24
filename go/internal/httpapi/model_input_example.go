@@ -163,7 +163,11 @@ func readModelInputExample(ctx context.Context, mlflow modelArtifactReader, name
 		return "", nil, unavailable("the model's MLmodel file could not be parsed")
 	}
 	if info := model.SavedInputExampleInfo; info != nil {
-		if payload, ok := savedInputExample(ctx, mlflow, name, version, info.ServingInputPath, info.ArtifactPath, info.Type, info.PandasOrient); ok {
+		payload, ok, err := savedInputExample(ctx, mlflow, name, version, info.ServingInputPath, info.ArtifactPath, info.Type, info.PandasOrient)
+		if err != nil {
+			return "", nil, err
+		}
+		if ok {
 			return inputExampleSaved, payload, nil
 		}
 	}
@@ -182,26 +186,50 @@ func safeArtifactName(name string) bool {
 	return name != "" && len(name) <= 255 && name != "." && name != ".." && !strings.ContainsAny(name, `/\?#%`+"\x00")
 }
 
+// exampleMissing reports a saved example file that is absent or larger than
+// the gateway reads: the model then has no usable saved example. Every other
+// failure is MLflow refusing or failing, which the caller must report rather
+// than hide behind a derived skeleton.
+func exampleMissing(err error) bool {
+	var status *integrations.StatusError
+	return errors.Is(err, integrations.ErrTooLarge) || (errors.As(err, &status) && status.Status == http.StatusNotFound)
+}
+
 // savedInputExample reads the model's saved example as an /invocations
 // payload. MLflow saves the example twice: serving_input_path already holds
 // the scoring request body, and artifact_path holds the raw example, which
-// is wrapped by its declared type. Any failure means no saved example, and
-// the caller falls back to the signature.
-func savedInputExample(ctx context.Context, mlflow modelArtifactReader, name, version, servingPath, artifactPath, kind, orient string) (json.RawMessage, bool) {
+// is wrapped by its declared type. ok false means the model has no usable
+// saved example and the caller falls back to the signature; an error means
+// MLflow could not be read.
+func savedInputExample(ctx context.Context, mlflow modelArtifactReader, name, version, servingPath, artifactPath, kind, orient string) (json.RawMessage, bool, error) {
 	if safeArtifactName(servingPath) {
-		if raw, err := mlflow.ModelVersionArtifact(ctx, name, version, servingPath, maxInputExampleBytes); err == nil {
+		raw, err := mlflow.ModelVersionArtifact(ctx, name, version, servingPath, maxInputExampleBytes)
+		if err != nil && !exampleMissing(err) {
+			return nil, false, err
+		}
+		if err == nil {
 			if payload, ok := compactJSONObject(raw); ok {
-				return payload, true
+				return payload, true, nil
 			}
 		}
 	}
 	if !safeArtifactName(artifactPath) {
-		return nil, false
+		return nil, false, nil
 	}
 	raw, err := mlflow.ModelVersionArtifact(ctx, name, version, artifactPath, maxInputExampleBytes)
-	if err != nil || !json.Valid(raw) {
-		return nil, false
+	if err != nil && !exampleMissing(err) {
+		return nil, false, err
 	}
+	if err != nil || !json.Valid(raw) {
+		return nil, false, nil
+	}
+	payload, ok := wrapRawExample(raw, kind, orient)
+	return payload, ok, nil
+}
+
+// wrapRawExample turns the raw saved example into a scoring request body by
+// its declared type.
+func wrapRawExample(raw []byte, kind, orient string) (json.RawMessage, bool) {
 	var wrapped any
 	switch kind {
 	case "dataframe":
