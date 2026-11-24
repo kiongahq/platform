@@ -222,6 +222,10 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		"project_ids":    principal.ProjectIDs,
 		"provisioned":    principal.Provisioned,
 		"entitlements":   accessFor(s.store, principal),
+		// defaults are deployment-configured values the console prefills.
+		// agent_image is the runtime image the gateway deploys native agents
+		// with; empty when none is configured.
+		"defaults": map[string]string{"agent_image": nativeAgentImage()},
 	})
 }
 

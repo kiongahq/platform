@@ -24,6 +24,33 @@ import {
   type OperationsProps,
   type RecordData,
 } from "./shared";
+const triggerLabels: Record<string, string> = {
+  manual: "Manual",
+  schedule: "Schedule",
+  api: "API",
+  event: "Event",
+  retry: "Retry",
+};
+/** How a run started. Runs recorded before triggers existed show "Unknown". */
+export function triggerLabel(value: unknown): string {
+  const key = typeof value === "string" ? value.trim() : "";
+  return key ? (triggerLabels[key] ?? key) : "Unknown";
+}
+/**
+ * Who started a run, as the same identity label the console uses elsewhere
+ * (email, falling back to the subject). Only the signed-in identity has a known
+ * email here, so other owners show their subject. Missing owner shows "Unknown".
+ */
+export function ownerLabel(
+  subject: unknown,
+  identity?: { subject?: string; email?: string } | null,
+): string {
+  const owner = typeof subject === "string" ? subject.trim() : "";
+  if (!owner) return "Unknown";
+  return identity?.subject === owner && identity.email
+    ? identity.email
+    : owner;
+}
 export function Pipelines({
   identity,
   project,
@@ -165,7 +192,11 @@ export function Pipelines({
             columns={[
               { key: "name", label: "Run" },
               { key: "project_id", label: "Project" },
-              { key: "trigger", label: "Trigger" },
+              {
+                key: "trigger",
+                label: "Trigger",
+                render: (row) => triggerLabel(row.trigger),
+              },
               {
                 key: "status",
                 label: "Status",
@@ -212,6 +243,8 @@ export function Pipelines({
                   value={{
                     run_id: run.data.id,
                     project: run.data.project_id,
+                    owner: ownerLabel(run.data.owner_subject, identity),
+                    trigger: triggerLabel(run.data.trigger),
                     engine_run_id: run.data.engine_run_id,
                     execution_mode: run.data.execution_mode,
                     progress: run.data.progress,

@@ -123,6 +123,12 @@ func applyResourceProfile(req *api.UpsertUserAccessRequest) error {
 	return errors.New("unknown resource profile: " + profile)
 }
 
+// UserRoles is the one list of roles a person can be given, least to most
+// privileged. The validation below reads it, and a test compares it with the
+// options the console offers (frontend/features/operations/userRoles.ts). The
+// "service" role is an in-platform machine identity and is not in this list.
+var UserRoles = []string{"user", "viewer", "engineer", "operator", "admin"}
+
 func validateAccess(subject string, req api.UpsertUserAccessRequest) (api.UserAccess, error) {
 	subject = strings.TrimSpace(subject)
 	if subject == "" {
@@ -131,7 +137,7 @@ func validateAccess(subject string, req api.UpsertUserAccessRequest) (api.UserAc
 	if req.Role == "" {
 		req.Role = "user"
 	}
-	if !slices.Contains([]string{"admin", "operator", "engineer", "viewer", "user"}, req.Role) {
+	if !slices.Contains(UserRoles, req.Role) {
 		return api.UserAccess{}, errors.New("role must be admin, operator, engineer, viewer or user")
 	}
 	req.Services = unique(req.Services)

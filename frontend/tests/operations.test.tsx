@@ -625,3 +625,68 @@ test("model deploy asks for a canary weight and shows the deployment reason", as
   await waitFor(() => assert.ok(calls.some((call) => call.method === "POST")));
   assert.deepEqual(calls.find((call) => call.method === "POST")!.body, { canary_weight: 20 });
 });
+
+function fact(dialog: HTMLElement, label: string) {
+  const term = Array.from(dialog.querySelectorAll("dt")).find(
+    (item) => item.textContent === label,
+  );
+  return term?.parentElement?.querySelector("dd")?.textContent;
+}
+const baseRun = { id: "run-1", project_id: "p1", name: "Nightly", status: "succeeded", progress: 100, steps: [] };
+function openRun(run: Record<string, unknown>) {
+  setup(
+    {
+      "/api/v1/pipelines/runs": [run],
+      "/api/v1/pipelines/runs/run-1": run,
+      "/api/v1/pipelines/definitions": { items: [] },
+      "/api/v1/project-options": { items: [{ id: "p1", name: "Project one" }] },
+      "/api/v1/pipelines/runs/run-1/logs": { items: [] },
+    },
+    "http://localhost/console/pipelines",
+  );
+  return app("pipelines", { resource: "run-1" });
+}
+
+test("run dialog shows the signed-in owner as an email and a manual trigger", async () => {
+  const view = openRun({ ...baseRun, owner_subject: "admin", trigger: "manual" });
+  const dialog = await waitFor(() => view.getByRole("dialog", { name: "Nightly" }));
+  await waitFor(() => assert.equal(fact(dialog, "owner"), "admin@example.com"));
+  assert.equal(fact(dialog, "trigger"), "Manual");
+});
+
+test("run dialog shows another owner's subject and a schedule or API trigger", async () => {
+  const scheduled = openRun({ ...baseRun, owner_subject: "svc-trainer", trigger: "schedule" });
+  let dialog = await waitFor(() => scheduled.getByRole("dialog", { name: "Nightly" }));
+  await waitFor(() => assert.equal(fact(dialog, "owner"), "svc-trainer"));
+  assert.equal(fact(dialog, "trigger"), "Schedule");
+  cleanup();
+  const api = openRun({ ...baseRun, owner_subject: "svc-trainer", trigger: "api" });
+  dialog = await waitFor(() => api.getByRole("dialog", { name: "Nightly" }));
+  await waitFor(() => assert.equal(fact(dialog, "trigger"), "API"));
+});
+
+test("run dialog shows Unknown for runs recorded without an owner or trigger", async () => {
+  const view = openRun({ ...baseRun });
+  const dialog = await waitFor(() => view.getByRole("dialog", { name: "Nightly" }));
+  await waitFor(() => assert.equal(fact(dialog, "owner"), "Unknown"));
+  assert.equal(fact(dialog, "trigger"), "Unknown");
+});
+
+test("run history labels the trigger and shows Unknown for old runs", async () => {
+  setup(
+    {
+      "/api/v1/pipelines/runs": [
+        { ...baseRun, id: "a", name: "Scheduled one", trigger: "schedule" },
+        { ...baseRun, id: "b", name: "Old one" },
+      ],
+      "/api/v1/pipelines/definitions": { items: [] },
+      "/api/v1/project-options": { items: [{ id: "p1", name: "Project one" }] },
+    },
+    "http://localhost/console/pipelines",
+  );
+  const view = app("pipelines");
+  await waitFor(() => assert.ok(view.getByText("Scheduled one")));
+  const row = (name: string) => view.getByText(name).closest("tr")!;
+  assert.ok(row("Scheduled one").textContent!.includes("Schedule"));
+  assert.ok(row("Old one").textContent!.includes("Unknown"));
+});
