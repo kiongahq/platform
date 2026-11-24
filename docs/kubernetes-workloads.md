@@ -60,10 +60,23 @@ write `status.observedGeneration`.
 
 Logs and events come from pods labelled `kionga.dev/application=<name>`;
 events are matched by object UID. `GET …/logs?follow=true` is a Server-Sent
-Events stream: each line is `id: <RFC 3339 timestamp>`, `event: log`,
+Events stream: each line is `id: <cursor>`, `event: log`,
 `data: {"pod", "container", "time", "line"}`, and the stream ends with
 `event: end` and a reason. It is bounded (20 pods, `max_seconds` default 600,
 at most 3600) and resumes from `Last-Event-ID` or `?since=`.
+
+The id is an opaque cursor (`v1.` followed by base64url, at most about 440
+characters) that records the last line delivered for each pod and container.
+Send the last id back unchanged: each pod continues exactly after its own
+last delivered line, so a line one pod delivers late is not lost and lines
+sharing a timestamp are neither repeated nor dropped. A pod the cursor does
+not know, such as one started after it was issued, is read from the time
+the stream first opened. An RFC 3339 timestamp is accepted in place of a
+cursor (every pod then skips lines at or before it), which is what clients
+written before the cursor send. A resume point that is neither is refused
+with `400 invalid_request`. A stream with no resume point starts each pod at
+the first of its last `tail` lines; when several lines share that line's
+timestamp all of them are sent, so a pod can deliver a few more than `tail`.
 
 ### Sign-in for `sso` applications
 
