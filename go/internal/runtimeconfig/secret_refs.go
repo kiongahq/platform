@@ -58,8 +58,6 @@ func PlatformSecrets(connectionType string) SecretScope {
 		scope.Exempt = "OPENFAAS_PASSWORD"
 	case "mlflow":
 		scope.Exempt = "MLFLOW_TOKEN"
-	case "kfp":
-		scope.Exempt = "KFP_TOKEN"
 	}
 	return scope
 }
