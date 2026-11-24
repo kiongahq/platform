@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -197,4 +199,44 @@ type recordingSignInState struct {
 func (r *recordingSignInState) RedeemOnce(ctx context.Context, purpose, id string, expires time.Time) error {
 	r.purpose, r.id, r.expires = purpose, id, expires
 	return r.Repository.RedeemOnce(ctx, purpose, id, expires)
+}
+
+// Values from a ticket and errors from the store are quoted in log lines, so
+// a newline in any of them cannot forge a second line.
+func TestApplicationTicketLogLinesCannotBeForged(t *testing.T) {
+	h := newSSOHarness(t)
+	var logged bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	// A replayed ticket whose subject carries a newline.
+	ticket := appToken{Kind: "ticket", ID: "id-log", App: "billing", Subject: "alice\n2026/01/01 00:00:00 forged line", Next: "/", Expires: time.Now().Add(appTicketTTL).Unix()}
+	target := "http://billing.apps.example.com/_kionga/sso?ticket=" + url.QueryEscape(signAppToken(ticket))
+	redeem(h.router, target)
+	assertTicketRefused(t, "replay", redeem(h.router, target))
+
+	// A store error whose text carries a newline.
+	failing := &newlineFailure{Repository: h.repo}
+	ticket.ID = "id-log-2"
+	redeem(ApplicationHostRouter(http.NotFoundHandler(), failing), "http://billing.apps.example.com/_kionga/sso?ticket="+url.QueryEscape(signAppToken(ticket)))
+
+	lines := strings.Split(strings.TrimRight(logged.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("two events wrote %d log lines:\n%s", len(lines), logged.String())
+	}
+	for _, line := range lines {
+		if strings.HasPrefix(line, "2026/01/01 00:00:00 forged line") || !strings.Contains(line, `"billing"`) {
+			t.Fatalf("forged or unquoted log line: %q", line)
+		}
+	}
+	if !strings.Contains(lines[0], `alice\n2026/01/01 00:00:00 forged line`) || !strings.Contains(lines[1], `refused\n2026/01/01 00:00:00 forged line`) {
+		t.Fatalf("newlines were not escaped:\n%s", logged.String())
+	}
+}
+
+type newlineFailure struct{ store.Repository }
+
+func (newlineFailure) RedeemOnce(context.Context, string, string, time.Time) error {
+	return errors.New("connection refused\n2026/01/01 00:00:00 forged line")
 }

@@ -171,7 +171,8 @@ func newAppTicketID() (string, error) {
 // replay, on this replica or another), when the ticket has no id, or when
 // the store cannot answer (errAppTicketStore): an unrecorded ticket is never
 // accepted. It runs only after the signature check, so a caller without a
-// valid ticket cannot add records.
+// valid ticket cannot add records. Ticket fields and store errors are logged
+// quoted (%q), so no value can start a log line of its own.
 func (s *Server) redeemAppTicket(r *http.Request, ticket appToken) error {
 	if ticket.ID == "" {
 		return errors.New("ticket has no id")
@@ -179,11 +180,11 @@ func (s *Server) redeemAppTicket(r *http.Request, ticket appToken) error {
 	expires := time.Unix(ticket.Expires, 0).Add(appTicketRecordMargin)
 	err := s.store.RedeemOnce(r.Context(), appTicketPurpose, ticket.App+"/"+ticket.ID, expires)
 	if errors.Is(err, store.ErrAlreadyRedeemed) {
-		log.Printf("application %s sign-in: ticket for %s was presented again and refused", ticket.App, ticket.Subject)
+		log.Printf("application %q sign-in: ticket for %q was presented again and refused", ticket.App, ticket.Subject)
 		return err
 	}
 	if err != nil {
-		log.Printf("application %s sign-in: could not record the ticket, refusing it: %v", ticket.App, err)
+		log.Printf("application %q sign-in: could not record the ticket, refusing it: %q", ticket.App, err.Error())
 		return errAppTicketStore
 	}
 	return nil
