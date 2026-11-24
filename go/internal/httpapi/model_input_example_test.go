@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/kiongahq/platform/internal/auth"
 )
@@ -247,6 +248,37 @@ func TestInputExampleReportsMLflowFailingOnTheExampleFile(t *testing.T) {
 				t.Fatalf("the response repeats the MLflow body: %s", response.Body.String())
 			}
 		})
+	}
+}
+
+// A read of the example file that outlives the route's time limit is an
+// MLflow failure too, not a reason to answer with a derived skeleton.
+func TestInputExampleReportsATimeoutOnTheExampleFile(t *testing.T) {
+	previous := inputExampleTimeout
+	inputExampleTimeout = 200 * time.Millisecond
+	defer func() { inputExampleTimeout = previous }()
+	release := make(chan struct{})
+	mlflow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("path") == "MLmodel" {
+			_, _ = w.Write([]byte(mlmodelWithExample))
+			return
+		}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer mlflow.Close()
+	defer close(release)
+	t.Setenv("MLFLOW_URL", mlflow.URL)
+	server := testServer()
+	started := time.Now()
+	response, body := getInputExample(t, server, registerDeployableModel(t, server))
+	if response.Code != http.StatusBadGateway || body.Error != "mlflow_unavailable" || !strings.Contains(body.Message, "did not answer in time") {
+		t.Fatalf("unexpected answer: %d %s", response.Code, response.Body.String())
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("the route waited %s", elapsed)
 	}
 }
 

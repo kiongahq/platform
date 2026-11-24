@@ -37,13 +37,14 @@ const (
 	// maxSkeletonCells bounds the values in a skeleton derived from a tensor shape.
 	maxSkeletonCells = 4096
 	// maxSkeletonDepth bounds nested array, object and map column types.
-	maxSkeletonDepth = 16
-	// inputExampleTimeout covers every MLflow call one request makes.
-	inputExampleTimeout = 10 * time.Second
-
+	maxSkeletonDepth      = 16
 	inputExampleSaved     = "input_example"
 	inputExampleSignature = "signature"
 )
+
+// inputExampleTimeout covers every MLflow call one request makes. A variable
+// so a test can shorten it.
+var inputExampleTimeout = 10 * time.Second
 
 func init() {
 	registerRoutes(func(s *Server, mux *http.ServeMux) {
@@ -123,7 +124,7 @@ func mlflowFailureMessage(err error) string {
 	case errors.As(err, &status) && (status.Status == http.StatusUnauthorized || status.Status == http.StatusForbidden):
 		return fmt.Sprintf("MLflow refused the gateway's credentials (HTTP %d); check MLFLOW_TOKEN on the gateway", status.Status)
 	case errors.As(err, &status):
-		return fmt.Sprintf("MLflow could not serve the model's MLmodel file (HTTP %d)", status.Status)
+		return fmt.Sprintf("MLflow could not serve the model's MLmodel file or saved input example (HTTP %d)", status.Status)
 	case errors.Is(err, context.DeadlineExceeded):
 		return "MLflow did not answer in time"
 	default:
