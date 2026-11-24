@@ -513,7 +513,12 @@ function ResourceSection({
         <ResourceTable
           rows={items(query.data).filter(
             (item) =>
-              !project || spec.storageDialog || item.project_id === project,
+              !project ||
+              (spec.storageDialog
+                ? // A storage connection is granted to several projects; the
+                  // gateway lists the ones this person can reach.
+                  (item.project_ids || []).includes(project)
+                : item.project_id === project),
           )}
           columns={[
             { key: "name", label: "Name" },

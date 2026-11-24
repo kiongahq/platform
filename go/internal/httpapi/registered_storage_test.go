@@ -1,8 +1,11 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -60,5 +63,71 @@ func TestRegisteredStorageRespectsProjectGrantAndKeepsCredentials(t *testing.T) 
 	}
 	if response := call(t, bob, "GET", "/api/v1/registered-storage/st-demo/object?key=reports/a.txt", ""); response.Code != 404 {
 		t.Fatalf("other project accessed connection: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRegisteredStorageListsOnlyProjectsTheCallerCanReach(t *testing.T) {
+	repository := store.New()
+	ids := map[string]string{}
+	for _, name := range []string{"p1", "p2", "p3"} {
+		project, err := repository.CreateProject(api.CreateProjectRequest{Name: "Project " + name}, "admin")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[name] = project.ID
+	}
+	for id, projects := range map[string][]string{
+		"st-one":    {ids["p1"]},
+		"st-two":    {ids["p2"]},
+		"st-shared": {ids["p1"], ids["p3"]},
+		"st-three":  {ids["p3"]},
+	} {
+		if _, err := store.SaveStorageConnection(repository, api.StorageConnection{
+			ID: id, Name: id, Endpoint: "https://objects.example.test", Bucket: "data", Region: "us-east-1", PathStyle: true,
+			SecretRef: "env:KIONGA_STORAGE_SECRET_TEST", AllowedProjects: projects,
+		}, true, "admin"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list := func(value auth.Principal) map[string][]string {
+		t.Helper()
+		response := call(t, domainServer(repository, value), "GET", "/api/v1/registered-storage", "")
+		if response.Code != 200 {
+			t.Fatalf("list: %d %s", response.Code, response.Body.String())
+		}
+		var page struct {
+			Items []registeredStorageSummary `json:"items"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		result := map[string][]string{}
+		for _, item := range page.Items {
+			result[item.ID] = item.ProjectIDs
+		}
+		return result
+	}
+	member := list(auth.Principal{Subject: "alice", Roles: []string{auth.RoleUser}, Provisioned: true, Services: []string{"langflow"}, ProjectIDs: []string{ids["p1"], ids["p2"]}})
+	want := map[string][]string{"st-one": {ids["p1"]}, "st-two": {ids["p2"]}, "st-shared": {ids["p1"]}}
+	if !reflect.DeepEqual(member, want) {
+		t.Fatalf("member saw %v, want %v", member, want)
+	}
+	// A person viewing p1 filters on these ids: the p2-only connection does
+	// not carry p1, and p3 is never disclosed.
+	if slices.Contains(member["st-two"], ids["p1"]) {
+		t.Fatalf("p2-only connection listed for p1: %v", member["st-two"])
+	}
+	for id, projects := range member {
+		if slices.Contains(projects, ids["p3"]) {
+			t.Fatalf("%s disclosed a project the caller is not in: %v", id, projects)
+		}
+	}
+	admin := list(auth.Principal{Subject: "admin", Roles: []string{auth.RoleAdmin}})
+	if len(admin) != 4 || !reflect.DeepEqual(admin["st-shared"], []string{ids["p1"], ids["p3"]}) {
+		t.Fatalf("administrator saw %v", admin)
+	}
+	workspace := list(auth.Principal{Subject: "alice", Roles: []string{auth.RoleUser}, Provisioned: true, Services: []string{"langflow"}, ProjectIDs: []string{ids["p1"], ids["p2"]}, WorkspaceProjectID: ids["p2"]})
+	if !reflect.DeepEqual(workspace, map[string][]string{"st-two": {ids["p2"]}}) {
+		t.Fatalf("workspace credential saw %v", workspace)
 	}
 }
