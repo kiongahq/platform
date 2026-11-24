@@ -54,7 +54,9 @@ export function useApplications() {
   return { ...state, reload };
 }
 
-/** Turns the create form's flat values into the API request. */
+const MAX_RUN_AS_USER = 2147483647;
+
+/** Turns the form's flat values into the API request. Throws on a bad user ID. */
 export function applicationRequest(value: RecordData): RecordData {
   const body: RecordData = {
     name: String(value.name || "").trim(),
@@ -68,13 +70,48 @@ export function applicationRequest(value: RecordData): RecordData {
     health_path: value.health_path,
     visibility: value.visibility,
   };
+  // Empty means the image's own user. Anything else must be a valid user:
+  // dropping a bad value would clear the user on a replace.
+  const user = String(value.run_as_user ?? "").trim();
+  if (user !== "") {
+    if (!/^[0-9]{1,10}$/.test(user) || Number(user) < 1 || Number(user) > MAX_RUN_AS_USER)
+      throw new Error(`Run as user ID must be a whole number from 1 to ${MAX_RUN_AS_USER}. Root (0) is never allowed.`);
+    body.run_as_user = Number(user);
+  }
   if (value.source_type === "git")
     body.source = { git: value.git, ref: value.ref, context_dir: value.context_dir, dockerfile: value.dockerfile };
   else body.image = value.image;
   return body;
 }
 
-function applicationFields(projects: RecordData[], sourceType: string): Field[] {
+/** Turns an application into the form's flat values, to edit it. */
+export function applicationFormValues(app: RecordData): RecordData {
+  return {
+    name: app.name,
+    project_id: app.project_id,
+    source_type: app.source ? "git" : "image",
+    image: app.image || "",
+    git: app.source?.git || "",
+    ref: app.source?.ref || "",
+    context_dir: app.source?.context_dir || "",
+    dockerfile: app.source?.dockerfile || "Dockerfile",
+    port: app.port ?? 8080,
+    health_path: app.health_path || "/",
+    run_as_user: app.run_as_user ?? "",
+    cpu: app.resources?.cpu || "",
+    memory: app.resources?.memory || "",
+    min_replicas: app.replicas?.min ?? 1,
+    max_replicas: app.replicas?.max ?? 1,
+    metric: app.scaling?.metric || "requests",
+    target: app.scaling?.target ?? 100,
+    visibility: app.visibility || "sso",
+    secret_refs: (app.secret_refs || []).join(", "),
+    env: JSON.stringify(app.env || {}, null, 2),
+  };
+}
+
+/** The create form's fields. Editing fixes the name and the project. */
+function applicationFields(projects: RecordData[], sourceType: string, editing = false): Field[] {
   const source: Field[] =
     sourceType === "git"
       ? [
@@ -84,9 +121,14 @@ function applicationFields(projects: RecordData[], sourceType: string): Field[] 
           { name: "dockerfile", label: "Dockerfile", placeholder: "Dockerfile" },
         ]
       : [{ name: "image", label: "OCI image", required: true, placeholder: "ghcr.io/acme/billing:1.4" }];
+  const identity: Field[] = editing
+    ? [{ name: "name", label: "Name", readOnly: true, help: "The name is the host name and cannot change." }]
+    : [
+        projectField(projects),
+        { name: "name", label: "Name", required: true, help: "Lowercase letters, digits and hyphens. It becomes the host name." },
+      ];
   return [
-    projectField(projects),
-    { name: "name", label: "Name", required: true, help: "Lowercase letters, digits and hyphens. It becomes the host name." },
+    ...identity,
     {
       name: "source_type",
       label: "Source",
@@ -99,6 +141,12 @@ function applicationFields(projects: RecordData[], sourceType: string): Field[] 
     ...source,
     { name: "port", label: "Container port", type: "number", min: 1, max: 65535 },
     { name: "health_path", label: "Health path", help: "Used for readiness, liveness and startup probes." },
+    {
+      name: "run_as_user",
+      label: "Run as user ID",
+      placeholder: "The image's own user",
+      help: "Optional. Needed when the image runs as root or names its user instead of numbering it: Kubernetes refuses to start such an image. Enter a non-root user ID such as 1000. Root (0) is never allowed.",
+    },
     { name: "cpu", label: "CPU per replica" },
     { name: "memory", label: "Memory per replica" },
     { name: "min_replicas", label: "Minimum replicas", type: "number", min: 0, max: 100, help: "0 scales to zero when idle (requests metric only)." },
@@ -282,6 +330,8 @@ function ApplicationDetail({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const [editing, setEditing] = useState(false),
+    [sourceType, setSourceType] = useState("image");
   const detail = useResource(`/api/v1/applications/${encode(name)}`),
     logs = useResource(`/api/v1/applications/${encode(name)}/logs?tail=200`),
     events = useResource(`/api/v1/applications/${encode(name)}/events`);
@@ -309,6 +359,15 @@ function ApplicationDetail({
           Redeploy
         </button>
         <button
+          disabled={!writable || action.busy || !detail.data || editing}
+          onClick={() => {
+            setSourceType(app.source ? "git" : "image");
+            setEditing(true);
+          }}
+        >
+          Edit
+        </button>
+        <button
           className="danger"
           disabled={!writable || action.busy}
           onClick={() => {
@@ -322,6 +381,29 @@ function ApplicationDetail({
           Delete
         </button>
       </div>
+      {editing && (
+        <section aria-labelledby="application-edit">
+          <h3 id="application-edit">Edit configuration</h3>
+          <p>Saving rolls out new pods. The address does not change.</p>
+          <Form
+            initial={applicationFormValues(app)}
+            fields={applicationFields([], sourceType, true)}
+            onChange={(value) => setSourceType(value.source_type || "image")}
+            submit="Save and roll out"
+            onSubmit={async (value) => {
+              await request(`/api/v1/applications/${encode(name)}`, { method: "PUT", body: applicationRequest(value) });
+              setEditing(false);
+              detail.reload();
+              events.reload();
+              onChanged();
+            }}
+          >
+            <button type="button" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </Form>
+        </section>
+      )}
       <State loading={detail.loading && !detail.data} error={detail.error} retry={detail.reload}>
         <section aria-labelledby="application-status">
           <h3 id="application-status">
@@ -336,6 +418,7 @@ function ApplicationDetail({
               image: app.image || (app.source ? `${app.source.git}@${app.source.ref}` : ""),
               port: app.port,
               health_path: app.health_path,
+              run_as_user: app.run_as_user ?? "Image default",
               visibility: app.visibility,
               redeployed_at: app.redeployed_at,
             }}

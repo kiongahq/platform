@@ -47,7 +47,8 @@ application has no `url`).
 The `KiongaApplication` spec carries `image` or `source {git, ref, contextDir,
 dockerfile}`, `port`, `env [{name, value}]`, `secretRefs [{name}]`,
 `resources {requests, limits}`, `replicas {min, max}`, `scaling {metric,
-target}`, `healthPath`, `visibility` and, after a redeploy, `restartedAt`.
+target}`, `healthPath`, `visibility`, optionally `runAsUser` and, after a
+redeploy, `restartedAt`.
 The gateway reads `status.phase`, `status.url`, `status.readyReplicas`,
 `status.message`, `status.conditions` and `status.lastBuild`. Status maps to
 `failed` (phase `Failed`, or `Ready=False` with reason `Failed`), `ready`
@@ -58,12 +59,43 @@ not observed the current generation the status is `pending`, so a client
 waiting after an update never reads the previous rollout. The operator must
 write `status.observedGeneration`.
 
+### Container user
+
+Application and function pods always run with `runAsNonRoot`, so the kubelet
+refuses to start an image that runs as root, and one whose `USER` is a name
+(it cannot tell whether that name is root). `run_as_user` on the application
+and function requests (`runAsUser` in the spec) sets the numeric user the
+containers run as: 1 to 2147483647. Root (0) is refused with 422 on
+applications and 400 on functions, and by the CRD schema and the operator.
+Leaving it out keeps the image's own user; a `PUT` or a function deploy
+without it clears it. Nothing else in the pod security context changes.
+
+When a pod of the current pod template is refused, the operator sets phase
+`Failed` and `Ready=False` with reason `ImageRunsAsRoot` or
+`ImageUserNotNumeric` and a message that names the image and both fixes: set
+a numeric non-root user, or rebuild the image with a numeric non-root `USER`.
+The gateway reports it as `failed` with that message. Refused pods left over
+from the previous template do not fail a rollout that fixes the problem.
+
 Logs and events come from pods labelled `kionga.dev/application=<name>`;
 events are matched by object UID. `GET …/logs?follow=true` is a Server-Sent
-Events stream: each line is `id: <RFC 3339 timestamp>`, `event: log`,
+Events stream: each line is `id: <cursor>`, `event: log`,
 `data: {"pod", "container", "time", "line"}`, and the stream ends with
 `event: end` and a reason. It is bounded (20 pods, `max_seconds` default 600,
 at most 3600) and resumes from `Last-Event-ID` or `?since=`.
+
+The id is an opaque cursor (`v1.` followed by base64url, at most about 440
+characters) that records the last line delivered for each pod and container.
+Send the last id back unchanged: each pod continues exactly after its own
+last delivered line, so a line one pod delivers late is not lost and lines
+sharing a timestamp are neither repeated nor dropped. A pod the cursor does
+not know, such as one started after it was issued, is read from the time
+the stream first opened. An RFC 3339 timestamp is accepted in place of a
+cursor (every pod then skips lines at or before it), which is what clients
+written before the cursor send. A resume point that is neither is refused
+with `400 invalid_request`. A stream with no resume point starts each pod at
+the first of its last `tail` lines; when several lines share that line's
+timestamp all of them are sent, so a pod can deliver a few more than `tail`.
 
 ### Sign-in for `sso` applications
 
@@ -78,22 +110,30 @@ operator) and records the upstream in the annotation `kionga.dev/upstream`
    console session (signed-out visitors go to sign-in and come back);
 2. checks the caller may use the application's project (applications
    service, project assignment, not suspended), then hands a signed ticket
-   (60 seconds, this application only) to `https://<name>.<base>/_kionga/sso`;
-3. sets a host-only `kionga_app_session` cookie (8 hours) and returns to the
-   path;
+   (60 seconds, this application only, single use) to
+   `https://<name>.<base>/_kionga/sso`;
+3. records the ticket as used, sets a host-only `kionga_app_session` cookie
+   (8 hours) and returns to the path;
 4. re-checks access on every request, then reverse-proxies to the upstream
    with `X-Kionga-Subject` set and its own cookie removed.
 
 Tickets and sessions are signed with a key derived from
 `KIONGA_CREDENTIAL_KEY` (or `KIONGA_INTERNAL_TOKEN`), so every gateway replica
-accepts them. Public and internal applications are never served by the
-gateway.
+accepts them. A ticket works once: the gateway records its id in its own
+store when it is redeemed (PostgreSQL, shared by every replica; in memory for
+the single-process file store) and refuses a second use on any replica with
+`401`. If the store cannot record the redemption the ticket is refused with
+`503`; opening the application again starts a new sign-in. No extra service
+or setting is needed. Public and internal applications are never served by
+the gateway.
 
 ## Functions
 
 On Kubernetes, `POST /api/v1/functions` creates a `KiongaFunction` (`image`,
 `port` 8080, `env`, `resources`, `visibility` (default `internal`, or `sso` or `public`), `replicas {min: 0, max: 5}` and `scaling
-{metric: requests, target: 100}` by default). Compose keeps faasd.
+{metric: requests, target: 100}` by default, and `runAsUser` when the request
+carries `run_as_user`; see [Container user](#container-user)). Compose keeps
+faasd, which ignores `run_as_user`.
 
 Invocations of a function scaled on requests go to the KEDA HTTP add-on
 interceptor with the function's host in the `Host` header: `status.host`

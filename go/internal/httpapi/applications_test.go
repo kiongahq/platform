@@ -145,6 +145,55 @@ func TestApplicationLifecycleOnKubernetes(t *testing.T) {
 	}
 }
 
+func TestApplicationRunAsUserIsDispatchedRecordedAndReplaced(t *testing.T) {
+	harness := newKubeHarness(t)
+	projectID := createTestProject(t, harness.server)
+	user := func() (int64, bool) {
+		value, found, _ := unstructured.NestedInt64(harness.object(t, applicationsGVR, "billing").Object, "spec", "runAsUser")
+		return value, found
+	}
+	created := harness.do(t, http.MethodPost, "/api/v1/applications", createAppBody(projectID, `"run_as_user":1000`))
+	if created.Code != http.StatusCreated || jsonBody(t, created)["run_as_user"] != float64(1000) {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	if value, found := user(); !found || value != 1000 {
+		t.Fatalf("spec.runAsUser must be 1000: %d %v", value, found)
+	}
+	if detail := harness.do(t, http.MethodGet, "/api/v1/applications/billing", ""); jsonBody(t, detail)["run_as_user"] != float64(1000) {
+		t.Fatalf("the user must be recorded: %s", detail.Body.String())
+	}
+	// A redeploy rebuilds the spec from the record and must keep the user.
+	if redeployed := harness.do(t, http.MethodPost, "/api/v1/applications/billing/redeploy", ""); redeployed.Code != http.StatusAccepted {
+		t.Fatalf("redeploy: %d %s", redeployed.Code, redeployed.Body.String())
+	}
+	if value, found := user(); !found || value != 1000 {
+		t.Fatalf("redeploy dropped spec.runAsUser: %d %v", value, found)
+	}
+	// PUT replaces the configuration: a request without the user clears it.
+	replaced := harness.do(t, http.MethodPut, "/api/v1/applications/billing", createAppBody(projectID, ""))
+	if _, present := jsonBody(t, replaced)["run_as_user"]; replaced.Code != http.StatusAccepted || present {
+		t.Fatalf("replace: %d %s", replaced.Code, replaced.Body.String())
+	}
+	if _, found := user(); found {
+		t.Fatal("a replace without run_as_user must clear spec.runAsUser")
+	}
+}
+
+func TestApplicationStatusReportsAnImageThatRunsAsRoot(t *testing.T) {
+	harness := newKubeHarness(t)
+	projectID := createTestProject(t, harness.server)
+	if created := harness.do(t, http.MethodPost, "/api/v1/applications", createAppBody(projectID, "")); created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	message := "The pods cannot start: image ghcr.io/acme/billing:1.4 runs as root, which is not allowed. Set a numeric non-root user (runAsUser, for example 1000) or rebuild the image with a numeric non-root USER."
+	harness.setStatus(t, applicationsGVR, "billing", map[string]any{"phase": "Failed", "message": message, "conditions": []any{readyCondition("Ready", "False", "ImageRunsAsRoot", message)}})
+	detail := jsonBody(t, harness.do(t, http.MethodGet, "/api/v1/applications/billing", ""))
+	conditions, _ := detail["conditions"].([]any)
+	if detail["status"] != "failed" || detail["message"] != message || len(conditions) != 1 || conditions[0].(map[string]any)["reason"] != "ImageRunsAsRoot" {
+		t.Fatalf("the cause and the fix must reach the caller: %v", detail)
+	}
+}
+
 func TestApplicationGitSourceIsDispatched(t *testing.T) {
 	harness := newKubeHarness(t)
 	projectID := createTestProject(t, harness.server)
@@ -180,6 +229,8 @@ func TestApplicationValidation(t *testing.T) {
 		{"cpu cannot scale to zero", strings.Replace(createAppBody(projectID, ""), `"metric":"requests","target":50`, `"metric":"cpu","target":70`, 1), "replicas.min"},
 		{"reserved env prefix", strings.Replace(createAppBody(projectID, ""), `"LOG_LEVEL"`, `"KIONGA_INTERNAL_TOKEN"`, 1), "env"},
 		{"unknown visibility", strings.Replace(createAppBody(projectID, ""), `"visibility":"public"`, `"visibility":"private"`, 1), "visibility"},
+		{"root user", createAppBody(projectID, `"run_as_user":0`), "run_as_user"},
+		{"user above the range", createAppBody(projectID, `"run_as_user":2147483648`), "run_as_user"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := harness.do(t, http.MethodPost, "/api/v1/applications", tc.body)
@@ -252,6 +303,8 @@ func TestApplicationStatusMapping(t *testing.T) {
 		{"operator degraded", object(map[string]any{"phase": "Degraded", "readyReplicas": int64(1), "conditions": []any{readyCondition("Ready", "False", "WorkloadUnavailable", "1/3 available, 2 required")}}), "pending", "degraded: 1/3 available"},
 		{"operator ready", object(map[string]any{"phase": "Ready", "readyReplicas": int64(2), "conditions": []any{readyCondition("Ready", "True", "WorkloadAvailable", "")}}), "ready", ""},
 		{"operator scaled to zero", object(map[string]any{"phase": "Ready", "conditions": []any{readyCondition("Ready", "True", "ScaledToZero", "the next request starts one")}}), "scaled-to-zero", "next request"},
+		{"image runs as root", object(map[string]any{"phase": "Failed", "conditions": []any{readyCondition("Ready", "False", "ImageRunsAsRoot", "The pods cannot start: image billing:1 runs as root, which is not allowed. Set a numeric non-root user (runAsUser, for example 1000) or rebuild the image with a numeric non-root USER.")}}), "failed", "runs as root, which is not allowed. Set a numeric non-root user"},
+		{"image names its user", object(map[string]any{"phase": "Failed", "conditions": []any{readyCondition("Ready", "False", "ImageUserNotNumeric", "The pods cannot start: image billing:1 names its user instead of numbering it")}}), "failed", "names its user"},
 		{"operator failed", object(map[string]any{"phase": "Failed", "conditions": []any{readyCondition("Ready", "False", "ProgressDeadlineExceeded", "did not roll out")}}), "failed", "did not roll out"},
 		{"previous rollout still reported", withGeneration(object(map[string]any{"observedGeneration": int64(1), "readyReplicas": int64(2), "conditions": []any{readyCondition("Ready", "True", "", "")}}), 2), "pending", "generation 2"},
 		{"previous failure still reported", withGeneration(object(map[string]any{"observedGeneration": int64(1), "phase": "Failed", "message": "old"}), 2), "pending", "generation 2"},
