@@ -166,6 +166,9 @@ func TestOtherWaitingPodsAreNotReportedAsRunningAsRoot(t *testing.T) {
 	reconcileOnce(t, reconciler, "billing")
 	podOf(t, c, "billing", "billing-aaaa", "CreateContainerConfigError", `secret "billing-db" not found`)
 	podOf(t, c, "billing", "billing-bbbb", "ImagePullBackOff", `Back-off pulling image "billing:1"`)
+	// The kubelet's words in another wait are not a refusal: an image name may contain them.
+	podOf(t, c, "billing", "billing-dddd", "ImagePullBackOff", `Back-off pulling image "registry/container has runAsNonRoot and image will run as root:1"`)
+	podOf(t, c, "billing", "billing-eeee", "CreateContainerConfigError", `configmap "runAsNonRoot" not found`)
 	// Another workload's refused pod is not this workload's problem.
 	other := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "ledger-cccc", Namespace: testNamespace, Labels: map[string]string{"kionga.dev/workload": "ledger", "kionga.dev/component": "application"}},
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "billing:1"}}}}
@@ -190,6 +193,7 @@ func TestNonRootRefusal(t *testing.T) {
 		{"billing:1", kubeletNonNumericUser, ReasonImageUserNotNumeric},
 		{"", "Error: " + kubeletRunsAsRoot, ReasonImageRunsAsRoot},
 		{"billing:1", `secret "billing-db" not found`, ""},
+		{"billing:1", `configmap "runAsNonRoot" not found`, ""},
 		{"billing:1", "", ""},
 	} {
 		reason, message := nonRootRefusal(test.image, test.waiting)

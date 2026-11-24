@@ -54,7 +54,9 @@ export function useApplications() {
   return { ...state, reload };
 }
 
-/** Turns the create form's flat values into the API request. */
+const MAX_RUN_AS_USER = 2147483647;
+
+/** Turns the form's flat values into the API request. Throws on a bad user ID. */
 export function applicationRequest(value: RecordData): RecordData {
   const body: RecordData = {
     name: String(value.name || "").trim(),
@@ -68,9 +70,14 @@ export function applicationRequest(value: RecordData): RecordData {
     health_path: value.health_path,
     visibility: value.visibility,
   };
-  // Empty means the image's own user; the API refuses 0 (root).
-  const user = Number(value.run_as_user || 0);
-  if (user > 0) body.run_as_user = user;
+  // Empty means the image's own user. Anything else must be a valid user:
+  // dropping a bad value would clear the user on a replace.
+  const user = String(value.run_as_user ?? "").trim();
+  if (user !== "") {
+    if (!/^[0-9]{1,10}$/.test(user) || Number(user) < 1 || Number(user) > MAX_RUN_AS_USER)
+      throw new Error(`Run as user ID must be a whole number from 1 to ${MAX_RUN_AS_USER}. Root (0) is never allowed.`);
+    body.run_as_user = Number(user);
+  }
   if (value.source_type === "git")
     body.source = { git: value.git, ref: value.ref, context_dir: value.context_dir, dockerfile: value.dockerfile };
   else body.image = value.image;
@@ -137,9 +144,6 @@ function applicationFields(projects: RecordData[], sourceType: string, editing =
     {
       name: "run_as_user",
       label: "Run as user ID",
-      type: "number",
-      min: 1,
-      max: 2147483647,
       placeholder: "The image's own user",
       help: "Optional. Needed when the image runs as root or names its user instead of numbering it: Kubernetes refuses to start such an image. Enter a non-root user ID such as 1000. Root (0) is never allowed.",
     },

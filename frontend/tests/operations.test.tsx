@@ -606,7 +606,6 @@ test("application create sends the numeric user only when one is entered", async
   fireEvent.click(view.getByRole("button", { name: "Deploy application" }));
   const user = view.getByLabelText(/^Run as user ID/) as HTMLInputElement;
   assert.equal(user.value, "");
-  assert.equal(user.min, "1");
   assert.ok(view.getByText(/Needed when the image runs as root or names its user/));
   fireEvent.change(view.getByLabelText(/^Name/), { target: { value: "legacy" } });
   fireEvent.change(view.getByLabelText(/^OCI image/), { target: { value: "ghcr.io/acme/legacy:1" } });
@@ -650,6 +649,32 @@ test("application edit loads the configuration and replaces it with the numeric 
     health_path: "/healthz", visibility: "public", run_as_user: 1000, image: "ghcr.io/acme/billing:1.4",
   });
   await waitFor(() => assert.equal(view.queryByRole("button", { name: "Save and roll out" }), null));
+});
+
+test("application form refuses root and other bad user IDs instead of clearing the user", async () => {
+  for (const bad of ["0", "-5", "1.5", "abc", "2147483648"])
+    assert.throws(() => applicationRequest({ name: "a", run_as_user: bad }), /whole number from 1 to 2147483647/, bad);
+  assert.equal("run_as_user" in applicationRequest({ name: "a", run_as_user: "" }), false);
+  assert.equal("run_as_user" in applicationRequest({ name: "a" }), false);
+  assert.equal(applicationRequest({ name: "a", run_as_user: " 1000 " }).run_as_user, 1000);
+  assert.equal(applicationRequest({ name: "a", run_as_user: 2147483647 }).run_as_user, 2147483647);
+
+  const billing = { name: "billing", project_id: "p1", status: "ready", image: "ghcr.io/acme/billing:1.4", port: 3000, run_as_user: 1000, replicas: { min: 1, max: 1 }, scaling: { metric: "requests", target: 100 } };
+  setup({
+    "/api/v1/applications": { configured: true, items: [billing] },
+    "/api/v1/project-options": { items: [] },
+    "/api/v1/applications/billing": billing,
+    "/api/v1/applications/billing/logs?tail=200": { items: [] },
+    "/api/v1/applications/billing/events": { items: [] },
+  }, "http://localhost/console/applications?resource=billing");
+  const view = app("applications", { identity: appWriter, resource: "billing" });
+  await waitFor(() => assert.equal((view.getByRole("button", { name: "Edit" }) as HTMLButtonElement).disabled, false));
+  fireEvent.click(view.getByRole("button", { name: "Edit" }));
+  assert.equal((view.getByLabelText(/^Run as user ID/) as HTMLInputElement).value, "1000");
+  fireEvent.change(view.getByLabelText(/^Run as user ID/), { target: { value: "0" } });
+  fireEvent.click(view.getByRole("button", { name: "Save and roll out" }));
+  await waitFor(() => view.getByText(/Root \(0\) is never allowed\.$/));
+  assert.equal(calls.some((call) => call.method === "PUT"), false);
 });
 
 test("application form values round-trip a git source and an existing user", () => {

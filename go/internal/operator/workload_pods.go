@@ -29,7 +29,10 @@ func (r *WorkloadReconciler) refusedPodStart(ctx context.Context, namespace stri
 			continue
 		}
 		for _, container := range pod.Status.ContainerStatuses {
-			if container.State.Waiting == nil {
+			// The refusal comes from building the container's configuration.
+			// The same words in another wait, such as a failed pull of an
+			// image whose name contains them, are not a refusal.
+			if container.State.Waiting == nil || container.State.Waiting.Reason != waitingConfigError {
 				continue
 			}
 			if reason, message := nonRootRefusal(containerImage(pod, container.Name), container.State.Waiting.Message); reason != "" {
@@ -80,6 +83,16 @@ func fromTemplate(pod *corev1.Pod, template *corev1.PodTemplateSpec) bool {
 	return true
 }
 
+// waitingConfigError is the waiting reason the kubelet gives a container
+// whose configuration it could not build.
+const waitingConfigError = "CreateContainerConfigError"
+
+// The kubelet's two refusals, as it words them.
+const (
+	kubeletRefusesRoot      = "container has runAsNonRoot and image will run as root"
+	kubeletRefusesNamedUser = "container has runAsNonRoot and image has non-numeric user"
+)
+
 // nonRootRefusal recognises the kubelet's two runAsNonRoot refusals in a
 // container's waiting message (reason CreateContainerConfigError):
 //
@@ -89,16 +102,16 @@ func fromTemplate(pod *corev1.Pod, template *corev1.PodTemplateSpec) bool {
 // and returns the condition reason and a message with the fix. An unrelated
 // message returns "".
 func nonRootRefusal(image, waiting string) (reason, message string) {
-	if !strings.Contains(waiting, "runAsNonRoot") {
-		return "", ""
-	}
 	subject := "the image"
 	if image != "" {
 		subject = "image " + image
 	}
 	const fix = "Set a numeric non-root user (runAsUser, for example 1000) or rebuild the image with a numeric non-root USER."
-	if strings.Contains(waiting, "non-numeric user") {
+	switch {
+	case strings.Contains(waiting, kubeletRefusesNamedUser):
 		return ReasonImageUserNotNumeric, "The pods cannot start: " + subject + " names its user instead of numbering it, so Kubernetes cannot verify it is not root. " + fix
+	case strings.Contains(waiting, kubeletRefusesRoot):
+		return ReasonImageRunsAsRoot, "The pods cannot start: " + subject + " runs as root, which is not allowed. " + fix
 	}
-	return ReasonImageRunsAsRoot, "The pods cannot start: " + subject + " runs as root, which is not allowed. " + fix
+	return "", ""
 }
