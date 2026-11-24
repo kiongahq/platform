@@ -56,18 +56,21 @@ type WorkloadCondition struct {
 }
 
 type Application struct {
-	Name          string              `json:"name"`
-	ProjectID     string              `json:"project_id"`
-	Image         string              `json:"image,omitempty"`
-	Source        *ApplicationSource  `json:"source,omitempty"`
-	Port          int                 `json:"port"`
-	Env           map[string]string   `json:"env,omitempty"`
-	SecretRefs    []string            `json:"secret_refs,omitempty"`
-	Resources     WorkloadResources   `json:"resources"`
-	Replicas      ReplicaRange        `json:"replicas"`
-	Scaling       WorkloadScaling     `json:"scaling"`
-	HealthPath    string              `json:"health_path"`
-	Visibility    string              `json:"visibility"`
+	Name       string             `json:"name"`
+	ProjectID  string             `json:"project_id"`
+	Image      string             `json:"image,omitempty"`
+	Source     *ApplicationSource `json:"source,omitempty"`
+	Port       int                `json:"port"`
+	Env        map[string]string  `json:"env,omitempty"`
+	SecretRefs []string           `json:"secret_refs,omitempty"`
+	Resources  WorkloadResources  `json:"resources"`
+	Replicas   ReplicaRange       `json:"replicas"`
+	Scaling    WorkloadScaling    `json:"scaling"`
+	HealthPath string             `json:"health_path"`
+	Visibility string             `json:"visibility"`
+	// RunAsUser is the numeric non-root user the containers run as; absent
+	// keeps the image's own user.
+	RunAsUser     *int64              `json:"run_as_user,omitempty"`
 	OwnerSubject  string              `json:"owner_subject,omitempty"`
 	URL           string              `json:"url"`
 	Status        string              `json:"status"`
@@ -101,6 +104,10 @@ type ApplicationRequest struct {
 	Scaling    *WorkloadScaling   `json:"scaling,omitempty"`
 	HealthPath string             `json:"health_path,omitempty"`
 	Visibility string             `json:"visibility,omitempty"`
+	// RunAsUser is needed when the image runs as root or names its user
+	// instead of numbering it: Kubernetes refuses to start such an image.
+	// It is a user id from 1 to 2147483647; root (0) is refused.
+	RunAsUser *int64 `json:"run_as_user,omitempty"`
 }
 
 // FieldIssue names one invalid request field.
@@ -169,7 +176,23 @@ const (
 	// MaxWorkloadNameLength matches the operator: room for its -build-<hash>,
 	// -route and -sso suffixes inside a 63-character DNS label.
 	MaxWorkloadNameLength = 45
+	// MaxRunAsUser is the largest user id run_as_user accepts.
+	MaxRunAsUser = int64(2147483647)
 )
+
+// ValidateRunAsUser checks an optional numeric container user. Root is
+// refused: applications and functions always run with runAsNonRoot.
+func ValidateRunAsUser(user *int64) error {
+	switch {
+	case user == nil:
+		return nil
+	case *user == 0:
+		return errors.New("cannot be 0: workloads never run as root; use a non-root user id such as 1000")
+	case *user < 0 || *user > MaxRunAsUser:
+		return fmt.Errorf("must be a user id between 1 and %d", MaxRunAsUser)
+	}
+	return nil
+}
 
 // NormalizeScaling fills defaults and validates metric and target. An empty
 // metric means requests.
@@ -329,6 +352,9 @@ func NormalizeApplicationRequest(req *ApplicationRequest) error {
 	}
 	if !ValidVisibility(req.Visibility) {
 		add("visibility", "must be public, sso or internal")
+	}
+	if err := ValidateRunAsUser(req.RunAsUser); err != nil {
+		add("run_as_user", err.Error())
 	}
 	if len(issues) > 0 {
 		return issues

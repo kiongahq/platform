@@ -94,6 +94,9 @@ func functionSpec(req api.DeployFunctionRequest) map[string]any {
 		visibility = "internal"
 	}
 	spec["visibility"] = visibility
+	if req.RunAsUser != nil {
+		spec["runAsUser"] = *req.RunAsUser
+	}
 	if len(req.Annotations) > 0 {
 		annotations := map[string]any{}
 		for key, value := range req.Annotations {

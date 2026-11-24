@@ -66,6 +66,9 @@ func ValidateFunctionRequest(req api.DeployFunctionRequest) error {
 	if req.Visibility != "" && !api.ValidVisibility(req.Visibility) {
 		return errors.New("visibility must be internal, sso or public")
 	}
+	if err := api.ValidateRunAsUser(req.RunAsUser); err != nil {
+		return errors.New("run_as_user " + err.Error())
+	}
 	mode := req.Annotations["io.kionga.invocation"]
 	if mode != "" && mode != "sync" && mode != "async" {
 		return errors.New("io.kionga.invocation must be sync or async")
@@ -418,12 +421,12 @@ func (s *Store) UpsertFunction(req api.DeployFunctionRequest, owner, actor strin
 			if fn.ProjectID != req.ProjectID {
 				return api.Function{}, ErrConflict
 			}
-			fn.Image, fn.EnvVars, fn.Labels, fn.Annotations, fn.CPU, fn.Memory, fn.Status, fn.UpdatedAt, fn.ReplicaRange, fn.Scaling, fn.Visibility = req.Image, req.EnvVars, req.Labels, req.Annotations, req.CPU, req.Memory, "deployed", now, req.Replicas, req.Scaling, req.Visibility
+			fn.Image, fn.EnvVars, fn.Labels, fn.Annotations, fn.CPU, fn.Memory, fn.Status, fn.UpdatedAt, fn.ReplicaRange, fn.Scaling, fn.Visibility, fn.RunAsUser = req.Image, req.EnvVars, req.Labels, req.Annotations, req.CPU, req.Memory, "deployed", now, req.Replicas, req.Scaling, req.Visibility, req.RunAsUser
 			s.record("function.updated", "function", fn.Name, actor, nil)
 			return *fn, s.persist()
 		}
 	}
-	fn := api.Function{Name: req.Name, ProjectID: req.ProjectID, Image: req.Image, EnvVars: req.EnvVars, Labels: req.Labels, Annotations: req.Annotations, CPU: req.CPU, Memory: req.Memory, ReplicaRange: req.Replicas, Scaling: req.Scaling, Visibility: req.Visibility, OwnerSubject: owner, Status: "deployed", CreatedAt: now, UpdatedAt: now}
+	fn := api.Function{Name: req.Name, ProjectID: req.ProjectID, Image: req.Image, EnvVars: req.EnvVars, Labels: req.Labels, Annotations: req.Annotations, CPU: req.CPU, Memory: req.Memory, ReplicaRange: req.Replicas, Scaling: req.Scaling, Visibility: req.Visibility, RunAsUser: req.RunAsUser, OwnerSubject: owner, Status: "deployed", CreatedAt: now, UpdatedAt: now}
 	s.data.Functions = append([]api.Function{fn}, s.data.Functions...)
 	s.record("function.deployed", "function", fn.Name, actor, nil)
 	return fn, s.persist()
@@ -517,11 +520,11 @@ func (p *Postgres) UpsertFunction(req api.DeployFunctionRequest, owner, actor st
 			if fn.ProjectID != req.ProjectID {
 				return api.Function{}, ErrConflict
 			}
-			fn.Image, fn.EnvVars, fn.Labels, fn.Annotations, fn.CPU, fn.Memory, fn.Status, fn.UpdatedAt, fn.ReplicaRange, fn.Scaling, fn.Visibility = req.Image, req.EnvVars, req.Labels, req.Annotations, req.CPU, req.Memory, "deployed", now, req.Replicas, req.Scaling, req.Visibility
+			fn.Image, fn.EnvVars, fn.Labels, fn.Annotations, fn.CPU, fn.Memory, fn.Status, fn.UpdatedAt, fn.ReplicaRange, fn.Scaling, fn.Visibility, fn.RunAsUser = req.Image, req.EnvVars, req.Labels, req.Annotations, req.CPU, req.Memory, "deployed", now, req.Replicas, req.Scaling, req.Visibility, req.RunAsUser
 			return fn, p.write("function", fn.Name, fn, "function.updated", actor, nil)
 		}
 	}
-	fn := api.Function{Name: req.Name, ProjectID: req.ProjectID, Image: req.Image, EnvVars: req.EnvVars, Labels: req.Labels, Annotations: req.Annotations, CPU: req.CPU, Memory: req.Memory, ReplicaRange: req.Replicas, Scaling: req.Scaling, Visibility: req.Visibility, OwnerSubject: owner, Status: "deployed", CreatedAt: now, UpdatedAt: now}
+	fn := api.Function{Name: req.Name, ProjectID: req.ProjectID, Image: req.Image, EnvVars: req.EnvVars, Labels: req.Labels, Annotations: req.Annotations, CPU: req.CPU, Memory: req.Memory, ReplicaRange: req.Replicas, Scaling: req.Scaling, Visibility: req.Visibility, RunAsUser: req.RunAsUser, OwnerSubject: owner, Status: "deployed", CreatedAt: now, UpdatedAt: now}
 	return fn, p.write("function", fn.Name, fn, "function.deployed", actor, nil)
 }
 func (p *Postgres) DeleteFunction(name, actor string) error {
