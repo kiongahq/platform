@@ -186,7 +186,7 @@ func main() {
 			}
 			password = "kionga-local"
 		}
-		local = auth.NewLocalSessionManager(username, password, httpapi.LocalAccountStore{Docs: repository})
+		local = auth.NewLocalSessionManager(username, password, repository, httpapi.LocalAccountStore{Docs: repository})
 	}
 	providers, err := auth.ParseProviders(os.Getenv("KIONGA_SSO_PROVIDERS"))
 	if err != nil {

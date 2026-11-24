@@ -1,7 +1,11 @@
 package auth
 
 import (
+	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,9 +25,28 @@ type LocalAccounts interface {
 	LocalAccountActive(subject string) bool
 }
 
-type localSession struct {
-	subject string
-	expires time.Time
+// LocalSessionStore holds local sessions where every gateway replica can see
+// them: the gateway's own store (PostgreSQL when there is more than one
+// replica). A session issued by one replica is then valid on all of them,
+// and signing out on one revokes it on all of them.
+//
+// Sessions are stored under the SHA-256 of the cookie's random token, never
+// the token, so reading the store does not yield a usable session. Any error
+// is treated as "not signed in": an unreachable store never lets a request
+// through.
+type LocalSessionStore interface {
+	CreateLocalSession(ctx context.Context, tokenHash, subject string, expires time.Time) error
+	// LocalSession returns found=false for an unknown or revoked session.
+	LocalSession(ctx context.Context, tokenHash string) (subject string, expires time.Time, found bool, err error)
+	RevokeLocalSession(ctx context.Context, tokenHash string) error
+}
+
+const localSessionTTL = 8 * time.Hour
+
+// localSessionKey is the store key for a session cookie value.
+func localSessionKey(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // Failed sign-ins are throttled per account, not per client address: behind
@@ -46,14 +69,19 @@ type LocalSessionManager struct {
 	username string
 	password string
 	accounts LocalAccounts
+	sessions LocalSessionStore
 	mu       sync.RWMutex
-	sessions map[string]localSession
 	failures map[string]loginFailures
 	now      func() time.Time
 }
 
-func NewLocalSessionManager(username, password string, accounts ...LocalAccounts) *LocalSessionManager {
-	manager := &LocalSessionManager{username: username, password: password, sessions: map[string]localSession{},
+// NewLocalSessionManager keeps sessions in the given store, which must be the
+// one every gateway replica shares.
+func NewLocalSessionManager(username, password string, sessions LocalSessionStore, accounts ...LocalAccounts) *LocalSessionManager {
+	if sessions == nil {
+		panic("auth: local sessions need a session store")
+	}
+	manager := &LocalSessionManager{username: username, password: password, sessions: sessions,
 		failures: map[string]loginFailures{}, now: time.Now}
 	if len(accounts) > 0 {
 		manager.accounts = accounts[0]
@@ -103,8 +131,8 @@ func (s *LocalSessionManager) Handler(next http.Handler) http.Handler {
 				return
 			}
 		}
-		if subject, ok := s.authenticated(r); ok {
-			if _, ok := PrincipalFrom(r.Context()); !ok {
+		if _, ok := PrincipalFrom(r.Context()); !ok {
+			if subject, ok := s.authenticated(r); ok {
 				r = r.WithContext(WithPrincipal(r.Context(), s.principalFor(subject)))
 			}
 		}
@@ -144,14 +172,18 @@ func (s *LocalSessionManager) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.now()
-	expires := now.Add(8 * time.Hour)
+	expires := now.Add(localSessionTTL)
+	if err := s.sessions.CreateLocalSession(r.Context(), localSessionKey(token), username, expires); err != nil {
+		log.Printf("local sign-in: could not store the session: %v", err)
+		deny(w, http.StatusServiceUnavailable, "could not create session")
+		return
+	}
 	s.mu.Lock()
 	delete(s.failures, username)
 	s.pruneLocked(now)
-	s.sessions[token] = localSession{subject: username, expires: expires}
 	s.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure follows requestIsHTTPS(r)
-		Name: localSessionCookie, Value: token, Path: "/", Expires: expires, MaxAge: int((8 * time.Hour).Seconds()),
+		Name: localSessionCookie, Value: token, Path: "/", Expires: expires, MaxAge: int(localSessionTTL.Seconds()),
 		HttpOnly: true, Secure: requestIsHTTPS(r), SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(w, r, safeReturnTo(r.FormValue("return_to")), http.StatusFound) // #nosec G710 -- target is safeReturnTo-sanitized
@@ -184,14 +216,9 @@ func (s *LocalSessionManager) recordFailure(username string) {
 	s.pruneLocked(now)
 }
 
-// pruneLocked drops expired sessions and stale failure counters so neither
-// map grows without bound. The caller holds s.mu.
+// pruneLocked drops stale failure counters so the map does not grow without
+// bound. The caller holds s.mu. Expired sessions are purged by the store.
 func (s *LocalSessionManager) pruneLocked(now time.Time) {
-	for token, session := range s.sessions {
-		if now.After(session.expires) {
-			delete(s.sessions, token)
-		}
-	}
 	for name, failed := range s.failures {
 		if now.Sub(failed.last) > loginFailureTTL {
 			delete(s.failures, name)
@@ -206,40 +233,53 @@ func requestIsHTTPS(r *http.Request) bool {
 }
 
 func (s *LocalSessionManager) logout(w http.ResponseWriter, r *http.Request) {
-	s.endSession(w, r)
+	if err := s.endSession(w, r); err != nil {
+		deny(w, http.StatusServiceUnavailable, "could not end the session")
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-// endSession forgets the caller's local session and clears its cookie.
-func (s *LocalSessionManager) endSession(w http.ResponseWriter, r *http.Request) {
-	if cookie, err := r.Cookie(localSessionCookie); err == nil {
-		s.mu.Lock()
-		delete(s.sessions, cookie.Value)
-		s.mu.Unlock()
+// endSession revokes the caller's local session for every replica and clears
+// its cookie. The cookie is kept when revocation fails, so sign-out can be
+// retried instead of reporting success while the session is still live.
+func (s *LocalSessionManager) endSession(w http.ResponseWriter, r *http.Request) error {
+	if cookie, err := r.Cookie(localSessionCookie); err == nil && cookie.Value != "" {
+		if err := s.sessions.RevokeLocalSession(r.Context(), localSessionKey(cookie.Value)); err != nil {
+			log.Printf("local sign-out: could not revoke the session: %v", err)
+			return err
+		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: localSessionCookie, Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(1, 0), HttpOnly: true, Secure: requestIsHTTPS(r), SameSite: http.SameSiteLaxMode}) // #nosec G124 -- Secure follows requestIsHTTPS(r)
+	return nil
 }
 
-// authenticated returns the session subject. A provisioned account whose
-// password login was removed loses its sessions on the next request.
+// authenticated returns the session subject. The session is looked up in the
+// shared store on every request, so a sign-out on any replica applies at
+// once. A provisioned account whose password login was removed loses its
+// sessions on the next request. A store that cannot answer means not signed
+// in.
 func (s *LocalSessionManager) authenticated(r *http.Request) (string, bool) {
 	cookie, err := r.Cookie(localSessionCookie)
+	if err != nil || cookie.Value == "" {
+		return "", false
+	}
+	key := localSessionKey(cookie.Value)
+	subject, expires, found, err := s.sessions.LocalSession(r.Context(), key)
 	if err != nil {
+		log.Printf("local session check failed, treating the request as signed out: %v", err)
 		return "", false
 	}
-	s.mu.RLock()
-	session, ok := s.sessions[cookie.Value]
-	s.mu.RUnlock()
-	if !ok || time.Now().After(session.expires) {
+	if !found || subject == "" || s.now().After(expires) {
 		return "", false
 	}
-	if session.subject != s.username && (s.accounts == nil || !s.accounts.LocalAccountActive(session.subject)) {
-		s.mu.Lock()
-		delete(s.sessions, cookie.Value)
-		s.mu.Unlock()
+	if subject != s.username && (s.accounts == nil || !s.accounts.LocalAccountActive(subject)) {
+		if err := s.sessions.RevokeLocalSession(r.Context(), key); err != nil {
+			log.Printf("local session of a removed account could not be revoked: %v", err)
+		}
 		return "", false
 	}
-	return session.subject, true
+	return subject, true
 }
 
 func localConsolePath(path string) bool {
