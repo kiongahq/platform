@@ -323,3 +323,30 @@ func TestRefusedSecretRefsListsRecordsWithoutValues(t *testing.T) {
 		t.Errorf("wrong entries:\n%s", joined)
 	}
 }
+
+// A kfp connection saved before the Kubeflow Pipelines path was removed stays
+// stored and listed. Its env:KFP_TOKEN reference stops resolving and is reported,
+// the same as any other refused reference; nothing fails on read.
+func TestStoredKubeflowConnectionStaysReadable(t *testing.T) {
+	t.Setenv("KFP_TOKEN", "old-kfp-token")
+	repository := store.New()
+	if _, err := repository.CreateConnection(api.CreateConnectionRequest{Name: "old-kfp", Type: "kfp", Endpoint: "http://kfp.invalid", SecretRef: "env:KFP_TOKEN"}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.CreateConnection(api.CreateConnectionRequest{Name: "open-kfp", Type: "kfp", Endpoint: "http://kfp.invalid", SecretRef: "none"}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(repository.Connections()); got != 2 {
+		t.Fatalf("stored kfp connections listed as %d, want 2", got)
+	}
+	joined := strings.Join(refusedSecretRefs(repository), "\n")
+	if !strings.Contains(joined, "env:KFP_TOKEN") || strings.Contains(joined, "old-kfp-token") || strings.Contains(joined, "none") {
+		t.Fatalf("refused references:\n%s", joined)
+	}
+	if _, err := connectionToken(api.Connection{Type: "kfp", SecretRef: "env:KFP_TOKEN"}); err == nil {
+		t.Fatal("env:KFP_TOKEN still resolves for a kfp connection")
+	}
+	if token, err := connectionToken(api.Connection{Type: "kfp", SecretRef: "none"}); err != nil || token != "" {
+		t.Fatalf("a kfp connection without a credential must still read: %q %v", token, err)
+	}
+}
