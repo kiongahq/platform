@@ -309,3 +309,26 @@ func TestWorkspaceListOnComposeIsNotManaged(t *testing.T) {
 }
 
 var _ = api.AuditEvent{}
+
+func TestConcurrentIdenticalRequestIsANoOp(t *testing.T) {
+	h := newLifecycleHarness(t, developerWorkspace("alice-ws", "alice", false, "workbench"))
+	// Another request stops the workspace between the first read and the write.
+	h.dynamic.PrependReactor("get", "kiongaworkspaces", func(clienttesting.Action) (bool, runtime.Object, error) {
+		raced := developerWorkspace("alice-ws", "alice", true, "workbench")
+		return true, raced, nil
+	})
+	body := jsonBody(t, h.as(t, devAlice, http.MethodPost, "/api/v1/workspaces/workbench/stop"))
+	if body["changed"] != false {
+		t.Fatalf("the losing request must report no change: %v", body)
+	}
+	for _, action := range h.dynamic.Actions() {
+		if action.GetVerb() == "update" {
+			t.Fatalf("no update expected: %#v", action)
+		}
+	}
+	for _, name := range h.auditActions("alice-ws") {
+		if name == "workspace.stopped" {
+			t.Fatalf("the losing request must not record a success: %v", h.auditActions("alice-ws"))
+		}
+	}
+}

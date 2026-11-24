@@ -220,11 +220,18 @@ func (s *Server) changeWorkspaceLifecycle(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var updated *unstructured.Unstructured
+	changed := true
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		current, getErr := resources.Get(r.Context(), match.GetName(), metav1.GetOptions{})
 		if getErr != nil {
 			return getErr
 		}
+		// A concurrent request may already have made the change.
+		if now, _, _ := unstructured.NestedBool(current.Object, "spec", "disabled"); now == wantDisabled {
+			updated, changed = current, false
+			return nil
+		}
+		changed = true
 		if setErr := unstructured.SetNestedField(current.Object, wantDisabled, "spec", "disabled"); setErr != nil {
 			return setErr
 		}
@@ -245,6 +252,10 @@ func (s *Server) changeWorkspaceLifecycle(w http.ResponseWriter, r *http.Request
 			log.Printf("workspaces: %s of %s failed: %v", action, match.GetName(), err)
 			writeError(w, http.StatusBadGateway, "workspace_unavailable", fmt.Sprintf("Could not %s the workspace; retry", action))
 		}
+		return
+	}
+	if !changed {
+		writeJSON(w, http.StatusOK, workspaceLifecycleResponse{ID: kind, workspaceLifecycleView: workspaceLifecycleState(updated)})
 		return
 	}
 	done := map[string]string{"start": "workspace.started", "stop": "workspace.stopped"}[action]
