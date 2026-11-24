@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import React from 'react';
 import { render, fireEvent, waitFor, cleanup } from '@testing-library/react';
-import { DeployAgentForm } from '../features/agents/AgentsView';
+import { DeployAgentForm, agentUsageText } from '../features/agents/AgentsView';
 import { AGENT_LLM_BACKENDS, DEFAULT_AGENT_LLM_BACKEND } from '../features/agents/agentBackends';
 
 Object.assign(globalThis, { FormData: window.FormData, self: window });
@@ -70,3 +70,40 @@ for (const backend of GATEWAY_BACKENDS) {
     assert.equal(post.body.llm_backend, backend);
   });
 }
+
+// Deploy form Image default: prefilled from the gateway-configured runtime image
+// (GET /api/v1/me defaults.agent_image), still editable and still required.
+test('image is prefilled from the configured default and stays editable and required', async () => {
+  const calls = api();
+  const withDefault: any = { ...identity, defaults: { agent_image: 'ghcr.io/kiongahq/agent-runtime@sha256:abc' } };
+  const view = render(<DeployAgentForm identity={withDefault} project="p1" projects={projects} tools={[]} existing={[]} onDeployed={() => {}} />);
+  const image = view.getByLabelText('Image') as HTMLInputElement;
+  assert.equal(image.value, 'ghcr.io/kiongahq/agent-runtime@sha256:abc');
+  assert.equal(image.required, true);
+  fireEvent.change(view.getByLabelText('Name'), { target: { value: 'helper' } });
+  fireEvent.change(image, { target: { value: 'registry.example/mine:2' } });
+  fireEvent.click(view.getByRole('button', { name: 'Deploy agent' }));
+  await waitFor(() => assert.ok(calls.some(call => call.method === 'POST' && call.url === '/api/v1/agents')));
+  assert.equal(calls.find(call => call.method === 'POST')!.body.image, 'registry.example/mine:2');
+});
+
+test('image stays empty when the gateway reports no default', () => {
+  api();
+  for (const defaults of [undefined, {}, { agent_image: '' }]) {
+    const view = render(<DeployAgentForm identity={{ ...identity, defaults } as any} project="p1" projects={projects} tools={[]} existing={[]} onDeployed={() => {}} />);
+    assert.equal((view.getByLabelText('Image') as HTMLInputElement).value, '');
+    cleanup();
+  }
+});
+
+test('agentUsageText shows GPU only for GPU agents and never invents 0', () => {
+  const base = { available: true, pods: 2, cpu_millicores: 300, memory_bytes: 2097152 };
+  const none = { resources: { gpu: 0 } }, gpu = { resources: { gpu: 1 } };
+  assert.equal(agentUsageText(none, base), '300m CPU / 2 MiB / 2 pods');
+  assert.equal(agentUsageText(gpu, base), '300m CPU / 2 MiB / 2 pods / GPU utilization unavailable');
+  assert.equal(agentUsageText(gpu, { ...base, gpu_utilization_available: true, gpu_utilization_percent: 37.4 }), '300m CPU / 2 MiB / 2 pods / GPU 37%');
+  assert.equal(agentUsageText(gpu, { ...base, gpu_utilization_available: true, gpu_utilization_percent: 0 }), '300m CPU / 2 MiB / 2 pods / GPU 0%');
+  assert.equal(agentUsageText(none, { ...base, gpu_utilization_available: true, gpu_utilization_percent: 12 }), '300m CPU / 2 MiB / 2 pods');
+  assert.equal(agentUsageText(gpu, { available: false }), 'Unavailable');
+  assert.equal(agentUsageText(gpu, undefined), 'Unavailable');
+});
