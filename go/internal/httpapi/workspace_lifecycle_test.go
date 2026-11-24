@@ -326,9 +326,7 @@ func TestConcurrentIdenticalRequestIsANoOp(t *testing.T) {
 			t.Fatalf("no update expected: %#v", action)
 		}
 	}
-	for _, name := range h.auditActions("alice-ws") {
-		if name == "workspace.stopped" {
-			t.Fatalf("the losing request must not record a success: %v", h.auditActions("alice-ws"))
-		}
+	if actions := h.auditActions("alice-ws"); len(actions) != 0 {
+		t.Fatalf("the losing request must leave no audit trace: %v", actions)
 	}
 }

@@ -76,6 +76,8 @@ type workspaceLifecycleRecord struct {
 	At        time.Time `json:"at"`
 }
 
+var errWorkspaceAudit = errors.New("workspace audit event could not be recorded")
+
 func lifecycleKind(kind string) bool { return kind == "workbench" || kind == "ide" }
 
 func workspaceDisplayName(kind string) string {
@@ -211,14 +213,12 @@ func (s *Server) changeWorkspaceLifecycle(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Record the request before the change so no state change is unaudited,
-	// then the outcome: workspace.started or workspace.stopped on success,
-	// workspace.start_failed or workspace.stop_failed otherwise.
+	// Record the request just before the write, after the final re-read, so
+	// a request that loses a race leaves no trace and no state change is
+	// unaudited. The outcome follows: workspace.started or workspace.stopped
+	// on success, workspace.start_failed or workspace.stop_failed otherwise.
 	by := actor(r)
-	if err := s.recordWorkspaceLifecycle(match.GetName(), subject, kind, action, "workspace."+action+"_requested", by); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Could not record the audit event; the workspace was not changed")
-		return
-	}
+	requested := false
 	var updated *unstructured.Unstructured
 	changed := true
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -232,6 +232,12 @@ func (s *Server) changeWorkspaceLifecycle(w http.ResponseWriter, r *http.Request
 			return nil
 		}
 		changed = true
+		if !requested {
+			if auditErr := s.recordWorkspaceLifecycle(match.GetName(), subject, kind, action, "workspace."+action+"_requested", by); auditErr != nil {
+				return errWorkspaceAudit
+			}
+			requested = true
+		}
 		if setErr := unstructured.SetNestedField(current.Object, wantDisabled, "spec", "disabled"); setErr != nil {
 			return setErr
 		}
@@ -240,8 +246,14 @@ func (s *Server) changeWorkspaceLifecycle(w http.ResponseWriter, r *http.Request
 		return updateErr
 	})
 	if err != nil {
-		if auditErr := s.recordWorkspaceLifecycle(match.GetName(), subject, kind, action, "workspace."+action+"_failed", by); auditErr != nil {
-			log.Printf("workspaces: could not record failed %s of %s: %v", action, match.GetName(), auditErr)
+		if errors.Is(err, errWorkspaceAudit) {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Could not record the audit event; the workspace was not changed")
+			return
+		}
+		if requested {
+			if auditErr := s.recordWorkspaceLifecycle(match.GetName(), subject, kind, action, "workspace."+action+"_failed", by); auditErr != nil {
+				log.Printf("workspaces: could not record failed %s of %s: %v", action, match.GetName(), auditErr)
+			}
 		}
 		switch {
 		case apierrors.IsNotFound(err):
