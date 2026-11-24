@@ -53,6 +53,14 @@ const (
 
 	defaultWorkloadPort = int32(8080)
 
+	// MaxRunAsUser is the largest user id spec.runAsUser accepts.
+	MaxRunAsUser = int64(2147483647)
+
+	// ReasonImageRunsAsRoot and ReasonImageUserNotNumeric are Ready condition
+	// reasons for an image the kubelet refuses under runAsNonRoot.
+	ReasonImageRunsAsRoot     = "ImageRunsAsRoot"
+	ReasonImageUserNotNumeric = "ImageUserNotNumeric"
+
 	ConditionReady   = "Ready"
 	ConditionIngress = "IngressReady"
 	ConditionBuild   = "BuildSucceeded"
@@ -212,6 +220,11 @@ func (r *WorkloadReconciler) reconcile(ctx context.Context, object client.Object
 	if replicas.Max < replicas.Min {
 		return ctrl.Result{}, invalid("InvalidSpec", "max replicas must be greater than or equal to min replicas")
 	}
+	// The CRD schema refuses these too; this covers a cluster running an
+	// older CRD and keeps root refused whatever the API server let through.
+	if spec.RunAsUser != nil && (*spec.RunAsUser < 1 || *spec.RunAsUser > MaxRunAsUser) {
+		return ctrl.Result{}, invalid("InvalidSpec", "runAsUser must be a non-root user id between 1 and %d", MaxRunAsUser)
+	}
 	resources, err := resolvedResources(spec.Resources, r.Kind.DefaultCPU, r.Kind.DefaultMemory)
 	if err != nil {
 		return ctrl.Result{}, invalid("InvalidResources", "%v", err)
@@ -344,6 +357,19 @@ func (r *WorkloadReconciler) reconcile(ctx context.Context, object client.Object
 	apimeta.SetStatusCondition(&status.Conditions, plan.Condition)
 	phase, ready := DeploymentHealth(deployment, plan.Min)
 	ready.ObservedGeneration = object.GetGeneration()
+	if phase != "Ready" {
+		// A pod the kubelet refuses to start never becomes available, and the
+		// Deployment only says so after its progress deadline, without the
+		// cause. Report the cause now.
+		refused, err := r.refusedPodStart(ctx, namespace, selector, &deployment.Spec.Template)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if refused != nil {
+			refused.ObservedGeneration = object.GetGeneration()
+			phase, ready = "Failed", *refused
+		}
+	}
 	status.Phase = phase
 	apimeta.SetStatusCondition(&status.Conditions, ready)
 	if status.LastBuild != nil && status.LastBuild.Phase == "Running" {
@@ -413,11 +439,13 @@ func (r *WorkloadReconciler) podSpec(spec *kiongav1.WorkloadSpec, image string, 
 	if spec.HealthPath != "" {
 		handler = corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: spec.HealthPath, Port: intstr.FromString("http")}}
 	}
+	// runAsNonRoot stays on whatever spec.runAsUser says; the user is only
+	// set when the spec gives one.
 	allow, nonRoot, automount := false, true, false
 	return corev1.PodSpec{
 		AutomountServiceAccountToken: &automount,
 		ImagePullSecrets:             r.Config.ImagePullSecrets,
-		SecurityContext:              &corev1.PodSecurityContext{RunAsNonRoot: &nonRoot, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
+		SecurityContext:              &corev1.PodSecurityContext{RunAsNonRoot: &nonRoot, RunAsUser: spec.RunAsUser, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
 		Volumes:                      []corev1.Volume{{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}},
 		Containers: []corev1.Container{{
 			Name: r.Kind.ContainerName, Image: image,
