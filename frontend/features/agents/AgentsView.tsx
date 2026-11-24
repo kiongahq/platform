@@ -46,10 +46,11 @@ export function buildAgentDeployment(values: Entity, identity?: Entity, existing
 export function agentUsageText(agent: Entity, metrics?: Entity): string {
   if (!metrics?.available) return "Unavailable";
   const base = `${metrics.cpu_millicores || 0}m CPU / ${(Number(metrics.memory_bytes || 0) / 1048576).toFixed(0)} MiB / ${metrics.pods || 0} pods`;
+  if (Number(agent?.resources?.gpu || 0) <= 0) return base;
   if (metrics.gpu_utilization_available === true && Number.isFinite(Number(metrics.gpu_utilization_percent))) {
     return `${base} / GPU ${Number(metrics.gpu_utilization_percent).toFixed(0)}%`;
   }
-  return Number(agent?.resources?.gpu || 0) > 0 ? `${base} / GPU utilization unavailable` : base;
+  return `${base} / GPU utilization unavailable`;
 }
 export function AgentsView({ identity, project, resource, onNavigate }: ViewProps) {
   const agents = useQuery<Entity>("/api/v1/agents"),

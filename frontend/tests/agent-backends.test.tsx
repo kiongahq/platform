@@ -103,7 +103,7 @@ test('agentUsageText shows GPU only for GPU agents and never invents 0', () => {
   assert.equal(agentUsageText(gpu, base), '300m CPU / 2 MiB / 2 pods / GPU utilization unavailable');
   assert.equal(agentUsageText(gpu, { ...base, gpu_utilization_available: true, gpu_utilization_percent: 37.4 }), '300m CPU / 2 MiB / 2 pods / GPU 37%');
   assert.equal(agentUsageText(gpu, { ...base, gpu_utilization_available: true, gpu_utilization_percent: 0 }), '300m CPU / 2 MiB / 2 pods / GPU 0%');
-  assert.equal(agentUsageText(none, { ...base, gpu_utilization_available: true, gpu_utilization_percent: 12 }), '300m CPU / 2 MiB / 2 pods / GPU 12%');
+  assert.equal(agentUsageText(none, { ...base, gpu_utilization_available: true, gpu_utilization_percent: 12 }), '300m CPU / 2 MiB / 2 pods');
   assert.equal(agentUsageText(gpu, { available: false }), 'Unavailable');
   assert.equal(agentUsageText(gpu, undefined), 'Unavailable');
 });
