@@ -41,6 +41,17 @@ export function buildAgentDeployment(values: Entity, identity?: Entity, existing
   if (!Array.isArray(values.tools) || values.tools.some((tool:unknown)=>typeof tool !== 'string')) throw new Error('Tools must be a list of registered tool names.');
   return { project_id:String(values.project_id || ''),name:String(values.name || '').trim(),version:String(values.version || '').trim(),image:String(values.image || '').trim(),graph_module:String(values.graph_module || '').trim(),llm_backend:String(values.llm_backend || 'mock'),replicas:min,autoscaling:{min_replicas:min,max_replicas:max},scaling:{metric,target},resources:{cpu:String(values.cpu || '500m'),memory:String(values.memory || '1Gi'),gpu,gpu_type:String(values.gpu_type || 'nvidia.com/gpu')},tools:[...new Set(values.tools)] };
 }
+// Resource usage cell for the agent list. GPU is mentioned only for agents
+// that request one; a missing sample is stated, never shown as 0%.
+export function agentUsageText(agent: Entity, metrics?: Entity): string {
+  if (!metrics?.available) return "Unavailable";
+  const base = `${metrics.cpu_millicores || 0}m CPU / ${(Number(metrics.memory_bytes || 0) / 1048576).toFixed(0)} MiB / ${metrics.pods || 0} pods`;
+  if (Number(agent?.resources?.gpu || 0) <= 0) return base;
+  if (metrics.gpu_utilization_available === true && Number.isFinite(Number(metrics.gpu_utilization_percent))) {
+    return `${base} / GPU ${Number(metrics.gpu_utilization_percent).toFixed(0)}%`;
+  }
+  return `${base} / GPU utilization unavailable`;
+}
 export function AgentsView({ identity, project, resource, onNavigate }: ViewProps) {
   const agents = useQuery<Entity>("/api/v1/agents"),
     projects = useQuery<Entity>("/api/v1/project-options"),
@@ -182,9 +193,7 @@ export function AgentsView({ identity, project, resource, onNavigate }: ViewProp
               key: "usage",
               label: "Resource usage",
               render: (item) =>
-                metrics[item.id]?.available
-                  ? `${metrics[item.id].cpu_millicores || 0}m CPU / ${(Number(metrics[item.id].memory_bytes || 0) / 1048576).toFixed(0)} MiB / ${metrics[item.id].pods || 0} pods`
-                  : "Unavailable",
+                agentUsageText(item, metrics[item.id]),
             },
             {
               key: "canary_weight",
@@ -346,7 +355,7 @@ export function AgentsView({ identity, project, resource, onNavigate }: ViewProp
 export function DeployAgentForm({identity,project,projects,tools,toolError,existing,onDeployed}:{identity:Entity;project:string;projects:Entity[];tools:Entity[];toolError?:string;existing:Entity[];onDeployed:()=>void}) {
   const grant=identity.roles.some((role:string)=>['admin','operator'].includes(role)) ? null : identity.entitlements;
   const [framework,setFramework]=useState('langgraph'),[contractText,setContractText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
-  const [values,setValues]=useState<Entity>({project_id:project || projects[0]?.id || '',name:'',version:'1.0.0',image:'',graph_module:'agents.customer_support.graph:build',llm_backend:DEFAULT_AGENT_LLM_BACKEND,min_replicas:1,max_replicas:1,scaling_metric:'requests',scaling_target:100,cpu:'500m',memory:'1Gi',gpu:0,gpu_type:grant?.compute?.gpu_type || 'nvidia.com/gpu',tools:[]});
+  const [values,setValues]=useState<Entity>({project_id:project || projects[0]?.id || '',name:'',version:'1.0.0',image:String(identity.defaults?.agent_image || ''),graph_module:'agents.customer_support.graph:build',llm_backend:DEFAULT_AGENT_LLM_BACKEND,min_replicas:1,max_replicas:1,scaling_metric:'requests',scaling_target:100,cpu:'500m',memory:'1Gi',gpu:0,gpu_type:grant?.compute?.gpu_type || 'nvidia.com/gpu',tools:[]});
   const update=(key:string,value:unknown)=>setValues(old=>({...old,[key]:value}));
   const toolChoices=[...tools,...(values.tools || []).filter((name:string)=>!tools.some(tool=>tool.name===name)).map((name:string)=>({name,description:'Imported tool name'}))];
   const reserved=existing.filter(agent=>!agent.owner_subject || agent.owner_subject===identity.subject).reduce((sum,agent)=>sum+Number(agent.autoscaling?.max_replicas || agent.replicas || 1),0);
