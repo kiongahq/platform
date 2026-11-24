@@ -20,16 +20,23 @@ import (
 // Log streaming: GET /api/v1/applications/{name}/logs?follow=true answers
 // with Server-Sent Events. Each line is
 //
-//	id: <RFC 3339 timestamp with nanoseconds>
+//	id: <cursor>
 //	event: log
 //	data: {"pod":…,"container":…,"time":…,"line":…}
 //
-// A client resumes by reconnecting with Last-Event-ID (or ?since=) set to the
-// last id it received; lines at or before that instant are skipped. Streams
-// are bounded: at most maxLogPods pods, max_seconds of streaming (default
-// 600, at most 3600) and maxStreamLineBytes per line. The stream ends with
-// `event: end` carrying the reason; pods that start later are picked up by
-// reconnecting.
+// The id is an opaque cursor (application_logs_cursor.go) that records, per
+// pod and container, the last line delivered. A client resumes by
+// reconnecting with Last-Event-ID (or ?since=) set to the last id it
+// received: each pod then continues exactly after its own last delivered
+// line, whatever the other pods had delivered, and lines sharing one instant
+// are neither repeated nor dropped. An RFC 3339 timestamp is accepted in
+// place of a cursor, as older clients send: every pod then skips lines at or
+// before that instant.
+//
+// Streams are bounded: at most maxLogPods pods, max_seconds of streaming
+// (default 600, at most 3600) and maxStreamLineBytes per line. The stream
+// ends with `event: end` carrying the reason; pods that start later are
+// picked up by reconnecting.
 
 const (
 	defaultFollowSeconds = 600
@@ -37,7 +44,13 @@ const (
 	maxStreamLineBytes   = 64 * 1024
 	logHeartbeat         = 15 * time.Second
 	streamWriteTimeout   = 10 * time.Second
+	logProbeTimeout      = 10 * time.Second
 )
+
+// openPodLog opens one pod's log; tests replace it with a scripted kubelet.
+var openPodLog = func(ctx context.Context, access *kubeAccess, pod string, options *corev1.PodLogOptions) (io.ReadCloser, error) {
+	return access.core.CoreV1().Pods(access.namespace).GetLogs(pod, options).Stream(ctx)
+}
 
 type logLine struct {
 	Pod       string `json:"pod"`
@@ -61,18 +74,64 @@ func parseLogLine(raw string) (time.Time, string) {
 	return parsed, text
 }
 
-// logEntry turns one kubelet line into an event. SinceTime has second
-// precision, so lines at or before the resume point are dropped here.
-func logEntry(pod, container, raw string, since time.Time) (logLine, bool) {
+// streamedLine is a log event and the instant its cursor advances to.
+type streamedLine struct {
+	logLine
+	key logKey
+	at  time.Time
+}
+
+// logEntry turns one kubelet line into an event, or drops it when resume
+// says the client already has it. The kubelet's SinceTime has second
+// precision, so the exact cut is made here.
+func logEntry(pod, container, raw string, resume *podResume) (streamedLine, bool) {
 	at, text := parseLogLine(raw)
-	if !since.IsZero() && !at.IsZero() && !at.After(since) {
-		return logLine{}, false
+	if !resume.keep(at) {
+		return streamedLine{}, false
 	}
-	entry := logLine{Pod: pod, Container: container, Line: text}
+	entry := streamedLine{logLine: logLine{Pod: pod, Container: container, Line: text}, at: at}
 	if !at.IsZero() {
 		entry.Time = at.UTC().Format(time.RFC3339Nano)
 	}
 	return entry, true
+}
+
+// firstTailInstant reads the instant of the first of a pod's last tail
+// lines. empty reports a log with no lines yet; a zero instant with empty
+// false is a first line without a timestamp.
+func firstTailInstant(ctx context.Context, access *kubeAccess, pod, container string, tail int64) (at time.Time, empty bool, err error) {
+	ctx, cancel := context.WithTimeout(ctx, logProbeTimeout)
+	defer cancel()
+	stream, err := openPodLog(ctx, access, pod, &corev1.PodLogOptions{Timestamps: true, Container: container, TailLines: &tail})
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	defer func() { _ = stream.Close() }()
+	scanner := bufio.NewScanner(stream)
+	scanner.Buffer(make([]byte, 4096), maxStreamLineBytes)
+	if !scanner.Scan() {
+		return time.Time{}, scanner.Err() == nil, scanner.Err()
+	}
+	at, _ = parseLogLine(scanner.Text())
+	return at, false, nil
+}
+
+// freshPodStart opens a pod on a stream with no resume point: at the first
+// of its last tail lines. Starting from that line's instant, rather than
+// asking the kubelet for a tail while following, shows every line stamped at
+// that instant from the first one, so the count the cursor keeps for it is
+// exact. A pod may therefore deliver more than tail lines when several share
+// the instant of the first.
+func freshPodStart(ctx context.Context, access *kubeAccess, pod, container string, tail int64) podStart {
+	at, empty, err := firstTailInstant(ctx, access, pod, container, tail)
+	switch {
+	case err != nil || (at.IsZero() && !empty):
+		// Unreadable, or lines without timestamps: follow the tail as is.
+		return podStart{tail: true}
+	case empty:
+		return podStart{}
+	}
+	return podStart{since: at, resume: podResume{anchored: true, at: at}}
 }
 
 // logSince reads the resume point from Last-Event-ID or ?since=; the later
@@ -96,7 +155,7 @@ func logSince(r *http.Request) (time.Time, error) {
 }
 
 func (s *Server) streamApplicationLogs(w http.ResponseWriter, r *http.Request, access *kubeAccess, name, container string, tail int64) {
-	since, err := logSince(r)
+	cursor, resumed, err := logResumePoint(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
@@ -126,27 +185,58 @@ func (s *Server) streamApplicationLogs(w http.ResponseWriter, r *http.Request, a
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(seconds)*time.Second)
 	defer cancel()
 
-	lines := make(chan logLine, 256)
-	var wg sync.WaitGroup
-	for _, pod := range pods {
-		podContainer := container
-		if podContainer == "" && len(pod.Spec.Containers) > 0 {
-			podContainer = pod.Spec.Containers[0].Name
+	// Every pod gets its start before anything is sent, so the first id
+	// already places all of them. A stream with no resume point finds each
+	// pod's start itself, one short kubelet read per pod.
+	containers, starts := make([]string, len(pods)), make([]podStart, len(pods))
+	var probes sync.WaitGroup
+	for i, pod := range pods {
+		containers[i] = container
+		if container == "" && len(pod.Spec.Containers) > 0 {
+			containers[i] = pod.Spec.Containers[0].Name
 		}
+		if resumed {
+			starts[i] = resumedPodStart(cursor, podLogKey(pod.Name, containers[i]))
+			continue
+		}
+		probes.Add(1)
+		go func() {
+			defer probes.Done()
+			starts[i] = freshPodStart(ctx, access, pod.Name, containers[i], tail)
+		}()
+	}
+	probes.Wait()
+	// position is the cursor sent with each event. It keeps only the pods of
+	// this connection, so it never outgrows maxLogPods; a pod that is gone
+	// drops out.
+	position := logCursor{floor: cursor.floor, pods: make(map[logKey]podPosition, len(pods))}
+	if !resumed {
+		position.floor = time.Now().Add(-logFloorAllowance).UnixNano()
+	}
+	for i, pod := range pods {
+		if start := starts[i].resume; start.anchored {
+			position.pods[podLogKey(pod.Name, containers[i])] = podPosition{at: start.at.UnixNano(), count: start.skip}
+		}
+	}
+
+	lines := make(chan streamedLine, 256)
+	var wg sync.WaitGroup
+	for i, pod := range pods {
+		podContainer, start, key := containers[i], starts[i], podLogKey(pod.Name, containers[i])
 		options := &corev1.PodLogOptions{Follow: true, Timestamps: true, Container: podContainer}
-		if since.IsZero() {
+		if start.tail {
 			options.TailLines = &tail
-		} else {
-			start := metav1.NewTime(since.Truncate(time.Second))
-			options.SinceTime = &start
+		} else if !start.since.IsZero() {
+			from := metav1.NewTime(start.since.Truncate(time.Second))
+			options.SinceTime = &from
 		}
 		wg.Add(1)
 		go func(podName string) {
 			defer wg.Done()
-			stream, err := access.core.CoreV1().Pods(access.namespace).GetLogs(podName, options).Stream(ctx)
+			stream, err := openPodLog(ctx, access, podName, options)
 			if err != nil {
 				select {
-				case lines <- logLine{Pod: podName, Container: podContainer, Line: "log stream unavailable: " + err.Error()}:
+				case lines <- streamedLine{logLine: logLine{Pod: podName, Container: podContainer, Line: "log stream unavailable: " + err.Error()}}:
 				case <-ctx.Done():
 				}
 				return
@@ -154,11 +244,13 @@ func (s *Server) streamApplicationLogs(w http.ResponseWriter, r *http.Request, a
 			defer func() { _ = stream.Close() }()
 			scanner := bufio.NewScanner(stream)
 			scanner.Buffer(make([]byte, 4096), maxStreamLineBytes)
+			resume := start.resume
 			for scanner.Scan() {
-				entry, keep := logEntry(podName, podContainer, scanner.Text(), since)
+				entry, keep := logEntry(podName, podContainer, scanner.Text(), &resume)
 				if !keep {
 					continue
 				}
+				entry.key = key
 				select {
 				case lines <- entry:
 				case <-ctx.Done():
@@ -201,10 +293,13 @@ func (s *Server) streamApplicationLogs(w http.ResponseWriter, r *http.Request, a
 				end("all pod log streams closed")
 				return
 			}
-			payload, _ := json.Marshal(entry)
+			payload, _ := json.Marshal(entry.logLine)
 			event := ""
-			if entry.Time != "" {
-				event = "id: " + entry.Time + "\n"
+			if !entry.at.IsZero() {
+				// The position advances only for a line that is sent, so
+				// the id never claims a line still waiting in the channel.
+				position.advance(entry.key, entry.at)
+				event = "id: " + position.encode() + "\n"
 			}
 			if !send(event + "event: log\ndata: " + string(payload) + "\n\n") {
 				return
