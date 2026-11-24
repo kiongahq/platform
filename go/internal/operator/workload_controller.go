@@ -357,10 +357,12 @@ func (r *WorkloadReconciler) reconcile(ctx context.Context, object client.Object
 	apimeta.SetStatusCondition(&status.Conditions, plan.Condition)
 	phase, ready := DeploymentHealth(deployment, plan.Min)
 	ready.ObservedGeneration = object.GetGeneration()
-	if phase != "Ready" {
+	rebuilding := status.LastBuild != nil && status.LastBuild.Phase == "Running"
+	if phase != "Ready" && !rebuilding {
 		// A pod the kubelet refuses to start never becomes available, and the
 		// Deployment only says so after its progress deadline, without the
-		// cause. Report the cause now.
+		// cause. Report the cause now. While a source build runs, the pods
+		// still come from the previous build, which the new one may replace.
 		refused, err := r.refusedPodStart(ctx, namespace, selector, &deployment.Spec.Template)
 		if err != nil {
 			return ctrl.Result{}, err

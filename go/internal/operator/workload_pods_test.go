@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -157,6 +158,51 @@ func TestRefusedPodsOfAPreviousTemplateDoNotFailTheFix(t *testing.T) {
 				t.Fatalf("a pod of the previous template must not fail the new one: %#v", stored.Status)
 			}
 		})
+	}
+}
+
+func TestRefusedPodsOfThePreviousBuildDoNotFailARunningRebuild(t *testing.T) {
+	source := &kiongav1.SourceSpec{Git: "https://github.com/acme/billing.git", Ref: "main"}
+	c := testClient(testScheme(t), application("billing", kiongav1.WorkloadSpec{Source: source, Visibility: kiongav1.VisibilityInternal}))
+	reconciler := applicationReconciler(c, false)
+	reconcileOnce(t, reconciler, "billing")
+	// The first build succeeds and its image, which runs as root, rolls out.
+	jobName := BuildJobName("billing", SourceHash(source, ""))
+	var job batchv1.Job
+	get(t, c, jobName, &job)
+	job.Status = batchv1.JobStatus{Succeeded: 1, Conditions: []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}}}
+	if err := c.Status().Update(context.Background(), &job); err != nil {
+		t.Fatal(err)
+	}
+	builder := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: jobName + "-x", Namespace: testNamespace, Labels: map[string]string{"job-name": jobName}}}
+	if err := c.Create(context.Background(), builder); err != nil {
+		t.Fatal(err)
+	}
+	builder.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "buildkit", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Message: "sha256:" + strings.Repeat("ab", 32)}}}}
+	if err := c.Status().Update(context.Background(), builder); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, reconciler, "billing")
+	podOf(t, c, "billing", "billing-5d8f", "CreateContainerConfigError", kubeletRunsAsRoot)
+	reconcileOnce(t, reconciler, "billing")
+	var stored kiongav1.KiongaApplication
+	get(t, c, "billing", &stored)
+	if stored.Status.Phase != "Failed" || condition(stored.Status.Conditions, ConditionReady).Reason != ReasonImageRunsAsRoot {
+		t.Fatalf("a built image that runs as root must be reported: %#v", stored.Status)
+	}
+
+	// The fix is pushed to another branch. While it builds, the pods are
+	// still the previous build's; they must not fail the new source.
+	stored.Spec.Source.Ref = "non-root"
+	stored.Generation = 2
+	if err := c.Update(context.Background(), &stored); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, reconciler, "billing")
+	get(t, c, "billing", &stored)
+	ready := condition(stored.Status.Conditions, ConditionReady)
+	if stored.Status.LastBuild.Phase != "Running" || stored.Status.Phase != "Progressing" || ready.Reason != "WorkloadProgressing" {
+		t.Fatalf("status while the fix builds: %#v", stored.Status)
 	}
 }
 
