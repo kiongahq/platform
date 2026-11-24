@@ -154,6 +154,33 @@ func (r *WorkloadReconciler) resolveImage(ctx context.Context, object client.Obj
 	}
 }
 
+// unbuiltSource reports a source workload whose current source (and redeploy
+// request) has no built image: the build is running, or it failed. It returns
+// the phase and the Ready condition for that, or nil when the spec has an
+// image or its build succeeded. Ready for a generation must mean the pods run
+// the image built for it, so a Deployment that still runs an earlier build is
+// never Ready here. previous says what became of that earlier build; it is
+// empty when there is none.
+func unbuiltSource(spec *kiongav1.WorkloadSpec, status *kiongav1.WorkloadStatus, previous string) (string, *metav1.Condition) {
+	build := status.LastBuild
+	if spec.Source == nil || build == nil || build.SourceHash != SourceHash(spec.Source, spec.RestartedAt) {
+		return "", nil
+	}
+	sentence := func(text string) string {
+		if previous == "" {
+			return text
+		}
+		return strings.TrimRight(text, ".") + ". " + previous
+	}
+	switch build.Phase {
+	case "Running":
+		return "Building", &metav1.Condition{Type: ConditionReady, Status: metav1.ConditionFalse, Reason: "Building", Message: sentence("building " + BuildContext(spec.Source))}
+	case "Failed":
+		return "Failed", &metav1.Condition{Type: ConditionReady, Status: metav1.ConditionFalse, Reason: "BuildFailed", Message: sentence(build.Message)}
+	}
+	return "", nil
+}
+
 func (r *WorkloadReconciler) setBuildCondition(object client.Object, status *kiongav1.WorkloadStatus, value metav1.ConditionStatus, reason, message string) {
 	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{Type: ConditionBuild, Status: value, Reason: reason, Message: message, ObservedGeneration: object.GetGeneration()})
 }

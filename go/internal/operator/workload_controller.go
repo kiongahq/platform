@@ -247,9 +247,14 @@ func (r *WorkloadReconciler) reconcile(ctx context.Context, object client.Object
 		return ctrl.Result{}, err
 	}
 	if image == "" {
-		// The first source build is still running; nothing to deploy yet.
-		status.Phase = "Building"
-		apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{Type: ConditionReady, Status: metav1.ConditionFalse, Reason: "Building", Message: "waiting for the first source build", ObservedGeneration: object.GetGeneration()})
+		// No build has succeeded yet, so there is nothing to deploy.
+		phase, condition := "Building", metav1.Condition{Type: ConditionReady, Status: metav1.ConditionFalse, Reason: "Building", Message: "waiting for the first source build"}
+		if pending, verdict := unbuiltSource(spec, status, ""); verdict != nil && pending == "Failed" {
+			phase, condition = pending, *verdict
+		}
+		condition.ObservedGeneration = object.GetGeneration()
+		status.Phase = phase
+		apimeta.SetStatusCondition(&status.Conditions, condition)
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 	plan := PlanScaling(spec.Scaling, replicas, r.Kind.DefaultMetric, r.Capabilities.KEDAHTTP)
@@ -357,12 +362,23 @@ func (r *WorkloadReconciler) reconcile(ctx context.Context, object client.Object
 	apimeta.SetStatusCondition(&status.Conditions, plan.Condition)
 	phase, ready := DeploymentHealth(deployment, plan.Min)
 	ready.ObservedGeneration = object.GetGeneration()
-	rebuilding := status.LastBuild != nil && status.LastBuild.Phase == "Running"
-	if phase != "Ready" && !rebuilding {
+	previous := "The previous version stays deployed."
+	if deployment.Status.AvailableReplicas > 0 {
+		previous = "The previous version is still serving."
+	}
+	if pending, verdict := unbuiltSource(spec, status, previous); verdict != nil {
+		// The Deployment still runs the image of an earlier build. However
+		// healthy it is, it is not what this spec asks for.
+		verdict.ObservedGeneration = object.GetGeneration()
+		phase, ready = pending, *verdict
+		if build := apimeta.FindStatusCondition(status.Conditions, ConditionBuild); build != nil {
+			// The build condition is what the gateway shows while building.
+			r.setBuildCondition(object, status, build.Status, build.Reason, verdict.Message)
+		}
+	} else if phase != "Ready" {
 		// A pod the kubelet refuses to start never becomes available, and the
 		// Deployment only says so after its progress deadline, without the
-		// cause. Report the cause now. While a source build runs, the pods
-		// still come from the previous build, which the new one may replace.
+		// cause. Report the cause now.
 		refused, err := r.refusedPodStart(ctx, namespace, selector, &deployment.Spec.Template)
 		if err != nil {
 			return ctrl.Result{}, err

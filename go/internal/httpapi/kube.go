@@ -210,6 +210,15 @@ func (status workloadStatus) failureReason(readyCondition string) string {
 	return "the operator reported the workload as failed"
 }
 
+// previousBuildDeployed reports a source workload whose latest build failed
+// while an earlier build is still deployed: the resource is failed for the
+// spec it was given, yet it can still be called.
+func (status workloadStatus) previousBuildDeployed() bool {
+	ready, _ := status.condition("Ready")
+	image, _ := status.Raw["image"].(string)
+	return ready.Reason == "BuildFailed" && image != ""
+}
+
 // mapApplicationStatus turns a KiongaApplication or KiongaFunction status
 // into the API status. The operator's phases are Building, Progressing,
 // Ready, Degraded and Failed:
@@ -218,6 +227,11 @@ func (status workloadStatus) failureReason(readyCondition string) string {
 //	Ready with ready replicas                  -> ready
 //	Ready with none (scaled to zero)           -> scaled-to-zero
 //	Building, Progressing, Degraded, unknown   -> pending, with the reason
+//
+// Building covers a rebuild too: the previous build keeps serving, and the
+// status is pending until the pods run the image built for this spec. A
+// failed build is failed even while the previous build serves; the message
+// says which.
 //
 // A status for an older generation is pending whatever it says.
 func mapApplicationStatus(object *unstructured.Unstructured) (state string, message string) {
