@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.2.2](https://github.com/kiongahq/platform/compare/v0.2.1...v0.2.2) (2026-11-25)
+
+
+### Features
+
+* **connections:** edit connections and scope registered storage to the project ([8414b56](https://github.com/kiongahq/platform/commit/8414b56658d87faece037cbe892543fea995235c))
+* **console:** edit object storage connections and register storage from Langflow ([48b2d62](https://github.com/kiongahq/platform/commit/48b2d62e2b09e013d6c4c9d3eaf539d7b99ab2e5))
+* **console:** show agent GPU utilization and prefill the deploy image ([6d9c57b](https://github.com/kiongahq/platform/commit/6d9c57ba775dded54a4b261923799e6a9a10146d))
+* **console:** show run owner and trigger in the pipeline run dialog ([ff3e174](https://github.com/kiongahq/platform/commit/ff3e174db9b9bc29333b287e2a6f83a80184e424))
+* **gateway:** operator contract alignment, sign-in proxy for sso applications, opt-in blog authoring ([158f756](https://github.com/kiongahq/platform/commit/158f7562718958a269ed703d640a9beb0f63d0cb))
+* **gateway:** run owner label and per-pod log resume cursor ([1eb09a5](https://github.com/kiongahq/platform/commit/1eb09a5d963b236c5cddcd326bc2cc3076db51ca))
+* **models:** offer a model's own input example in the Test dialog ([1bd5ae3](https://github.com/kiongahq/platform/commit/1bd5ae34f916fa588113517bd172a510f615d24a))
+* **operator:** numeric user for applications and functions, and a clear failure for images that run as root ([490e2e1](https://github.com/kiongahq/platform/commit/490e2e1fcbcb444f6213293ae6e4a0089f503ada))
+* **workspaces:** start and stop JupyterLab and the IDE from the console ([6a8859a](https://github.com/kiongahq/platform/commit/6a8859af400c002cfffe6ebb536d45e5dc414d6b))
+
+
+### Fixes
+
+* **console:** label the model test payload instead of prefilling {} ([4ab50cb](https://github.com/kiongahq/platform/commit/4ab50cbd5bb584ae9175b6a41f4f9e8cc002fb66))
+* **console:** offer the engineer role when provisioning users ([b6584fc](https://github.com/kiongahq/platform/commit/b6584fc63a7479c8444ed3d017944215d15b1bff))
+* **gateway:** single-use application tickets and local sessions shared across replicas ([e6734ab](https://github.com/kiongahq/platform/commit/e6734ab13cfd200f2e9b9b9c114d5c2cb1dde4bd))
+* **operator:** a source workload is not Ready until the image built for its spec is serving ([3e09647](https://github.com/kiongahq/platform/commit/3e096473d3c26059642fdf5f8428b8da1661c597))
+* **operator:** match the fields the gateway reads and writes ([#146](https://github.com/kiongahq/platform/issues/146)) ([2e97195](https://github.com/kiongahq/platform/commit/2e9719521841d0df6e2fa7f3dcea5ecb57727849))
+
 ## [0.2.1](https://github.com/kiongahq/platform/compare/v0.2.0...v0.2.1) (2026-11-23)
 
 
