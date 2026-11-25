@@ -106,6 +106,9 @@ type Store struct {
 	data state
 	// logBuffer holds operational logs in memory (bounded); see logs.go.
 	logBuffer memoryLogs
+	// signIn holds redeemed single-use tokens and local sessions in memory
+	// (bounded by expiry); see sign_in_state.go.
+	signIn signInMemory
 }
 
 // New returns a store. With no path (or "") it is in-memory and seeded with

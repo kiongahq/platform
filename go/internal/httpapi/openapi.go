@@ -98,7 +98,7 @@ func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 			"/api/v1/events":                                        map[string]any{"get": map[string]any{"summary": "Stream platform updates using server-sent events"}},
 			"/api/v1/realtime":                                      map[string]any{"get": map[string]any{"summary": "Read real-time processing statistics"}},
 			"/api/v1/realtime/{demo}":                               map[string]any{"post": map[string]any{"summary": "Report real-time demo statistics"}},
-			"/api/v1/functions":                                     map[string]any{"get": map[string]any{"summary": "List serverless functions"}, "post": map[string]any{"summary": "Deploy a serverless function"}},
+			"/api/v1/functions":                                     map[string]any{"get": map[string]any{"summary": "List serverless functions"}, "post": map[string]any{"summary": "Deploy a serverless function. On Kubernetes, optional run_as_user (1 to 2147483647, never 0) sets the numeric non-root user it runs as"}},
 			"/api/v1/functions/{name}":                              map[string]any{"delete": map[string]any{"summary": "Remove a serverless function"}},
 			"/api/v1/functions/{name}/invoke":                       map[string]any{"post": map[string]any{"summary": "Invoke a serverless function"}},
 			"/api/v1/functions/{name}/invoke-async":                 map[string]any{"post": map[string]any{"summary": "Queue an asynchronous serverless invocation"}},

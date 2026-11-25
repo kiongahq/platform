@@ -423,10 +423,12 @@ type Function struct {
 	ReplicaRange *ReplicaRange    `json:"replica_range,omitempty"`
 	Scaling      *WorkloadScaling `json:"scaling,omitempty"`
 	Visibility   string           `json:"visibility,omitempty"`
-	Message      string           `json:"message,omitempty"`
-	OwnerSubject string           `json:"owner_subject,omitempty"`
-	CreatedAt    time.Time        `json:"created_at"`
-	UpdatedAt    time.Time        `json:"updated_at"`
+	// RunAsUser applies on Kubernetes; faasd ignores it.
+	RunAsUser    *int64    `json:"run_as_user,omitempty"`
+	Message      string    `json:"message,omitempty"`
+	OwnerSubject string    `json:"owner_subject,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type DeployFunctionRequest struct {
@@ -444,6 +446,10 @@ type DeployFunctionRequest struct {
 	Scaling  *WorkloadScaling `json:"scaling,omitempty"`
 	// Visibility is internal (the default: no host), sso or public.
 	Visibility string `json:"visibility,omitempty"`
+	// RunAsUser (Kubernetes only) is the numeric non-root user the function
+	// runs as, from 1 to 2147483647. It is needed when the image runs as root
+	// or names its user instead of numbering it.
+	RunAsUser *int64 `json:"run_as_user,omitempty"`
 }
 
 type Component struct {

@@ -4,6 +4,7 @@ import "github.com/kiongahq/platform/pkg/api"
 
 type Repository interface {
 	Documents
+	SignInState
 	HubAccount(string) (HubAccount, error)
 	SaveHubAccount(string, HubAccount) error
 	UserAccess() []api.UserAccess

@@ -67,3 +67,13 @@ func TestStoreConnections(t *testing.T) {
 		t.Fatal("connection update was not persisted")
 	}
 }
+
+func TestStoreSingleUseTokens(t *testing.T) {
+	repo := store.New()
+	storetest.SingleUseTokens(t, repo, repo, "file")
+}
+
+func TestStoreLocalSessions(t *testing.T) {
+	repo := store.New()
+	storetest.LocalSessions(t, repo, repo, "file")
+}

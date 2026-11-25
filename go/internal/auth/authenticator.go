@@ -215,7 +215,10 @@ func (a *Authenticator) Handler(next http.Handler) http.Handler {
 			return
 		case "/auth/logout":
 			if a.local != nil {
-				a.local.endSession(w, r)
+				if err := a.local.endSession(w, r); err != nil {
+					deny(w, http.StatusServiceUnavailable, "could not end the session")
+					return
+				}
 			}
 			if a.sso != nil {
 				if err := a.sso.endSession(w, r); err != nil {

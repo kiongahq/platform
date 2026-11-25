@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import React from "react";
 import { render, cleanup, waitFor, fireEvent } from "@testing-library/react";
 import { OperationsView } from "../features/operations/OperationsView";
+import { applicationFormValues, applicationRequest } from "../features/operations/Applications";
 import type { Identity } from "../lib/types";
 const identity: Identity = {
   subject: "admin",
@@ -594,6 +595,104 @@ test("applications list status, address and replicas, and create maps the form t
   await waitFor(() => assert.deepEqual(navigations.at(-1), ["applications", "docs-site"]));
 });
 
+test("application create sends the numeric user only when one is entered", async () => {
+  setup({
+    "/api/v1/applications": { configured: true, base_domain: "apps.example.com", items: [] },
+    "/api/v1/project-options": { items: [{ id: "p1", name: "Payments" }] },
+    "POST /api/v1/applications": { name: "legacy", status: "pending" },
+  }, "http://localhost/console/applications");
+  const view = app("applications", { identity: appWriter, onNavigate: () => {} });
+  await waitFor(() => view.getByRole("button", { name: "Deploy application" }));
+  fireEvent.click(view.getByRole("button", { name: "Deploy application" }));
+  const user = view.getByLabelText(/^Run as user ID/) as HTMLInputElement;
+  assert.equal(user.value, "");
+  assert.ok(view.getByText(/Needed when the image runs as root or names its user/));
+  fireEvent.change(view.getByLabelText(/^Name/), { target: { value: "legacy" } });
+  fireEvent.change(view.getByLabelText(/^OCI image/), { target: { value: "ghcr.io/acme/legacy:1" } });
+  fireEvent.change(user, { target: { value: "1000" } });
+  fireEvent.click(view.getAllByRole("button", { name: "Deploy application" }).at(-1)!);
+  await waitFor(() => assert.ok(calls.some((call) => call.method === "POST")));
+  const body = calls.find((call) => call.method === "POST")!.body;
+  assert.equal(body.run_as_user, 1000);
+  assert.equal(body.image, "ghcr.io/acme/legacy:1");
+});
+
+test("application edit loads the configuration and replaces it with the numeric user", async () => {
+  const billing = {
+    name: "billing", project_id: "p1", status: "failed", image: "ghcr.io/acme/billing:1.4", port: 3000, health_path: "/healthz", visibility: "public",
+    message: "The pods cannot start: image ghcr.io/acme/billing:1.4 runs as root, which is not allowed. Set a numeric non-root user (runAsUser, for example 1000) or rebuild the image with a numeric non-root USER.",
+    env: { LOG_LEVEL: "info" }, secret_refs: ["billing-db"], resources: { cpu: "500m", memory: "512Mi" }, replicas: { min: 0, max: 4 }, scaling: { metric: "requests", target: 50 },
+    conditions: [{ type: "Ready", status: "False", reason: "ImageRunsAsRoot", message: "The pods cannot start" }],
+  };
+  setup({
+    "/api/v1/applications": { configured: true, items: [billing] },
+    "/api/v1/project-options": { items: [] },
+    "/api/v1/applications/billing": billing,
+    "/api/v1/applications/billing/logs?tail=200": { items: [] },
+    "/api/v1/applications/billing/events": { items: [] },
+    "PUT /api/v1/applications/billing": { ...billing, status: "pending", run_as_user: 1000 },
+  }, "http://localhost/console/applications?resource=billing");
+  const view = app("applications", { identity: appWriter, resource: "billing" });
+  await waitFor(() => view.getByText(/runs as root, which is not allowed/));
+  assert.ok(view.getByText("ImageRunsAsRoot"));
+  await waitFor(() => assert.equal((view.getByRole("button", { name: "Edit" }) as HTMLButtonElement).disabled, false));
+  fireEvent.click(view.getByRole("button", { name: "Edit" }));
+  assert.equal((view.getByLabelText(/^Name/) as HTMLInputElement).readOnly, true);
+  assert.equal((view.getByLabelText(/^OCI image/) as HTMLInputElement).value, "ghcr.io/acme/billing:1.4");
+  assert.equal((view.getByLabelText(/^Run as user ID/) as HTMLInputElement).value, "");
+  fireEvent.change(view.getByLabelText(/^Run as user ID/), { target: { value: "1000" } });
+  fireEvent.click(view.getByRole("button", { name: "Save and roll out" }));
+  await waitFor(() => assert.ok(calls.some((call) => call.method === "PUT")));
+  assert.deepEqual(calls.find((call) => call.method === "PUT")!.body, {
+    name: "billing", project_id: "p1", port: 3000, env: { LOG_LEVEL: "info" }, secret_refs: ["billing-db"],
+    resources: { cpu: "500m", memory: "512Mi" }, replicas: { min: 0, max: 4 }, scaling: { metric: "requests", target: 50 },
+    health_path: "/healthz", visibility: "public", run_as_user: 1000, image: "ghcr.io/acme/billing:1.4",
+  });
+  await waitFor(() => assert.equal(view.queryByRole("button", { name: "Save and roll out" }), null));
+});
+
+test("application form refuses root and other bad user IDs instead of clearing the user", async () => {
+  for (const bad of ["0", "-5", "1.5", "abc", "2147483648"])
+    assert.throws(() => applicationRequest({ name: "a", run_as_user: bad }), /whole number from 1 to 2147483647/, bad);
+  assert.equal("run_as_user" in applicationRequest({ name: "a", run_as_user: "" }), false);
+  assert.equal("run_as_user" in applicationRequest({ name: "a" }), false);
+  assert.equal(applicationRequest({ name: "a", run_as_user: " 1000 " }).run_as_user, 1000);
+  assert.equal(applicationRequest({ name: "a", run_as_user: 2147483647 }).run_as_user, 2147483647);
+
+  const billing = { name: "billing", project_id: "p1", status: "ready", image: "ghcr.io/acme/billing:1.4", port: 3000, run_as_user: 1000, replicas: { min: 1, max: 1 }, scaling: { metric: "requests", target: 100 } };
+  setup({
+    "/api/v1/applications": { configured: true, items: [billing] },
+    "/api/v1/project-options": { items: [] },
+    "/api/v1/applications/billing": billing,
+    "/api/v1/applications/billing/logs?tail=200": { items: [] },
+    "/api/v1/applications/billing/events": { items: [] },
+  }, "http://localhost/console/applications?resource=billing");
+  const view = app("applications", { identity: appWriter, resource: "billing" });
+  await waitFor(() => assert.equal((view.getByRole("button", { name: "Edit" }) as HTMLButtonElement).disabled, false));
+  fireEvent.click(view.getByRole("button", { name: "Edit" }));
+  assert.equal((view.getByLabelText(/^Run as user ID/) as HTMLInputElement).value, "1000");
+  fireEvent.change(view.getByLabelText(/^Run as user ID/), { target: { value: "0" } });
+  fireEvent.click(view.getByRole("button", { name: "Save and roll out" }));
+  await waitFor(() => view.getByText(/Root \(0\) is never allowed\.$/));
+  assert.equal(calls.some((call) => call.method === "PUT"), false);
+});
+
+test("application form values round-trip a git source and an existing user", () => {
+  const values = applicationFormValues({
+    name: "docs", project_id: "p1", port: 8080, health_path: "/", visibility: "sso", run_as_user: 10001,
+    source: { git: "https://github.com/acme/docs.git", ref: "main", context_dir: "site", dockerfile: "Dockerfile" },
+    resources: { cpu: "250m", memory: "256Mi" }, replicas: { min: 1, max: 3 }, scaling: { metric: "cpu", target: 80 },
+  });
+  assert.equal(values.source_type, "git");
+  assert.equal(values.run_as_user, 10001);
+  assert.deepEqual(applicationRequest({ ...values, env: {} }), {
+    name: "docs", project_id: "p1", port: 8080, env: {}, secret_refs: [],
+    resources: { cpu: "250m", memory: "256Mi" }, replicas: { min: 1, max: 3 }, scaling: { metric: "cpu", target: 80 },
+    health_path: "/", visibility: "sso", run_as_user: 10001,
+    source: { git: "https://github.com/acme/docs.git", ref: "main", context_dir: "site", dockerfile: "Dockerfile" },
+  });
+});
+
 test("application detail shows conditions, logs and events and redeploys", async () => {
   setup({
     "/api/v1/applications": { configured: true, items: [{ name: "billing", project_id: "p1", status: "ready" }] },
@@ -652,6 +751,22 @@ test("run dialog shows the signed-in owner as an email and a manual trigger", as
   const dialog = await waitFor(() => view.getByRole("dialog", { name: "Nightly" }));
   await waitFor(() => assert.equal(fact(dialog, "owner"), "admin@example.com"));
   assert.equal(fact(dialog, "trigger"), "Manual");
+});
+
+test("run dialog prefers the gateway's owner label over the subject", async () => {
+  const view = openRun({ ...baseRun, owner_subject: "svc-trainer", owner_label: "trainer@example.com", trigger: "schedule" });
+  let dialog = await waitFor(() => view.getByRole("dialog", { name: "Nightly" }));
+  await waitFor(() => assert.equal(fact(dialog, "owner"), "trainer@example.com"));
+  cleanup();
+  // A label equal to the subject (the caller may not see the email) shows as is.
+  const hidden = openRun({ ...baseRun, owner_subject: "svc-trainer", owner_label: "svc-trainer", trigger: "schedule" });
+  dialog = await waitFor(() => hidden.getByRole("dialog", { name: "Nightly" }));
+  await waitFor(() => assert.equal(fact(dialog, "owner"), "svc-trainer"));
+  cleanup();
+  // A blank label falls back to today's behaviour.
+  const blank = openRun({ ...baseRun, owner_subject: "admin", owner_label: " ", trigger: "manual" });
+  dialog = await waitFor(() => blank.getByRole("dialog", { name: "Nightly" }));
+  await waitFor(() => assert.equal(fact(dialog, "owner"), "admin@example.com"));
 });
 
 test("run dialog shows another owner's subject and a schedule or API trigger", async () => {

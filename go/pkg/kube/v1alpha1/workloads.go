@@ -103,6 +103,15 @@ type WorkloadSpec struct {
 	// +kubebuilder:validation:Enum=public;sso;internal
 	// +optional
 	Visibility string `json:"visibility,omitempty"`
+	// RunAsUser is the numeric user the containers run as. Set it when the
+	// image runs as root or names its user instead of numbering it: pods
+	// always run with runAsNonRoot, so the kubelet refuses to start such an
+	// image unless it is given a non-root user id. Root (0) is not accepted.
+	// Empty keeps the image's own user.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2147483647
+	// +optional
+	RunAsUser *int64 `json:"runAsUser,omitempty"`
 	// RestartedAt is set (RFC 3339) by a redeploy. A new value rolls the pods
 	// and, for a source workload, builds the source again.
 	// +optional
