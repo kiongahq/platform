@@ -59,6 +59,20 @@ not observed the current generation the status is `pending`, so a client
 waiting after an update never reads the previous rollout. The operator must
 write `status.observedGeneration`.
 
+### Source builds and status
+
+`Ready` for a generation means the pods run the image built for that
+generation. While the build for the current source (or a redeploy of it) is
+running, the operator reports phase `Building` and `Ready=False` with reason
+`Building`, and the gateway reports `pending`, even when an earlier build is
+healthy. The earlier build's pods are left alone, a redeploy included: they
+roll only once the new image exists. The message says whether the earlier
+build is still serving or is deployed but not ready. A failed build is phase
+`Failed` with reason `BuildFailed` and the build's message, followed by the
+same note; the earlier build stays deployed and a function in that state can
+still be invoked. A first build that fails leaves nothing deployed. Changing a
+source workload to an image drops `status.lastBuild`.
+
 ### Container user
 
 Application and function pods always run with `runAsNonRoot`, so the kubelet
@@ -134,6 +148,10 @@ On Kubernetes, `POST /api/v1/functions` creates a `KiongaFunction` (`image`,
 {metric: requests, target: 100}` by default, and `runAsUser` when the request
 carries `run_as_user`; see [Container user](#container-user)). Compose keeps
 faasd, which ignores `run_as_user`.
+
+Request `annotations` (`schedule`, `topic`, `io.kionga.invocation`) are kept
+on the function record and are not written to the `KiongaFunction`, which has
+no such field. Nothing on Kubernetes acts on them.
 
 Invocations of a function scaled on requests go to the KEDA HTTP add-on
 interceptor with the function's host in the `Host` header: `status.host`

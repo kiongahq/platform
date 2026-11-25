@@ -201,7 +201,7 @@ func TestRefusedPodsOfThePreviousBuildDoNotFailARunningRebuild(t *testing.T) {
 	reconcileOnce(t, reconciler, "billing")
 	get(t, c, "billing", &stored)
 	ready := condition(stored.Status.Conditions, ConditionReady)
-	if stored.Status.LastBuild.Phase != "Running" || stored.Status.Phase != "Progressing" || ready.Reason != "WorkloadProgressing" {
+	if stored.Status.LastBuild.Phase != "Running" || stored.Status.Phase != "Building" || ready.Reason != "Building" {
 		t.Fatalf("status while the fix builds: %#v", stored.Status)
 	}
 }
