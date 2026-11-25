@@ -140,6 +140,7 @@ func (s *Server) openapi(w http.ResponseWriter, _ *http.Request) {
 			"/api/v1/agents/{id}/usage":                             map[string]any{"get": map[string]any{"summary": "Read agent token and cost usage"}},
 			"/api/v1/tools":                                         map[string]any{"get": map[string]any{"summary": "List tools"}, "post": map[string]any{"summary": "Register a tool"}},
 			"/api/v1/connections":                                   map[string]any{"get": map[string]any{"summary": "List connections"}, "post": map[string]any{"summary": "Create a secret-backed connection"}},
+			"/api/v1/connections/{id}":                              map[string]any{"put": map[string]any{"summary": "Replace a connection's name, service, address and credential reference; an activated runtime keeps its service and is re-verified before its address or credential changes"}},
 			"/api/v1/connections/{id}/test":                         map[string]any{"post": map[string]any{"summary": "Test a platform connection"}},
 			"/api/v1/audit":                                         map[string]any{"get": map[string]any{"summary": "List audit events"}},
 			"/api/v1/traces":                                        map[string]any{"post": map[string]any{"summary": "Record an agent trace"}},

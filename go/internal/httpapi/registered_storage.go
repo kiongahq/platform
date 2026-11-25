@@ -17,6 +17,11 @@ type registeredStorageSummary struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Bucket string `json:"bucket"`
+	// ProjectIDs lists the projects this connection is granted to that the
+	// caller may reach, so the console can filter by the selected project. A
+	// project-scoped caller never receives the id of a project outside its
+	// own assigned and owned projects.
+	ProjectIDs []string `json:"project_ids"`
 }
 
 func init() {
@@ -38,9 +43,17 @@ func (s *Server) storageConnectionAllowed(r *http.Request, item api.StorageConne
 
 func (s *Server) registeredStorage(w http.ResponseWriter, r *http.Request) {
 	items := []registeredStorageSummary{}
+	// nil means the caller is not limited to a project list.
+	reachable := allowedProjectIDs(s.store, principal(r))
 	for _, item := range store.ListDocs[api.StorageConnection](s.store, store.StorageConnectionKind) {
-		if s.storageConnectionAllowed(r, item) {
-			items = append(items, registeredStorageSummary{ID: item.ID, Name: item.Name, Bucket: item.Bucket})
+		projectIDs := []string{}
+		for _, projectID := range item.AllowedProjects {
+			if reachable == nil || reachable[projectID] {
+				projectIDs = append(projectIDs, projectID)
+			}
+		}
+		if len(projectIDs) > 0 {
+			items = append(items, registeredStorageSummary{ID: item.ID, Name: item.Name, Bucket: item.Bucket, ProjectIDs: projectIDs})
 		}
 	}
 	writeJSON(w, 200, map[string]any{"items": items, "total": len(items)})

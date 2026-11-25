@@ -800,15 +800,13 @@ func (s *Store) RegisterTool(req api.RegisterToolRequest, actor string) (api.Too
 }
 
 func (s *Store) CreateConnection(req api.CreateConnectionRequest, actor string) (api.Connection, error) {
-	if req.Name == "" || req.Type == "" || req.SecretRef == "" {
-		return api.Connection{}, errors.New("name, type and secret_ref are required")
+	if err := ValidateConnectionRequest(req); err != nil {
+		return api.Connection{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, v := range s.data.Connections {
-		if strings.EqualFold(v.Name, req.Name) {
-			return api.Connection{}, ErrConflict
-		}
+	if connectionNameTaken(s.data.Connections, req.Name, "") {
+		return api.Connection{}, ErrConflict
 	}
 	c := api.Connection{ID: id("conn"), Name: req.Name, Type: req.Type, Endpoint: req.Endpoint, SecretRef: req.SecretRef, Status: "pending", CreatedAt: time.Now().UTC()}
 	s.data.Connections = append([]api.Connection{c}, s.data.Connections...)

@@ -56,8 +56,16 @@ type Repository interface {
 	SetAgentTraffic(string, int, string) (api.Agent, error)
 	RegisterTool(api.RegisterToolRequest, string) (api.Tool, error)
 	CreateConnection(api.CreateConnectionRequest, string) (api.Connection, error)
-	ActivateConnection(string, string) (api.Connection, error)
+	// UpdateConnection replaces a connection's name, service, address and
+	// credential reference; the bool records a passing check of the new target.
+	UpdateConnection(string, api.CreateConnectionRequest, bool, string) (api.Connection, error)
+	// ActivateConnection activates the connection the caller verified, and
+	// refuses when its target changed since (ErrConnectionChanged).
+	ActivateConnection(api.Connection, string) (api.Connection, error)
 	UpdateConnectionStatus(string, string, string, string) (api.Connection, error)
+	// RecordConnectionCheck stores a check result for the record that was
+	// checked, and refuses when its target changed since (ErrConnectionChanged).
+	RecordConnectionCheck(api.Connection, string, string, string) (api.Connection, error)
 	AgentSessions(string) []api.AgentSession
 	AgentTraces(string) []api.AgentTrace
 	RecordTrace(api.RecordTraceRequest) (api.AgentTrace, error)

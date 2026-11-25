@@ -4,15 +4,12 @@ import { request } from "@/lib/api";
 import {
   admin,
   can,
-  csv,
   Detail,
   encode,
   Facts,
-  Form,
   has,
   items,
   Modal,
-  option,
   State,
   Status,
   Table,
@@ -22,6 +19,8 @@ import {
   type RecordData,
 } from "./shared";
 import { StorageConnectionDialog } from "./StorageConnectionDialog";
+import { FeatureStoreDialog } from "./FeatureStoreDialog";
+import { InfrastructureConnectionDialog } from "./InfrastructureConnectionDialog";
 export function Platform({ identity }: OperationsProps) {
   const components = useResource("/api/v1/components"),
     connections = useResource("/api/v1/connections"),
@@ -38,35 +37,23 @@ export function Platform({ identity }: OperationsProps) {
     providers = useResource(
       admin(identity) ? "/api/v1/admin/feature-store-providers" : null,
     );
-  const [modal, setModal] = useState<"" | "connection" | "feature">(""),
+  const [connectionDialog, setConnectionDialog] = useState<{
+      connection: RecordData | null;
+      initial?: RecordData;
+    } | null>(null),
     [detail, setDetail] = useState<RecordData | null>(null),
     [storageDialog, setStorageDialog] = useState<{
       connection: RecordData | null;
+    } | null>(null),
+    [featureDialog, setFeatureDialog] = useState<{
+      connection: RecordData | null;
     } | null>(null);
-  const [connectionInitial, setConnectionInitial] = useState<RecordData>({
-    type: "prefect",
-    secret_ref: "none",
-  });
   const action = useAction(() => {
     components.reload();
     connections.reload();
     stores.reload();
     storage.reload();
   });
-  async function saveAndTest(path: string, body: RecordData) {
-    const saved = await request<RecordData>(path, { method: "POST", body });
-    const checked = await request<RecordData>(
-      `${path}/${encode(saved.id)}/test`,
-      { method: "POST", body: {} },
-    );
-    setModal("");
-    action
-      .run(
-        async () => checked,
-        checked.health?.detail || checked.message || "Connection checked.",
-      )
-      .catch(() => {});
-  }
   return (
     <>
       {action.feedback}
@@ -75,10 +62,12 @@ export function Platform({ identity }: OperationsProps) {
           <h2>Components</h2>
           <button
             disabled={!can(identity, "connections_write")}
-            onClick={() => {
-              setConnectionInitial({ type: "prefect", secret_ref: "none" });
-              setModal("connection");
-            }}
+            onClick={() =>
+              setConnectionDialog({
+                connection: null,
+                initial: { type: "prefect", secret_ref: "none" },
+              })
+            }
           >
             Add connection
           </button>
@@ -125,6 +114,12 @@ export function Platform({ identity }: OperationsProps) {
             ]}
             actions={(row) => (
               <>
+                <button
+                  disabled={!can(identity, "connections_write") || action.busy}
+                  onClick={() => setConnectionDialog({ connection: row })}
+                >
+                  Edit
+                </button>
                 <button
                   disabled={!can(identity, "connections_write") || action.busy}
                   onClick={() =>
@@ -198,7 +193,7 @@ export function Platform({ identity }: OperationsProps) {
           <section className="panel">
             <header className="page-header">
               <h2>Feature store connections</h2>
-              <button onClick={() => setModal("feature")}>
+              <button onClick={() => setFeatureDialog({ connection: null })}>
                 Add feature store
               </button>
             </header>
@@ -228,6 +223,16 @@ export function Platform({ identity }: OperationsProps) {
                 ]}
                 actions={(row) => (
                   <>
+                    {/* The internal store is configured by the platform
+                        environment; the API refuses to replace it. */}
+                    {row.id !== "internal" && (
+                      <button
+                        disabled={action.busy}
+                        onClick={() => setFeatureDialog({ connection: row })}
+                      >
+                        Edit
+                      </button>
+                    )}
                     <button
                       disabled={action.busy}
                       onClick={() =>
@@ -358,101 +363,34 @@ export function Platform({ identity }: OperationsProps) {
           </section>
         </>
       )}
-      {modal && (
-        <Modal
-          title={
-            modal === "connection"
-              ? "Connect infrastructure"
-              : "Connect feature store"
-          }
-          onClose={() => setModal("")}
-        >
-          {modal === "connection" ? (
-            <Form
-              initial={connectionInitial}
-              fields={[
-                {
-                  name: "type",
-                  label: "Service",
-                  type: "select",
-                  options: [
-                    "kubernetes",
-                    "mlflow",
-                    "rustfs",
-                    "s3",
-                    "kafka",
-                    "langfuse",
-                    "prefect",
-                    "openfaas",
-                    "redis",
-                  ].map(option),
-                },
-                { name: "name", label: "Connection name", required: true },
-                {
-                  name: "endpoint",
-                  label: "Service address",
-                  type: "url",
-                  required: true,
-                },
-                {
-                  name: "secret_ref",
-                  label: "Credential reference",
-                  required: true,
-                  help: "Use none or env:VARIABLE. Do not paste credentials.",
-                },
-              ]}
-              submit="Save and test"
-              onSubmit={(value) => saveAndTest("/api/v1/connections", value)}
-            />
-          ) : modal === "feature" ? (
-            <Form
-              fields={[
-                {
-                  name: "provider",
-                  label: "Provider",
-                  type: "select",
-                  required: true,
-                  options: items(providers.data)
-                    .filter((item) => item.kind === "external")
-                    .map((item) => ({
-                      value: item.name,
-                      label: item.title + (item.adapter ? "" : " (no adapter)"),
-                      disabled: !item.adapter,
-                    })),
-                },
-                { name: "name", label: "Name", required: true },
-                {
-                  name: "url",
-                  label: "Provider URL",
-                  required: true,
-                  type: "url",
-                },
-                { name: "feature_services", label: "Feature services" },
-                { name: "secret_ref", label: "Secret reference" },
-                {
-                  name: "allowed_projects",
-                  label: "Allowed project IDs",
-                  help: "Comma-separated; empty shares with all projects.",
-                },
-              ]}
-              submit="Save and test"
-              onSubmit={(value) =>
-                saveAndTest("/api/v1/admin/feature-stores", {
-                  provider: value.provider,
-                  name: value.name,
-                  config: {
-                    url: value.url,
-                    ...(value.feature_services
-                      ? { feature_services: value.feature_services }
-                      : {}),
-                  },
-                  secret_ref: value.secret_ref?.trim() || "",
-                  allowed_projects: csv(value.allowed_projects),
-                })
-              }
-            />
-          ) : null}
-        </Modal>
+      {connectionDialog && (
+        <InfrastructureConnectionDialog
+          connection={connectionDialog.connection}
+          initial={connectionDialog.initial}
+          onClose={() => setConnectionDialog(null)}
+          onSaved={(checked) => {
+            setConnectionDialog(null);
+            action
+              .run(async () => checked, checked.message || "Connection checked.")
+              .catch(() => {});
+          }}
+        />
+      )}
+      {featureDialog && (
+        <FeatureStoreDialog
+          connection={featureDialog.connection}
+          providers={items(providers.data)}
+          onClose={() => setFeatureDialog(null)}
+          onSaved={(checked) => {
+            setFeatureDialog(null);
+            action
+              .run(
+                async () => checked,
+                checked.health?.detail || "Store checked.",
+              )
+              .catch(() => {});
+          }}
+        />
       )}
       {storageDialog && (
         <StorageConnectionDialog
@@ -518,15 +456,17 @@ export function Platform({ identity }: OperationsProps) {
                       endpoint: "https://kubernetes.default.svc/version",
                     },
                   };
-                  setConnectionInitial({
-                    type: "kubernetes",
-                    endpoint: "",
-                    ...presets[detail.name],
-                    name: detail.name.toLowerCase().replaceAll(" ", "-"),
-                    secret_ref: "none",
+                  setConnectionDialog({
+                    connection: null,
+                    initial: {
+                      type: "kubernetes",
+                      endpoint: "",
+                      ...presets[detail.name],
+                      name: detail.name.toLowerCase().replaceAll(" ", "-"),
+                      secret_ref: "none",
+                    },
                   });
                   setDetail(null);
-                  setModal("connection");
                 }}
               >
                 Configure connection

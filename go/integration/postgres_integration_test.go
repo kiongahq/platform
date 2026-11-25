@@ -135,6 +135,19 @@ func TestPostgresRevokesTokensWhenAccessIsWithdrawn(t *testing.T) {
 	storetest.TokenRevocation(t, repository, fmt.Sprint(time.Now().UnixNano()))
 }
 
+func TestPostgresConnections(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	repository, err := store.OpenPostgres(context.Background(), databaseURL, fmt.Sprintf("connections-%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	storetest.Connections(t, repository)
+}
+
 // Two connections stand for two gateway replicas on one database.
 func TestPostgresSingleUseTokensAcrossReplicas(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")

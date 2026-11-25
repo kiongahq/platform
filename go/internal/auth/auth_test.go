@@ -78,6 +78,11 @@ func TestAllowedMatrix(t *testing.T) {
 		{RoleService, http.MethodPost, "/api/v1/realtime/fraud", true},
 		{RoleService, http.MethodPost, "/api/v1/models", true},
 		{RoleService, http.MethodPost, "/api/v1/connections", false},
+		{RoleAdmin, http.MethodPut, "/api/v1/connections/conn-1", true},
+		{RoleOperator, http.MethodPut, "/api/v1/connections/conn-1", true},
+		{RoleEngineer, http.MethodPut, "/api/v1/connections/conn-1", false},
+		{RoleViewer, http.MethodPut, "/api/v1/connections/conn-1", false},
+		{RoleService, http.MethodPut, "/api/v1/connections/conn-1", false},
 		{RoleService, http.MethodGet, "/api/v1/agents", true},
 	}
 	for _, test := range cases {

@@ -225,7 +225,7 @@ const projects = [{ id: "p1", name: "Project one" }];
 const langflowRoutes = {
   "/api/v1/langflow-workspaces": { mode: "local", items: [{ id: "local", name: "Local canvas", state: "configured" }] },
   "/api/v1/project-options": { items: projects },
-  "/api/v1/registered-storage": { items: [{ id: "st-5", name: "lake", bucket: "b" }] },
+  "/api/v1/registered-storage": { items: [{ id: "st-5", name: "lake", bucket: "b", project_ids: ["p1"] }] },
 };
 
 test("Langflow administrators register storage from the section and it refreshes", async () => {
@@ -264,4 +264,33 @@ test("Langflow hides Register storage from non-administrators and keeps the othe
   await waitFor(() => assert.ok(view.getByText("Local canvas")));
   for (const name of ["Register project datasets", "Register knowledge bases", "Register approved api connections", "Register storage"])
     assert.ok(view.getByRole("button", { name }), name);
+});
+
+test("Langflow registered storage follows the selected project", async () => {
+  const routes = {
+    ...langflowRoutes,
+    "/api/v1/registered-storage": {
+      items: [
+        { id: "st-1", name: "only-one", bucket: "a", project_ids: ["p1"] },
+        { id: "st-2", name: "only-two", bucket: "b", project_ids: ["p2"] },
+        { id: "st-3", name: "both", bucket: "c", project_ids: ["p1", "p2"] },
+      ],
+    },
+  };
+  const shown = (view: ReturnType<typeof render>) =>
+    ["only-one", "only-two", "both"].filter((name) => view.queryByText(name));
+  api(routes);
+  const one = render(<LangflowView view="langflow" identity={engineer} project="p1" resource="" onNavigate={() => {}} />);
+  await waitFor(() => assert.ok(one.getByText("both")));
+  assert.deepEqual(shown(one), ["only-one", "both"]);
+  cleanup();
+  api(routes);
+  const two = render(<LangflowView view="langflow" identity={engineer} project="p2" resource="" onNavigate={() => {}} />);
+  await waitFor(() => assert.ok(two.getByText("both")));
+  assert.deepEqual(shown(two), ["only-two", "both"]);
+  cleanup();
+  api(routes);
+  const all = render(<LangflowView view="langflow" identity={engineer} project="" resource="" onNavigate={() => {}} />);
+  await waitFor(() => assert.ok(all.getByText("both")));
+  assert.deepEqual(shown(all), ["only-one", "only-two", "both"]);
 });

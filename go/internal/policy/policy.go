@@ -394,7 +394,7 @@ var catalog = []ActionInfo{
 	{FeatureRead, "See feature views.", "kionga:feature/<name>", "GET /api/v1/features"},
 	{FeatureWrite, "Apply feature views and report materializations.", "kionga:feature/<name>", "POST /api/v1/features"},
 	{SecretRead, "Read connection secrets. Reserved: the gateway never returns secrets today.", "kionga:connection/<id>", "not yet enforced"},
-	{InfraProvision, "Create, test and activate infrastructure connections.", "kionga:connection/<id>", "POST /api/v1/connections, connections/{id}/test, connections/{id}/activate"},
+	{InfraProvision, "Create, edit, test and activate infrastructure connections.", "kionga:connection/<id>", "POST /api/v1/connections, PUT connections/{id}, POST connections/{id}/test, connections/{id}/activate"},
 	{BlogWrite, "Create, edit and delete engineering blog drafts.", "kionga:blog/<id>", "POST/PUT/DELETE /api/v1/admin/blogs"},
 	{BlogPublish, "Publish a blog post.", "kionga:blog/<id>", "saving a post with status published"},
 	{PolicyRead, "Read policies, groups and attachments; explain another principal's access.", "kionga:policy/<id>, kionga:user/<subject>", "GET /api/v1/admin/iam/*, GET /api/v1/iam/explain for other principals"},
