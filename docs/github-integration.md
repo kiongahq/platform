@@ -11,7 +11,8 @@ or grant platform access outside the caller's existing permissions.
 In Settings, follow **Connect GitHub account** when a GitHub App is configured.
 A fine-grained personal token is also supported. Grant only the repository read
 access needed for discovery. GitHub credentials are encrypted with
-`KIONGA_CREDENTIAL_KEY`, stored per platform subject and never returned to the
+`KIONGA_CREDENTIAL_KEY`, or by OpenBao transit when `KIONGA_KEY_PROVIDER=openbao`,
+stored per platform subject and never returned to the
 browser or passed through a workspace proxy. Disconnecting removes the saved
 credential from the platform; GitHub authorization can also be revoked in GitHub.
 
@@ -27,7 +28,8 @@ gateway variables:
 | `KIONGA_GITHUB_APP_CLIENT_ID` | GitHub App OAuth client ID |
 | `KIONGA_GITHUB_APP_CLIENT_SECRET` | GitHub App OAuth client secret |
 | `KIONGA_GITHUB_APP_CALLBACK_URL` | Console origin plus `/api/v1/settings/github/callback` |
-| `KIONGA_CREDENTIAL_KEY` | Base64-encoded 32-byte account encryption key |
+| `KIONGA_CREDENTIAL_KEY` | Base64-encoded 32-byte account encryption key (static key provider) |
+| `KIONGA_KEY_PROVIDER`, `OPENBAO_*` | Instead of the key: OpenBao transit seals account credentials |
 
 Set the App's OAuth callback URL to the same callback. Its installation setup URL
 can point to the console origin plus `/console/settings`. The callback must use

@@ -131,8 +131,9 @@ operator) and records the upstream in the annotation `kionga.dev/upstream`
 4. re-checks access on every request, then reverse-proxies to the upstream
    with `X-Kionga-Subject` set and its own cookie removed.
 
-Tickets and sessions are signed with a key derived from
-`KIONGA_CREDENTIAL_KEY` (or `KIONGA_INTERNAL_TOKEN`), so every gateway replica
+Tickets and sessions are signed with a key derived from `KIONGA_SIGNING_KEY`
+(falling back to `KIONGA_CREDENTIAL_KEY` with the static key provider, then
+`KIONGA_INTERNAL_TOKEN`), so every gateway replica
 accepts them. A ticket works once: the gateway records its id in its own
 store when it is redeemed (PostgreSQL, shared by every replica; in memory for
 the single-process file store) and refuses a second use on any replica with
