@@ -49,9 +49,10 @@ import (
 //     applies on the next request.
 //
 // Tickets and sessions are HMAC-signed with a key derived from
-// KIONGA_CREDENTIAL_KEY (or KIONGA_INTERNAL_TOKEN), so every gateway replica
-// accepts them. Without either key, a per-process random key is used, which
-// suits a single development replica only.
+// KIONGA_SIGNING_KEY (falling back to KIONGA_CREDENTIAL_KEY with the static key
+// provider, then KIONGA_INTERNAL_TOKEN), so every gateway replica accepts
+// them. Without any of these, a per-process random key is used, which suits a
+// single development replica only.
 //
 // Single use needs state the replicas share. That is the gateway's own
 // store: PostgreSQL in every multi-replica install, or the memory of the one
@@ -98,21 +99,39 @@ var (
 
 func appSigningKey() []byte {
 	appKeyOnce.Do(func() {
-		secret := os.Getenv("KIONGA_CREDENTIAL_KEY")
-		if secret == "" {
-			secret = os.Getenv("KIONGA_INTERNAL_TOKEN")
+		var stable bool
+		appKey, stable = deriveAppSigningKey(os.Getenv)
+		if !stable {
+			log.Printf("application sign-in: no KIONGA_SIGNING_KEY; sessions are valid on this replica only")
 		}
-		if secret == "" {
-			random := make([]byte, 32)
-			_, _ = rand.Read(random)
-			secret = string(random)
-			log.Printf("application sign-in: no KIONGA_CREDENTIAL_KEY; sessions are valid on this replica only")
-		}
-		mac := hmac.New(sha256.New, []byte(secret))
-		mac.Write([]byte("kionga application sign-in v1"))
-		appKey = mac.Sum(nil)
 	})
 	return appKey
+}
+
+// deriveAppSigningKey picks the secret that application sign-in tickets and
+// sessions are signed with, in order: KIONGA_SIGNING_KEY; KIONGA_CREDENTIAL_KEY,
+// which installs from before the signing key existed used, so their tickets
+// and sessions stay valid across the upgrade; KIONGA_INTERNAL_TOKEN; and a
+// per-process random key (stable false). With KIONGA_KEY_PROVIDER=openbao the
+// credential key is skipped: it is at most a temporary legacy read key there,
+// and removing it must not change the signing key.
+func deriveAppSigningKey(getenv func(string) string) (key []byte, stable bool) {
+	secret := getenv("KIONGA_SIGNING_KEY")
+	if secret == "" && strings.TrimSpace(getenv("KIONGA_KEY_PROVIDER")) != "openbao" {
+		secret = getenv("KIONGA_CREDENTIAL_KEY")
+	}
+	if secret == "" {
+		secret = getenv("KIONGA_INTERNAL_TOKEN")
+	}
+	stable = secret != ""
+	if !stable {
+		random := make([]byte, 32)
+		_, _ = rand.Read(random)
+		secret = string(random)
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte("kionga application sign-in v1"))
+	return mac.Sum(nil), stable
 }
 
 func signAppToken(token appToken) string {

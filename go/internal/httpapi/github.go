@@ -2,10 +2,10 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -25,7 +25,7 @@ import (
 
 var githubHTTP = &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 
-const githubAccountKind = "github_account"
+const githubAccountKind = store.GitHubAccountKind
 
 type githubAccount struct {
 	Login          string    `json:"login"`
@@ -64,22 +64,17 @@ func (s *Server) saveGitHubAccount(subject string, account githubAccount) error 
 	_, err := store.UpdateDoc(s.store, githubAccountKind, githubAccountID(subject), func(_ githubAccount, _ bool) (githubAccount, error) { return account, nil }, "github.account.updated", subject)
 	return err
 }
-func openGitHubSecret(subject, encrypted string) (string, error) {
-	aead, err := hubCipher()
-	if err != nil {
+func openGitHubSecret(ctx context.Context, aad []byte, encrypted string) (string, error) {
+	plain, err := openCredential(ctx, aad, encrypted)
+	switch {
+	case errors.Is(err, errCredentialKeyMissing):
 		return "", errors.New("Configure KIONGA_CREDENTIAL_KEY to encrypt GitHub account connections")
-	}
-	data, err := base64.StdEncoding.DecodeString(encrypted)
-	if err != nil || len(data) < aead.NonceSize() {
+	case errors.Is(err, errCredentialUnreadable):
 		return "", errors.New("Reconnect your GitHub account")
 	}
-	plain, err := aead.Open(nil, data[:aead.NonceSize()], data[aead.NonceSize():], []byte(subject))
-	if err != nil {
-		return "", errors.New("Reconnect your GitHub account")
-	}
-	return string(plain), nil
+	return plain, err
 }
-func (s *Server) githubToken(subject string) (githubAccount, string, error) {
+func (s *Server) githubToken(ctx context.Context, subject string) (githubAccount, string, error) {
 	account, err := s.readGitHubAccount(subject)
 	if err != nil || account.Ciphertext == "" {
 		return account, "", errors.New("Connect your GitHub account first")
@@ -87,7 +82,7 @@ func (s *Server) githubToken(subject string) (githubAccount, string, error) {
 	if !account.ExpiresAt.IsZero() && time.Now().After(account.ExpiresAt) {
 		return account, "", errors.New("Your GitHub authorization expired. Reconnect your account")
 	}
-	token, err := openGitHubSecret("github:"+subject, account.Ciphertext)
+	token, err := openGitHubSecret(ctx, githubCredentialAAD(subject), account.Ciphertext)
 	return account, token, err
 }
 func githubRequest(r *http.Request, path, token string, result any) error {
@@ -171,9 +166,13 @@ func (s *Server) githubAccount(w http.ResponseWriter, r *http.Request) {
 				writeError(w, 400, "invalid_token", "Enter a GitHub access token")
 				return
 			}
-			cipher, err := sealHubToken("github:"+subject, body.Token)
-			if err != nil {
+			cipher, err := sealCredential(r.Context(), githubCredentialAAD(subject), body.Token)
+			if errors.Is(err, errCredentialKeyMissing) {
 				writeError(w, 503, "not_configured", "Configure KIONGA_CREDENTIAL_KEY to encrypt GitHub credentials")
+				return
+			}
+			if err != nil {
+				writeError(w, 503, "not_configured", err.Error())
 				return
 			}
 			var identity struct {
@@ -188,7 +187,7 @@ func (s *Server) githubAccount(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		} else if body.InstallationID > 0 {
-			account, token, err := s.githubToken(subject)
+			account, token, err := s.githubToken(r.Context(), subject)
 			if err != nil {
 				writeError(w, 422, "github_error", err.Error())
 				return
@@ -224,12 +223,11 @@ func (s *Server) githubAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	account, _ := s.readGitHubAccount(subject)
-	_, keyErr := hubCipher()
 	installURL := ""
 	if slug := githubAppSlug(); slug != "" {
 		installURL = "https://github.com/apps/" + slug + "/installations/new"
 	}
-	writeJSON(w, 200, map[string]any{"connected": account.Ciphertext != "" && (account.ExpiresAt.IsZero() || time.Now().Before(account.ExpiresAt)), "configured": keyErr == nil, "username": account.Login, "installation_id": account.InstallationID, "updated_at": account.UpdatedAt, "expires_at": account.ExpiresAt, "oauth_configured": githubOAuthConfigured(), "install_url": installURL})
+	writeJSON(w, 200, map[string]any{"connected": account.Ciphertext != "" && (account.ExpiresAt.IsZero() || time.Now().Before(account.ExpiresAt)), "configured": credentialsConfigured(), "username": account.Login, "installation_id": account.InstallationID, "updated_at": account.UpdatedAt, "expires_at": account.ExpiresAt, "oauth_configured": githubOAuthConfigured(), "install_url": installURL})
 }
 func githubInstallations(r *http.Request, token string) ([]githubInstallation, error) {
 	if githubAppSlug() == "" {
@@ -256,7 +254,7 @@ func githubInstallations(r *http.Request, token string) ([]githubInstallation, e
 }
 func (s *Server) listGitHubInstallations(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	_, token, err := s.githubToken(principal(r).Subject)
+	_, token, err := s.githubToken(r.Context(), principal(r).Subject)
 	if err != nil {
 		writeError(w, 422, "github_error", err.Error())
 		return
@@ -270,7 +268,7 @@ func (s *Server) listGitHubInstallations(w http.ResponseWriter, r *http.Request)
 }
 func (s *Server) githubRepositories(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	account, token, err := s.githubToken(principal(r).Subject)
+	account, token, err := s.githubToken(r.Context(), principal(r).Subject)
 	if err != nil {
 		writeError(w, 422, "github_error", err.Error())
 		return
@@ -305,8 +303,7 @@ func (s *Server) githubRepositories(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) githubConnect(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	_, keyErr := hubCipher()
-	if !githubOAuthConfigured() || keyErr != nil {
+	if !githubOAuthConfigured() || !credentialsConfigured() {
 		writeError(w, 503, "not_configured", "Configure the GitHub App client ID, client secret, app slug, callback URL and credential key first")
 		return
 	}
@@ -317,7 +314,7 @@ func (s *Server) githubConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	state := hex.EncodeToString(nonce)
 	value := state + ":" + strconv.FormatInt(time.Now().Unix(), 10)
-	cipher, err := sealHubToken("github-oauth:"+principal(r).Subject, value)
+	cipher, err := sealCredential(r.Context(), githubOAuthStateAAD(principal(r).Subject), value)
 	if err != nil {
 		writeError(w, 503, "not_configured", "GitHub account encryption is unavailable")
 		return
@@ -334,7 +331,7 @@ func (s *Server) githubCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid_state", "Restart GitHub authorization from Settings")
 		return
 	}
-	value, err := openGitHubSecret("github-oauth:"+subject, cookie.Value)
+	value, err := openGitHubSecret(r.Context(), githubOAuthStateAAD(subject), cookie.Value)
 	parts := strings.Split(value, ":")
 	valid := err == nil && len(parts) == 2
 	if valid {
@@ -381,7 +378,7 @@ func (s *Server) githubCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, "github_error", "Could not verify the authorized GitHub account")
 		return
 	}
-	cipher, err := sealHubToken("github:"+subject, token.AccessToken)
+	cipher, err := sealCredential(r.Context(), githubCredentialAAD(subject), token.AccessToken)
 	if err != nil {
 		writeError(w, 503, "not_configured", "GitHub credential encryption is unavailable")
 		return

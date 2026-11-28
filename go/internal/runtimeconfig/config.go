@@ -14,7 +14,7 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-var SecretNames = []string{"DATABASE_URL", "OIDC_CLIENT_SECRET", "KIONGA_INTERNAL_TOKEN", "KIONGA_CREDENTIAL_KEY", "S3_ACCESS_KEY", "S3_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "REDIS_URL", "KAFKA_REST_TOKEN", "MLFLOW_TOKEN", "OPENFAAS_PASSWORD", "LANGFUSE_SECRET_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LLM_UPSTREAM_API_KEY", "KIONGA_JUPYTER_TOKEN", "KIONGA_IDE_PASSWORD", "TRACE_SINK_TOKEN", "KIONGA_LOCAL_PASSWORD", "KIONGA_AGENT_DESIGNER_RUNNER_TOKEN", "KIONGA_SANDBOX_TOKEN"}
+var SecretNames = []string{"DATABASE_URL", "OIDC_CLIENT_SECRET", "KIONGA_INTERNAL_TOKEN", "KIONGA_CREDENTIAL_KEY", "KIONGA_SIGNING_KEY", "S3_ACCESS_KEY", "S3_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "REDIS_URL", "KAFKA_REST_TOKEN", "MLFLOW_TOKEN", "OPENFAAS_PASSWORD", "LANGFUSE_SECRET_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LLM_UPSTREAM_API_KEY", "KIONGA_JUPYTER_TOKEN", "KIONGA_IDE_PASSWORD", "TRACE_SINK_TOKEN", "KIONGA_LOCAL_PASSWORD", "KIONGA_AGENT_DESIGNER_RUNNER_TOKEN", "KIONGA_SANDBOX_TOKEN"}
 var keyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
 func readFile(path string) ([]byte, error) {
@@ -82,7 +82,7 @@ func ValidateGateway() error {
 	if os.Getenv("KIONGA_ENVIRONMENT") != "production" {
 		return nil
 	}
-	for _, key := range []string{"DATABASE_URL", "OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUDIENCE", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_AUTH_URL", "OIDC_TOKEN_URL", "OIDC_REDIRECT_URL", "KIONGA_INTERNAL_TOKEN", "KIONGA_CREDENTIAL_KEY", "KIONGA_ALLOWED_ORIGIN"} {
+	for _, key := range []string{"DATABASE_URL", "OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUDIENCE", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_AUTH_URL", "OIDC_TOKEN_URL", "OIDC_REDIRECT_URL", "KIONGA_INTERNAL_TOKEN", "KIONGA_ALLOWED_ORIGIN"} {
 		if os.Getenv(key) == "" {
 			return fmt.Errorf("production requires %s", key)
 		}
@@ -126,9 +126,56 @@ func ValidateGateway() error {
 			return fmt.Errorf("production KIONGA_LOCAL_PASSWORD (break-glass sign-in) must be at least 16 characters and not a development default")
 		}
 	}
-	key, err := base64.StdEncoding.DecodeString(os.Getenv("KIONGA_CREDENTIAL_KEY"))
-	if err != nil || len(key) != 32 {
-		return fmt.Errorf("KIONGA_CREDENTIAL_KEY must encode 32 bytes")
+	return validateKeyProvider()
+}
+
+// validateKeyProvider checks how the production gateway seals stored account
+// credentials and signs application sign-in tickets.
+//
+// static (the default) needs KIONGA_CREDENTIAL_KEY. openbao needs a complete
+// OpenBao transit configuration over HTTPS and its own KIONGA_SIGNING_KEY,
+// because the credential key, which signing used to derive from, is no longer
+// in the gateway. A credential key next to openbao is accepted only as a
+// valid legacy read key for records not yet rewrapped.
+func validateKeyProvider() error {
+	credentialKey := os.Getenv("KIONGA_CREDENTIAL_KEY")
+	validCredentialKey := func() error {
+		key, err := base64.StdEncoding.DecodeString(credentialKey)
+		if err != nil || len(key) != 32 {
+			return fmt.Errorf("KIONGA_CREDENTIAL_KEY must encode 32 bytes")
+		}
+		return nil
 	}
-	return nil
+	if signing := os.Getenv("KIONGA_SIGNING_KEY"); signing != "" {
+		lower := strings.ToLower(signing)
+		if len(signing) < 32 || strings.Contains(lower, "local") || strings.Contains(lower, "change-me") {
+			return fmt.Errorf("production KIONGA_SIGNING_KEY must be at least 32 characters and not a development default")
+		}
+	}
+	switch strings.TrimSpace(os.Getenv("KIONGA_KEY_PROVIDER")) {
+	case "", "static":
+		if credentialKey == "" {
+			return fmt.Errorf("production requires KIONGA_CREDENTIAL_KEY (or KIONGA_KEY_PROVIDER=openbao with a complete OpenBao configuration)")
+		}
+		return validCredentialKey()
+	case "openbao":
+		for _, key := range []string{"OPENBAO_ADDR", "OPENBAO_TRANSIT_KEY", "OPENBAO_AUTH_ROLE"} {
+			if strings.TrimSpace(os.Getenv(key)) == "" {
+				return fmt.Errorf("production KIONGA_KEY_PROVIDER=openbao requires %s", key)
+			}
+		}
+		u, err := url.Parse(strings.TrimSpace(os.Getenv("OPENBAO_ADDR")))
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+			return fmt.Errorf("production requires an HTTPS URL for OPENBAO_ADDR")
+		}
+		if os.Getenv("KIONGA_SIGNING_KEY") == "" {
+			return fmt.Errorf("production KIONGA_KEY_PROVIDER=openbao requires KIONGA_SIGNING_KEY: application sign-in tickets were signed with a key derived from KIONGA_CREDENTIAL_KEY, which the gateway no longer holds")
+		}
+		if credentialKey != "" {
+			return validCredentialKey()
+		}
+		return nil
+	default:
+		return fmt.Errorf("KIONGA_KEY_PROVIDER must be static or openbao")
+	}
 }

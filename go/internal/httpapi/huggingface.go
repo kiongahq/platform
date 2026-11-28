@@ -1,17 +1,13 @@
 package httpapi
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"encoding/base64"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -36,29 +32,10 @@ type hubModel struct {
 	Tags        []string `json:"tags"`
 }
 
-func hubCipher() (cipher.AEAD, error) {
-	key, err := base64.StdEncoding.DecodeString(os.Getenv("KIONGA_CREDENTIAL_KEY"))
-	if err != nil || len(key) != 32 {
-		return nil, errors.New("Account connections require KIONGA_CREDENTIAL_KEY (base64-encoded 32-byte key) on the gateway")
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	return cipher.NewGCM(block)
+func sealHubToken(ctx context.Context, subject, token string) (string, error) {
+	return sealCredential(ctx, hubCredentialAAD(subject), token)
 }
-func sealHubToken(subject, token string) (string, error) {
-	aead, err := hubCipher()
-	if err != nil {
-		return "", err
-	}
-	nonce := make([]byte, aead.NonceSize())
-	if _, err = rand.Read(nonce); err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(aead.Seal(nonce, nonce, []byte(token), []byte(subject))), nil
-}
-func (s *Server) hubToken(subject string) (string, error) {
+func (s *Server) hubToken(ctx context.Context, subject string) (string, error) {
 	account, err := s.store.HubAccount(subject)
 	if errors.Is(err, store.ErrNotFound) {
 		return "", nil
@@ -69,19 +46,11 @@ func (s *Server) hubToken(subject string) (string, error) {
 	if account.Ciphertext == "" {
 		return "", nil
 	}
-	aead, err := hubCipher()
-	if err != nil {
-		return "", err
-	}
-	data, err := base64.StdEncoding.DecodeString(account.Ciphertext)
-	if err != nil || len(data) < aead.NonceSize() {
+	plain, err := openCredential(ctx, hubCredentialAAD(subject), account.Ciphertext)
+	if errors.Is(err, errCredentialUnreadable) {
 		return "", errors.New("Account credential cannot be decrypted; reconnect your account")
 	}
-	plain, err := aead.Open(nil, data[:aead.NonceSize()], data[aead.NonceSize():], []byte(subject))
-	if err != nil {
-		return "", errors.New("Account credential cannot be decrypted; reconnect your account")
-	}
-	return string(plain), nil
+	return plain, err
 }
 
 // The host is fixed: a browser cannot direct its saved credential to another host.
@@ -133,7 +102,7 @@ func (s *Server) huggingFaceAccount(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "invalid_token", "Enter a Hugging Face read or fine-grained token")
 			return
 		}
-		encrypted, err := sealHubToken(subject, req.Token)
+		encrypted, err := sealHubToken(r.Context(), subject, req.Token)
 		if err != nil {
 			writeError(w, 503, "not_configured", err.Error())
 			return
@@ -164,13 +133,12 @@ func (s *Server) huggingFaceAccount(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "storage_error", "Could not read account")
 		return
 	}
-	_, keyErr := hubCipher()
-	writeJSON(w, 200, map[string]any{"connected": account.Ciphertext != "", "username": account.Username, "configured": keyErr == nil})
+	writeJSON(w, 200, map[string]any{"connected": account.Ciphertext != "", "username": account.Username, "configured": credentialsConfigured()})
 }
 
 func (s *Server) huggingFaceModels(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	token, err := s.hubToken(principal(r).Subject)
+	token, err := s.hubToken(r.Context(), principal(r).Subject)
 	if err != nil {
 		writeError(w, 503, "credential_unavailable", err.Error())
 		return
@@ -222,7 +190,7 @@ func (s *Server) importHuggingFaceModel(w http.ResponseWriter, r *http.Request) 
 	if req.Revision == "" {
 		req.Revision = "main"
 	}
-	token, err := s.hubToken(principal(r).Subject)
+	token, err := s.hubToken(r.Context(), principal(r).Subject)
 	if err != nil {
 		writeError(w, 503, "credential_unavailable", err.Error())
 		return

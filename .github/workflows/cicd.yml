@@ -76,6 +76,18 @@ jobs:
       qdrant:
         image: qdrant/qdrant:v1.20.0
         ports: ["6333:6333"]
+      openbao:
+        # Dev-mode OpenBao (in-memory, unsealed) for the credential keyring
+        # integration test only; never a deployment pattern.
+        image: quay.io/openbao/openbao:2.7.3@sha256:ba4b133eb9586630024e71a617e66f37f29cc3534cdd46a6233e098ceded8dc9
+        env:
+          BAO_DEV_ROOT_TOKEN_ID: kionga-ci-root
+        ports: ["8200:8200"]
+        options: >-
+          --health-cmd "bao status -address=http://127.0.0.1:8200"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     defaults:
       run:
         working-directory: go
@@ -106,6 +118,10 @@ jobs:
       - run: go test ./internal/httpapi -run TestQdrantKnowledgeRoundTrip -count=1
         env:
           KIONGA_QDRANT_TEST_URL: http://localhost:6333
+      - run: go test -race ./internal/keyring -run '^TestRealOpenBao' -count=1 -v
+        env:
+          OPENBAO_TEST_ADDR: http://localhost:8200
+          OPENBAO_TEST_TOKEN: kionga-ci-root
       - run: go build ./cmd/...
       - name: Enforce architecture exclusions
         run: "! grep -RniE '\\b(nuclio|v3io|iguazio)\\b' ."

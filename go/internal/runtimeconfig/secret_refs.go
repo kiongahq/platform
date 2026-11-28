@@ -68,12 +68,25 @@ func allScopes() []SecretScope {
 
 // GatewayOwnSecret reports whether name is a secret the gateway holds for its own
 // use, which no resource may reference even when an allowlist names it.
+//
+// The credential keyring's settings are refused the same way: OPENBAO_* says
+// where the credential key service is and which role and key the gateway uses,
+// and BAO_* and VAULT_* are the names OpenBao clients read (BAO_TOKEN,
+// VAULT_TOKEN). A reference to any of them would hand a caller-chosen endpoint
+// the gateway's key-service location or a token for it.
 func GatewayOwnSecret(name string) bool {
 	if slices.Contains(SecretNames, name) {
 		return true
 	}
-	return name == "KIONGA_DESIGNER_RUNNER_TOKEN" || name == "KIONGA_SANDBOX_TOKEN"
+	for _, prefix := range keyServicePrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return name == "KIONGA_DESIGNER_RUNNER_TOKEN" || name == "KIONGA_SANDBOX_TOKEN" || name == "KIONGA_KEY_PROVIDER"
 }
+
+var keyServicePrefixes = []string{"OPENBAO_", "BAO_", "VAULT_"}
 
 // configurationName reports names that hold settings about references rather than a
 // secret: the allowlists, which match their own prefix, and any *_FILE path.

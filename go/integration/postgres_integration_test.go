@@ -235,3 +235,16 @@ func TestPostgresLocalSessionsAcrossGateways(t *testing.T) {
 		}
 	}
 }
+
+func TestPostgresSealedCredentials(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	repository, err := store.OpenPostgres(context.Background(), databaseURL, fmt.Sprintf("sealed-%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	storetest.SealedCredentials(t, repository, fmt.Sprint(time.Now().UnixNano()))
+}

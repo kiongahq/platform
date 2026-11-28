@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -64,7 +65,7 @@ func TestGitHubCredentialsAreEncryptedPersistentAndSubjectScoped(t *testing.T) {
 	if deleted := hubCall(handler, "alice", "DELETE", "/api/v1/settings/github", ""); deleted.Code != 200 {
 		t.Fatal("disconnect failed")
 	}
-	if _, _, err := (&Server{store: store.New(path)}).githubToken("alice"); err == nil {
+	if _, _, err := (&Server{store: store.New(path)}).githubToken(context.Background(), "alice"); err == nil {
 		t.Fatal("token survived disconnect")
 	}
 }

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -59,22 +60,22 @@ func TestHubAccountEncryptedPersistentAndIsolated(t *testing.T) {
 		t.Fatal("plaintext credential on disk")
 	}
 	server := &Server{store: store.New(path)}
-	if token, err := server.hubToken("alice"); err != nil || token != "hf_private" {
+	if token, err := server.hubToken(context.Background(), "alice"); err != nil || token != "hf_private" {
 		t.Fatal("encrypted account not restored")
 	}
-	if token, err := server.hubToken("bob"); err != nil || token != "" {
+	if token, err := server.hubToken(context.Background(), "bob"); err != nil || token != "" {
 		t.Fatal("credential leaked across subjects")
 	}
 	stolen, _ := repo.HubAccount("alice")
 	_ = repo.SaveHubAccount("bob", stolen)
-	if _, err := (&Server{store: repo}).hubToken("bob"); err == nil {
+	if _, err := (&Server{store: repo}).hubToken(context.Background(), "bob"); err == nil {
 		t.Fatal("ciphertext not bound to subject")
 	}
 	response = hubCall(handler, "alice", "DELETE", "/api/v1/settings/huggingface", "")
 	if response.Code != 200 {
 		t.Fatal(response.Body)
 	}
-	if token, err := (&Server{store: repo}).hubToken("alice"); err != nil || token != "" {
+	if token, err := (&Server{store: repo}).hubToken(context.Background(), "alice"); err != nil || token != "" {
 		t.Fatal("disconnect left usable token")
 	}
 }

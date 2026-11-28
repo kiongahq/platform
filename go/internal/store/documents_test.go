@@ -77,3 +77,7 @@ func TestStoreLocalSessions(t *testing.T) {
 	repo := store.New()
 	storetest.LocalSessions(t, repo, repo, "file")
 }
+
+func TestFileSealedCredentials(t *testing.T) {
+	storetest.SealedCredentials(t, store.New(filepath.Join(t.TempDir(), "state.json")), "file")
+}
