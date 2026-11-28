@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kiongahq/platform/internal/keyring/keyringtest"
 )
 
 const testKey = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=" // 32 bytes
@@ -100,8 +102,8 @@ func TestFormat(t *testing.T) {
 }
 
 func TestOpenBaoRoundTripBindsContext(t *testing.T) {
-	stub := newStubBao(t)
-	client := stub.client(t)
+	stub := keyringtest.New(t)
+	client := stubClient(t, stub)
 	ctx := context.Background()
 	sealed, err := client.Seal(ctx, []byte("hf_private"), []byte("alice"))
 	if err != nil {
@@ -110,7 +112,7 @@ func TestOpenBaoRoundTripBindsContext(t *testing.T) {
 	if !strings.HasPrefix(string(sealed), "vault:v1:") || bytes.Contains(sealed, []byte("hf_private")) {
 		t.Fatalf("unexpected ciphertext %q", sealed)
 	}
-	if body := stub.lastBodies["/v1/transit/encrypt/kionga-credential"]; !strings.Contains(body, base64.StdEncoding.EncodeToString([]byte("alice"))) {
+	if body := stub.LastBody("/v1/transit/encrypt/kionga-credential"); !strings.Contains(body, base64.StdEncoding.EncodeToString([]byte("alice"))) {
 		t.Fatalf("associated data was not sent as context: %s", body)
 	}
 	plain, err := client.Open(ctx, sealed, []byte("alice"))
@@ -126,14 +128,14 @@ func TestOpenBaoRoundTripBindsContext(t *testing.T) {
 	if _, err := client.Open(ctx, []byte("bm90LXRyYW5zaXQ="), []byte("alice")); !errors.Is(err, ErrOpen) {
 		t.Fatalf("static value sent to transit: %v", err)
 	}
-	if logins, _, _, _ := stub.counts(); logins != 1 {
+	if logins, _, _, _ := stub.Counts(); logins != 1 {
 		t.Fatalf("token was not reused: %d logins", logins)
 	}
 }
 
 func TestOpenBaoRenewsBeforeExpiryAndLogsInAgainWhenRenewalFails(t *testing.T) {
-	stub := newStubBao(t)
-	client := stub.client(t)
+	stub := keyringtest.New(t)
+	client := stubClient(t, stub)
 	now := time.Unix(1_000_000, 0)
 	client.now = func() time.Time { return now }
 	ctx := context.Background()
@@ -145,7 +147,7 @@ func TestOpenBaoRenewsBeforeExpiryAndLogsInAgainWhenRenewalFails(t *testing.T) {
 	if _, err := client.Seal(ctx, []byte("a"), []byte("s")); err != nil {
 		t.Fatal(err)
 	}
-	if logins, renews, _, _ := stub.counts(); logins != 1 || renews != 0 {
+	if logins, renews, _, _ := stub.Counts(); logins != 1 || renews != 0 {
 		t.Fatalf("early renewal: logins %d renews %d", logins, renews)
 	}
 	// Past the renewal point and before expiry: renew-self, same login.
@@ -153,16 +155,16 @@ func TestOpenBaoRenewsBeforeExpiryAndLogsInAgainWhenRenewalFails(t *testing.T) {
 	if _, err := client.Seal(ctx, []byte("a"), []byte("s")); err != nil {
 		t.Fatal(err)
 	}
-	if logins, renews, _, _ := stub.counts(); logins != 1 || renews != 1 {
+	if logins, renews, _, _ := stub.Counts(); logins != 1 || renews != 1 {
 		t.Fatalf("expected one renewal: logins %d renews %d", logins, renews)
 	}
 	// Renewal refused: fall back to a fresh login.
-	stub.set(func(s *stubBao) { s.failRenew = true })
+	stub.Set(func(s *keyringtest.Bao) { s.FailRenew = true })
 	now = now.Add(41 * time.Minute)
 	if _, err := client.Seal(ctx, []byte("a"), []byte("s")); err != nil {
 		t.Fatal(err)
 	}
-	if logins, renews, _, _ := stub.counts(); logins != 2 || renews != 2 {
+	if logins, renews, _, _ := stub.Counts(); logins != 2 || renews != 2 {
 		t.Fatalf("expected re-login after failed renewal: logins %d renews %d", logins, renews)
 	}
 	// Expired outright: login, no renewal attempt.
@@ -170,15 +172,15 @@ func TestOpenBaoRenewsBeforeExpiryAndLogsInAgainWhenRenewalFails(t *testing.T) {
 	if _, err := client.Seal(ctx, []byte("a"), []byte("s")); err != nil {
 		t.Fatal(err)
 	}
-	if logins, renews, _, _ := stub.counts(); logins != 3 || renews != 2 {
+	if logins, renews, _, _ := stub.Counts(); logins != 3 || renews != 2 {
 		t.Fatalf("expected login after expiry: logins %d renews %d", logins, renews)
 	}
 }
 
 func TestOpenBaoBackgroundRenewal(t *testing.T) {
-	stub := newStubBao(t)
-	stub.set(func(s *stubBao) { s.lease = 2 }) // renew after ~1.3 s
-	client := stub.client(t)
+	stub := keyringtest.New(t)
+	stub.Set(func(s *keyringtest.Bao) { s.Lease = 2 }) // renew after ~1.3 s
+	client := stubClient(t, stub)
 	if _, err := client.ensureToken(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -187,52 +189,55 @@ func TestOpenBaoBackgroundRenewal(t *testing.T) {
 	go func() { client.RunRenewal(ctx); close(done) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, renews, _, _ := stub.counts(); renews > 0 {
+		if _, renews, _, _ := stub.Counts(); renews > 0 {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	cancel()
 	<-done
-	if logins, renews, _, _ := stub.counts(); renews == 0 || logins != 1 {
+	if logins, renews, _, _ := stub.Counts(); renews == 0 || logins != 1 {
 		t.Fatalf("background renewal did not run: logins %d renews %d", logins, renews)
 	}
 }
 
 func TestOpenBaoLogsInAgainOnceWhenTokenIsRevoked(t *testing.T) {
-	stub := newStubBao(t)
-	client := stub.client(t)
+	stub := keyringtest.New(t)
+	client := stubClient(t, stub)
 	ctx := context.Background()
 	sealed, err := client.Seal(ctx, []byte("v"), []byte("s"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	stub.set(func(s *stubBao) { s.revokeNext = true })
+	stub.Set(func(s *keyringtest.Bao) { s.RevokeNext = true })
 	if _, err := client.Open(ctx, sealed, []byte("s")); err != nil {
 		t.Fatalf("open after revocation: %v", err)
 	}
-	if logins, _, _, _ := stub.counts(); logins != 2 {
+	if logins, _, _, _ := stub.Counts(); logins != 2 {
 		t.Fatalf("expected one re-login, got %d logins", logins)
 	}
 	// A policy that keeps refusing is an error after one retry, not a loop.
-	stub.set(func(s *stubBao) { s.failStatus["encrypt/kionga-credential"] = 403 })
+	stub.Set(func(s *keyringtest.Bao) { s.FailStatus["encrypt/kionga-credential"] = 403 })
 	if _, err := client.Seal(ctx, []byte("v"), []byte("s")); err == nil || !strings.Contains(err.Error(), "HTTP 403") {
 		t.Fatalf("expected 403 error, got %v", err)
 	}
-	if logins, _, _, _ := stub.counts(); logins != 3 {
+	if logins, _, _, _ := stub.Counts(); logins != 3 {
 		t.Fatalf("expected exactly one more login, got %d", logins)
 	}
 }
 
 func TestOpenBaoErrorsNeverCarrySecrets(t *testing.T) {
-	stub := newStubBao(t)
-	stub.set(func(s *stubBao) { s.failStatus["/login"] = 500 }) // the stub echoes the jwt into its error
-	client := stub.client(t)
+	stub := keyringtest.New(t)
+	stub.Set(func(s *keyringtest.Bao) { s.FailStatus["/login"] = 500 }) // the stub echoes the jwt into its error
+	client := stubClient(t, stub)
 	_, err := client.Seal(context.Background(), []byte("hf_plaintext_value"), []byte("s"))
-	if err == nil || strings.Contains(err.Error(), stub.jwt) || !strings.Contains(err.Error(), "[redacted]") {
+	if err == nil || strings.Contains(err.Error(), stub.JWT) || !strings.Contains(err.Error(), "[redacted]") {
 		t.Fatalf("login error leaked or lost: %v", err)
 	}
-	stub.set(func(s *stubBao) { delete(s.failStatus, "/login"); s.failStatus["encrypt/kionga-credential"] = 500 })
+	stub.Set(func(s *keyringtest.Bao) {
+		delete(s.FailStatus, "/login")
+		s.FailStatus["encrypt/kionga-credential"] = 500
+	})
 	_, err = client.Seal(context.Background(), []byte("hf_plaintext_value"), []byte("s"))
 	if err == nil || strings.Contains(err.Error(), "hf_plaintext_value") || strings.Contains(err.Error(), "s.token") {
 		t.Fatalf("transit error leaked: %v", err)
@@ -243,8 +248,8 @@ func TestOpenBaoErrorsNeverCarrySecrets(t *testing.T) {
 }
 
 func TestOpenBaoLoginFailures(t *testing.T) {
-	stub := newStubBao(t)
-	cfg := stub.config(t)
+	stub := keyringtest.New(t)
+	cfg := stubConfig(t, stub)
 	cfg.AuthRole = "other-role"
 	client, err := NewOpenBao(cfg)
 	if err != nil {
@@ -253,7 +258,7 @@ func TestOpenBaoLoginFailures(t *testing.T) {
 	if _, err := client.Seal(context.Background(), []byte("v"), []byte("s")); err == nil || !strings.Contains(err.Error(), "login") {
 		t.Fatalf("wrong role: %v", err)
 	}
-	cfg = stub.config(t)
+	cfg = stubConfig(t, stub)
 	cfg.JWTFile = filepath.Join(t.TempDir(), "missing")
 	client, _ = NewOpenBao(cfg)
 	if _, err := client.Seal(context.Background(), []byte("v"), []byte("s")); err == nil || !strings.Contains(err.Error(), "service-account token") {
@@ -262,9 +267,9 @@ func TestOpenBaoLoginFailures(t *testing.T) {
 }
 
 func TestOpenBaoTimeoutsAreBounded(t *testing.T) {
-	stub := newStubBao(t)
-	stub.set(func(s *stubBao) { s.delay["encrypt/kionga-credential"] = 3 * time.Second })
-	cfg := stub.config(t)
+	stub := keyringtest.New(t)
+	stub.Set(func(s *keyringtest.Bao) { s.Delay["encrypt/kionga-credential"] = 3 * time.Second })
+	cfg := stubConfig(t, stub)
 	cfg.Timeout = 300 * time.Millisecond
 	client, _ := NewOpenBao(cfg)
 	start := time.Now()
@@ -285,7 +290,7 @@ func TestOpenBaoUnreachableFailsClosed(t *testing.T) {
 	t.Setenv("OPENBAO_ADDR", addr)
 	t.Setenv("OPENBAO_TRANSIT_KEY", "kionga-credential")
 	t.Setenv("OPENBAO_AUTH_ROLE", "kionga-gateway")
-	t.Setenv("OPENBAO_AUTH_JWT_FILE", writeJWT(t, "jwt"))
+	t.Setenv("OPENBAO_AUTH_JWT_FILE", keyringtest.WriteJWT(t, "jwt"))
 	t.Setenv("KIONGA_CREDENTIAL_KEY", testKey)
 	ring, err := FromEnv(context.Background(), os.Getenv)
 	if err == nil || ring != nil {
@@ -297,14 +302,14 @@ func TestOpenBaoUnreachableFailsClosed(t *testing.T) {
 }
 
 func TestCheckRefusesKeyThatIgnoresContext(t *testing.T) {
-	stub := newStubBao(t)
-	stub.set(func(s *stubBao) { s.derived = false })
-	err := stub.client(t).Check(context.Background())
+	stub := keyringtest.New(t)
+	stub.Set(func(s *keyringtest.Bao) { s.Derived = false })
+	err := stubClient(t, stub).Check(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "derived=true") {
 		t.Fatalf("non-derived key accepted: %v", err)
 	}
-	stub.set(func(s *stubBao) { s.derived = true })
-	if err := stub.client(t).Check(context.Background()); err != nil {
+	stub.Set(func(s *keyringtest.Bao) { s.Derived = true })
+	if err := stubClient(t, stub).Check(context.Background()); err != nil {
 		t.Fatalf("derived key refused: %v", err)
 	}
 }
@@ -336,17 +341,17 @@ func TestNewOpenBaoValidation(t *testing.T) {
 }
 
 func TestOpenBaoTrustsOnlyTheConfiguredCA(t *testing.T) {
-	stub := newStubBao(t)
-	tlsServer := httptest.NewTLSServer(stub.server.Config.Handler)
+	stub := keyringtest.New(t)
+	tlsServer := httptest.NewTLSServer(stub.Server.Config.Handler)
 	defer tlsServer.Close()
-	cfg := stub.config(t)
+	cfg := stubConfig(t, stub)
 	cfg.Addr, cfg.AllowHTTP = tlsServer.URL, false
 	client, _ := NewOpenBao(cfg)
 	if _, err := client.Seal(context.Background(), []byte("v"), []byte("s")); err == nil {
 		t.Fatal("untrusted certificate accepted")
 	}
 	caFile := filepath.Join(t.TempDir(), "ca.pem")
-	if err := os.WriteFile(caFile, pemCert(tlsServer), 0o600); err != nil {
+	if err := os.WriteFile(caFile, keyringtest.PEM(tlsServer), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg.CACertFile = caFile
@@ -359,17 +364,17 @@ func TestOpenBaoTrustsOnlyTheConfiguredCA(t *testing.T) {
 	}
 }
 
-func openBaoEnv(t *testing.T, stub *stubBao) {
+func openBaoEnv(t *testing.T, stub *keyringtest.Bao) {
 	t.Setenv("KIONGA_KEY_PROVIDER", "openbao")
-	t.Setenv("OPENBAO_ADDR", stub.server.URL)
+	t.Setenv("OPENBAO_ADDR", stub.URL())
 	t.Setenv("OPENBAO_TRANSIT_KEY", "kionga-credential")
 	t.Setenv("OPENBAO_AUTH_ROLE", "kionga-gateway")
-	t.Setenv("OPENBAO_AUTH_JWT_FILE", writeJWT(t, stub.jwt))
+	t.Setenv("OPENBAO_AUTH_JWT_FILE", keyringtest.WriteJWT(t, stub.JWT))
 }
 
 func TestRingAcrossProviders(t *testing.T) {
 	ctx := context.Background()
-	stub := newStubBao(t)
+	stub := keyringtest.New(t)
 
 	// A static install writes records.
 	t.Setenv("KIONGA_CREDENTIAL_KEY", testKey)
@@ -463,7 +468,7 @@ func TestFromEnvProviderRules(t *testing.T) {
 		t.Fatalf("open without key: %v", err)
 	}
 	// openbao with a malformed legacy key is a configuration error.
-	stub := newStubBao(t)
+	stub := keyringtest.New(t)
 	openBaoEnv(t, stub)
 	t.Setenv("KIONGA_CREDENTIAL_KEY", "not-a-key")
 	if _, err := FromEnv(ctx, os.Getenv); !errors.Is(err, ErrStaticKey) {
@@ -475,9 +480,9 @@ func TestFromEnvProviderRules(t *testing.T) {
 // and the ring read while an openbao gateway seals and opens a transit
 // record, with no credential key in the environment.
 func TestOpenBaoSealingNeverReadsTheCredentialKey(t *testing.T) {
-	stub := newStubBao(t)
-	jwt := writeJWT(t, stub.jwt)
-	env := map[string]string{"KIONGA_KEY_PROVIDER": "openbao", "OPENBAO_ADDR": stub.server.URL, "OPENBAO_TRANSIT_KEY": "kionga-credential", "OPENBAO_AUTH_ROLE": "kionga-gateway", "OPENBAO_AUTH_JWT_FILE": jwt}
+	stub := keyringtest.New(t)
+	jwt := keyringtest.WriteJWT(t, stub.JWT)
+	env := map[string]string{"KIONGA_KEY_PROVIDER": "openbao", "OPENBAO_ADDR": stub.URL(), "OPENBAO_TRANSIT_KEY": "kionga-credential", "OPENBAO_AUTH_ROLE": "kionga-gateway", "OPENBAO_AUTH_JWT_FILE": jwt}
 	seen := map[string]string{}
 	getenv := func(name string) string { seen[name] = env[name]; return env[name] }
 	ring, err := FromEnv(context.Background(), getenv)
@@ -494,4 +499,17 @@ func TestOpenBaoSealingNeverReadsTheCredentialKey(t *testing.T) {
 	if ring.HasStatic() {
 		t.Fatal("static key present")
 	}
+}
+
+func stubConfig(t *testing.T, stub *keyringtest.Bao) OpenBaoConfig {
+	return OpenBaoConfig{Addr: stub.URL(), TransitKey: "kionga-credential", AuthRole: "kionga-gateway", JWTFile: keyringtest.WriteJWT(t, stub.JWT), AllowHTTP: true, Timeout: 2 * time.Second}
+}
+
+func stubClient(t *testing.T, stub *keyringtest.Bao) *OpenBao {
+	t.Helper()
+	client, err := NewOpenBao(stubConfig(t, stub))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return client
 }
