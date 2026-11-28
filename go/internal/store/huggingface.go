@@ -32,13 +32,13 @@ func (s *Store) SaveHubAccount(subject string, account HubAccount) error {
 	}
 	account.UpdatedAt = time.Now().UTC()
 	s.data.HubAccounts[hubAccountID(subject)] = account
-	s.record("huggingface.account.updated", "hub_account", hubAccountID(subject), subject, nil)
+	s.record("huggingface.account.updated", HubAccountKind, hubAccountID(subject), subject, nil)
 	return s.persist()
 }
 func (p *Postgres) HubAccount(subject string) (HubAccount, error) {
-	return get[HubAccount](p, "hub_account", hubAccountID(subject))
+	return get[HubAccount](p, HubAccountKind, hubAccountID(subject))
 }
 func (p *Postgres) SaveHubAccount(subject string, account HubAccount) error {
 	account.UpdatedAt = time.Now().UTC()
-	return p.write("hub_account", hubAccountID(subject), account, "huggingface.account.updated", subject, nil)
+	return p.write(HubAccountKind, hubAccountID(subject), account, "huggingface.account.updated", subject, nil)
 }

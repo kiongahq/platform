@@ -17,6 +17,7 @@ import (
 	"github.com/kiongahq/platform/internal/auth"
 	"github.com/kiongahq/platform/internal/httpapi"
 	"github.com/kiongahq/platform/internal/integrations"
+	"github.com/kiongahq/platform/internal/keyring"
 	"github.com/kiongahq/platform/internal/runtimeconfig"
 	"github.com/kiongahq/platform/internal/store"
 	"k8s.io/client-go/dynamic"
@@ -30,8 +31,25 @@ func main() {
 	if err := runtimeconfig.Load(); err != nil {
 		log.Fatal(err)
 	}
+	if len(os.Args) > 1 && os.Args[1] == "rewrap" {
+		os.Exit(runRewrap(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	if err := runtimeconfig.ValidateGateway(); err != nil {
 		log.Fatal(err)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	// Fail closed: with KIONGA_KEY_PROVIDER=openbao the gateway does not start
+	// unless OpenBao is reachable, the login works and the transit key binds
+	// each credential to its owner.
+	ring, err := keyring.FromEnv(ctx, os.Getenv)
+	if err != nil {
+		log.Fatalf("credential keyring: %v", err)
+	}
+	httpapi.UseKeyring(ring)
+	logKeyring(ring)
+	if transit := ring.Transit(); transit != nil && ring.Provider() == keyring.ProviderOpenBao {
+		go transit.RunRenewal(ctx)
 	}
 	static, err := fs.Sub(web, "frontend-dist")
 	if err != nil {
@@ -44,8 +62,6 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	var repository store.Repository
 	var postgres *store.Postgres
 	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {

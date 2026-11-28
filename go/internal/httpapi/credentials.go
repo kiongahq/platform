@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/kiongahq/platform/internal/keyring"
+	"github.com/kiongahq/platform/internal/store"
 )
 
 // The gateway seals personal account credentials (Hugging Face and GitHub
@@ -85,4 +86,17 @@ func openCredential(ctx context.Context, aad []byte, ciphertext string) (string,
 		log.Printf("credential keyring: open failed: %v", err)
 		return "", errCredentialServiceUnavailable
 	}
+}
+
+// SealedCredentialAAD is the associated data a stored credential record of
+// kind was sealed with, for the rewrap command. ok is false for an unknown
+// kind.
+func SealedCredentialAAD(kind, subject string) (aad []byte, ok bool) {
+	switch kind {
+	case store.HubAccountKind:
+		return hubCredentialAAD(subject), true
+	case store.GitHubAccountKind:
+		return githubCredentialAAD(subject), true
+	}
+	return nil, false
 }

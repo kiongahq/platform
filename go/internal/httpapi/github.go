@@ -25,7 +25,7 @@ import (
 
 var githubHTTP = &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 
-const githubAccountKind = "github_account"
+const githubAccountKind = store.GitHubAccountKind
 
 type githubAccount struct {
 	Login          string    `json:"login"`
