@@ -157,10 +157,10 @@ func Run(ctx context.Context, repo store.SealedCredentialStore, ring *keyring.Ri
 	if opts.Apply && (len(targets) > opts.MaxRows || snapshotBytes > opts.MaxBytes) {
 		return result, fmt.Errorf("%w: %d rows, about %d bytes (limits %d rows, %d bytes); ask for approval and rerun with raised limits", ErrTooLarge, len(targets), snapshotBytes, opts.MaxRows, opts.MaxBytes)
 	}
-	if err := os.Mkdir(opts.JobDir, 0o700); err != nil {
+	if err := os.Mkdir(opts.JobDir, 0o700); err != nil { // #nosec G703 -- operator-chosen job directory
 		return result, fmt.Errorf("create job directory: %w", err)
 	}
-	progress, err := os.OpenFile(filepath.Join(opts.JobDir, progressFile), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	progress, err := os.OpenFile(filepath.Join(opts.JobDir, progressFile), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 G703 -- operator-chosen job directory
 	if err != nil {
 		return result, err
 	}
@@ -183,7 +183,7 @@ func Run(ctx context.Context, repo store.SealedCredentialStore, ring *keyring.Ri
 	}
 	var applied *os.File
 	if opts.Apply && len(targets) > 0 {
-		applied, err = os.OpenFile(filepath.Join(opts.JobDir, appliedFile), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		applied, err = os.OpenFile(filepath.Join(opts.JobDir, appliedFile), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 G703 -- operator-chosen job directory
 		if err != nil {
 			return result, err
 		}
@@ -211,7 +211,7 @@ func Run(ctx context.Context, repo store.SealedCredentialStore, ring *keyring.Ri
 	if err := writeCSV(filepath.Join(opts.JobDir, csvFile), result.Rows); err != nil {
 		return result, err
 	}
-	if err := os.WriteFile(filepath.Join(opts.JobDir, reportFile), []byte(renderReport(result)), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(opts.JobDir, reportFile), []byte(renderReport(result)), 0o600); err != nil { // #nosec G703 -- operator-chosen job directory
 		return result, err
 	}
 	fmt.Fprintf(opts.Console, "credential rewrap: report %s, CSV %s\n", filepath.Join(opts.JobDir, reportFile), filepath.Join(opts.JobDir, csvFile))
@@ -285,7 +285,7 @@ func targetFormat(ring *keyring.Ring) string {
 }
 
 func writeSnapshot(path string, targets []store.SealedCredential) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 G703 -- path inside the operator-chosen job directory
 	if err != nil {
 		return err
 	}
@@ -333,7 +333,7 @@ func progressLine(mode string, done, total int, start, now time.Time, counts map
 }
 
 func writeCSV(path string, rows []Row) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 G703 -- path inside the operator-chosen job directory
 	if err != nil {
 		return err
 	}
@@ -430,7 +430,7 @@ func Restore(repo store.SealedCredentialStore, appliedPath string, console io.Wr
 	if console == nil {
 		console = io.Discard
 	}
-	file, err := os.Open(appliedPath) // #nosec G304 -- operator-supplied path
+	file, err := os.Open(appliedPath) // #nosec G304 G703 -- operator-supplied path
 	if err != nil {
 		return 0, 0, err
 	}

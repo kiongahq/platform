@@ -115,7 +115,7 @@ func NewOpenBao(cfg OpenBaoConfig) (*OpenBao, error) {
 	}
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
 	if cfg.CACertFile != "" {
-		pem, err := os.ReadFile(cfg.CACertFile) // #nosec G304 -- operator-set path
+		pem, err := os.ReadFile(cfg.CACertFile) // #nosec G304 G703 -- operator-set path
 		if err != nil {
 			return nil, errors.New("cannot read OPENBAO_CACERT_FILE")
 		}
@@ -186,7 +186,7 @@ func (o *OpenBao) call(ctx context.Context, op, path, token string, body, out an
 	if token != "" {
 		req.Header.Set("X-Vault-Token", token)
 	}
-	resp, err := o.client.Do(req)
+	resp, err := o.client.Do(req) // #nosec G704 -- OPENBAO_ADDR is operator configuration; paths are validated, redirects disabled
 	if err != nil {
 		detail := "OpenBao could not be reached"
 		var netErr net.Error
@@ -240,7 +240,8 @@ func (o *OpenBao) setToken(a authResponse, op string) error {
 }
 
 func (o *OpenBao) loginLocked(ctx context.Context) error {
-	jwt, err := os.ReadFile(o.cfg.JWTFile) // re-read every login: kubelet rotates projected tokens
+	// Re-read every login: kubelet rotates projected tokens.
+	jwt, err := os.ReadFile(o.cfg.JWTFile) // #nosec G304 -- operator-set path
 	if err != nil {
 		return &apiError{Op: "login", Detail: "cannot read the service-account token file"}
 	}
