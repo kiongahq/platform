@@ -36,7 +36,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
@@ -96,7 +96,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive        # contracts/, read by pipelinespec tests
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
@@ -133,7 +133,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0               # gitleaks scans the full history
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
