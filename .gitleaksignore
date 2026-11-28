@@ -15,3 +15,4 @@ f5022d3427a751e467b1620edbf96989e0324616:.gitleaksignore:aws-access-token:2
 # Test fixture: base64 of a fake token; the fixture now encodes it at runtime.
 59c14094994b0f4e0512923e9a95f1ccdadb58e5:go/internal/httpapi/workspace_discovery_test.go:generic-api-key:118
 b498c8c13e5549e102b3a0808af2f402dceb0616:go/internal/runtimeconfig/config_test.go:generic-api-key:99
+ed6034d663d5db1638a932fb3ad3f4f0d1e773eb:go/internal/keyring/keyring_test.go:generic-api-key:19
