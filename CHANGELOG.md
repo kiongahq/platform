@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/kiongahq/platform/compare/v0.2.2...v0.2.3) (2026-11-28)
+
+
+### Features
+
+* **keyring:** credential key in OpenBao transit ([33a3c89](https://github.com/kiongahq/platform/commit/33a3c89b009039d817466d7a97548b9af3d91259))
+
 ## [0.2.2](https://github.com/kiongahq/platform/compare/v0.2.1...v0.2.2) (2026-11-25)
 
 
