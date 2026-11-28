@@ -394,3 +394,39 @@ func TestProgressLine(t *testing.T) {
 		t.Fatal(line)
 	}
 }
+
+func TestApplyDoesNotWriteWhenTheRestoreLogCannotBeRecorded(t *testing.T) {
+	f := newFixture(t)
+	stub := keyringtest.New(t)
+	ring := openBaoRing(t, stub, true)
+	records, _ := f.repo.SealedCredentials()
+	closed, err := os.Create(filepath.Join(t.TempDir(), "applied.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed.Close()
+	before := readFile(t, f.path)
+	row := convert(context.Background(), f.repo, ring, Options{Apply: true, AAD: aad}, records[0], closed)
+	if row.Status != StatusFailed {
+		t.Fatalf("status %s, want failed", row.Status)
+	}
+	if readFile(t, f.path) != before {
+		t.Fatal("record rewritten without a restore line")
+	}
+}
+
+func TestRestoreSkipsRowsTheRunDidNotWrite(t *testing.T) {
+	f := newFixture(t)
+	stub := keyringtest.New(t)
+	opts := options(t, true)
+	if _, err := Run(context.Background(), racingStore{f.repo}, openBaoRing(t, stub, true), opts); err != nil {
+		t.Fatal(err)
+	}
+	restored, skipped, err := Restore(f.repo, filepath.Join(opts.JobDir, appliedFile), nil)
+	if err != nil || restored != 2 || skipped != 1 {
+		t.Fatalf("restore: %d restored, %d skipped, %v", restored, skipped, err)
+	}
+	if account, _ := f.repo.HubAccount("bob"); account.Ciphertext != "vault:v1:reconnected" {
+		t.Fatal("restore overwrote the user's newer value")
+	}
+}

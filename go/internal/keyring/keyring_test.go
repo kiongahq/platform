@@ -513,3 +513,26 @@ func stubClient(t *testing.T, stub *keyringtest.Bao) *OpenBao {
 	}
 	return client
 }
+
+func TestOpenBaoZeroLeaseRenewalLogsInAgain(t *testing.T) {
+	stub := keyringtest.New(t)
+	client := stubClient(t, stub)
+	now := time.Unix(1_000_000, 0)
+	client.now = func() time.Time { return now }
+	if _, err := client.Seal(context.Background(), []byte("a"), []byte("s")); err != nil {
+		t.Fatal(err)
+	}
+	stub.Set(func(s *keyringtest.Bao) { s.RenewZero = true })
+	now = now.Add(41 * time.Minute)
+	if _, err := client.Seal(context.Background(), []byte("a"), []byte("s")); err != nil {
+		t.Fatal(err)
+	}
+	if logins, renews, _, _ := stub.Counts(); logins != 2 || renews != 1 {
+		t.Fatalf("zero-lease renewal kept the token: logins %d renews %d", logins, renews)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.expires.IsZero() {
+		t.Fatal("token treated as permanent")
+	}
+}

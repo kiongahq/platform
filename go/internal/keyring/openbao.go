@@ -264,6 +264,11 @@ func (o *OpenBao) renewLocked(ctx context.Context) error {
 	if auth.Auth == nil || auth.Auth.ClientToken == "" {
 		return &apiError{Op: "token renewal", Detail: "no client token in response"}
 	}
+	// A renewed lease must still expire; a zero lease (max TTL reached)
+	// means log in again rather than treat the token as permanent.
+	if auth.Auth.LeaseDuration <= 0 {
+		return &apiError{Op: "token renewal", Detail: "lease cannot be extended"}
+	}
 	return o.setToken(auth, "token renewal")
 }
 

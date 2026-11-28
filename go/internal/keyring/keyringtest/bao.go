@@ -42,6 +42,7 @@ type Bao struct {
 	Encrypts   int
 	Decrypts   int
 	FailRenew  bool
+	RenewZero  bool                     // renew-self answers with a zero lease (max TTL reached)
 	FailStatus map[string]int           // path suffix -> status to return
 	Delay      map[string]time.Duration // path suffix -> delay before answering
 	RevokeNext bool                     // answer the next transit call 403 and forget tokens
@@ -130,7 +131,11 @@ func (s *Bao) handle(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, 403, "permission denied")
 			return
 		}
-		s.reply(w, 200, map[string]any{"auth": map[string]any{"client_token": token, "lease_duration": s.Lease, "renewable": s.Renewable}})
+		lease := s.Lease
+		if s.RenewZero {
+			lease = 0
+		}
+		s.reply(w, 200, map[string]any{"auth": map[string]any{"client_token": token, "lease_duration": lease, "renewable": s.Renewable}})
 	case "/v1/transit/encrypt/kionga-credential", "/v1/transit/decrypt/kionga-credential":
 		if s.RevokeNext {
 			s.RevokeNext = false

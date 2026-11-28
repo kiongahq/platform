@@ -117,7 +117,7 @@ func appSigningKey() []byte {
 // and removing it must not change the signing key.
 func deriveAppSigningKey(getenv func(string) string) (key []byte, stable bool) {
 	secret := getenv("KIONGA_SIGNING_KEY")
-	if secret == "" && getenv("KIONGA_KEY_PROVIDER") != "openbao" {
+	if secret == "" && strings.TrimSpace(getenv("KIONGA_KEY_PROVIDER")) != "openbao" {
 		secret = getenv("KIONGA_CREDENTIAL_KEY")
 	}
 	if secret == "" {

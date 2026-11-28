@@ -256,6 +256,19 @@ func convert(ctx context.Context, repo store.SealedCredentialStore, ring *keyrin
 		row.Status = StatusFailed
 		return row
 	}
+	// Record the restore line durably before the write: if it cannot be
+	// recorded, the row is not changed. A line whose write then fails or loses
+	// the race is harmless, because Restore only swaps rows that still hold
+	// the value this run wrote.
+	line, _ := json.Marshal(appliedEntry{Kind: record.Kind, ID: record.ID, Before: record.Ciphertext, After: string(sealed)})
+	if _, err := applied.Write(append(line, '\n')); err != nil {
+		row.Status = StatusFailed
+		return row
+	}
+	if err := applied.Sync(); err != nil {
+		row.Status = StatusFailed
+		return row
+	}
 	switch err := repo.ReplaceSealedCredential(record.Kind, record.ID, record.Ciphertext, string(sealed)); {
 	case errors.Is(err, store.ErrCredentialChanged):
 		row.Status = StatusChanged
@@ -264,14 +277,6 @@ func convert(ctx context.Context, repo store.SealedCredentialStore, ring *keyrin
 		row.Status = StatusFailed
 		return row
 	}
-	line, _ := json.Marshal(appliedEntry{Kind: record.Kind, ID: record.ID, Before: record.Ciphertext, After: string(sealed)})
-	if _, err := applied.Write(append(line, '\n')); err != nil {
-		// The row is converted; losing its restore line is reported, not hidden.
-		row.Status = StatusConverted
-		row.After = keyring.Format(sealed) + " (restore log write failed)"
-		return row
-	}
-	_ = applied.Sync()
 	row.Status = StatusConverted
 	row.After = keyring.Format(sealed)
 	return row

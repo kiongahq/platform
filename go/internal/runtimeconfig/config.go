@@ -152,7 +152,7 @@ func validateKeyProvider() error {
 			return fmt.Errorf("production KIONGA_SIGNING_KEY must be at least 32 characters and not a development default")
 		}
 	}
-	switch provider := os.Getenv("KIONGA_KEY_PROVIDER"); provider {
+	switch strings.TrimSpace(os.Getenv("KIONGA_KEY_PROVIDER")) {
 	case "", "static":
 		if credentialKey == "" {
 			return fmt.Errorf("production requires KIONGA_CREDENTIAL_KEY (or KIONGA_KEY_PROVIDER=openbao with a complete OpenBao configuration)")
